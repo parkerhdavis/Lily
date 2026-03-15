@@ -1,0 +1,35 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: light --default, dark;
+}
+
+/* Variable highlights in document preview */
+.variable-highlight {
+  background-color: oklch(0.85 0.15 85);
+  border-radius: 2px;
+  padding: 0 2px;
+  font-weight: 600;
+}
+
+.variable-highlight.filled {
+  background-color: oklch(0.88 0.12 145);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.7 0 0);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.5 0 0);
+}

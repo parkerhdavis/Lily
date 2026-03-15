@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+backend/target/
+
+# Bun
+bun.lock
+
+# Environment
+.env
+.env.local
+
+# Template documents (proprietary)
+resources/templates/
+
+# Tauri generated files
+backend/gen/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
