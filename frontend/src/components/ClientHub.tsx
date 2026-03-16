@@ -114,6 +114,11 @@ export default function ClientHub() {
 		[allDocs],
 	);
 
+	// Build a set of conditional variable names from the .lily file
+	const conditionalVarNames = useMemo(() => {
+		return new Set(lilyFile?.conditional_variables ?? []);
+	}, [lilyFile]);
+
 	// Sort variables alphabetically for display
 	const sortedVariables = useMemo(() => {
 		if (!lilyFile?.variables) return [];
@@ -318,15 +323,18 @@ export default function ClientHub() {
 						</p>
 					) : (
 						<div className="flex flex-col gap-3">
-							{filteredVariables.map(([name, value]) => (
-								<VariableField
-									key={name}
-									name={name}
-									value={value}
-									onBlur={handleVariableBlur}
-									onRemove={removeClientVariable}
-								/>
-							))}
+						{filteredVariables.map(([name, value]) => (
+							<VariableField
+								key={name}
+								name={name}
+								value={value}
+								isConditional={conditionalVarNames.has(
+									name,
+								)}
+								onBlur={handleVariableBlur}
+								onRemove={removeClientVariable}
+							/>
+						))}
 						</div>
 					)}
 
@@ -561,15 +569,50 @@ function DocumentRow({
 function VariableField({
 	name,
 	value,
+	isConditional,
 	onBlur,
 	onRemove,
 }: {
 	name: string;
 	value: string;
+	isConditional: boolean;
 	onBlur: (name: string, value: string) => void;
 	onRemove: (name: string) => void;
 }) {
 	const [localValue, setLocalValue] = useState(value);
+
+	if (isConditional) {
+		const isChecked = localValue === "true";
+		return (
+			<label className="form-control w-full group">
+				<div className="label cursor-pointer">
+					<span className="label-text text-sm font-medium flex items-center gap-1.5">
+						<input
+							type="checkbox"
+							className="checkbox checkbox-sm checkbox-primary"
+							checked={isChecked}
+							onChange={(e) => {
+								const newVal = e.target.checked
+									? "true"
+									: "false";
+								setLocalValue(newVal);
+								onBlur(name, newVal);
+							}}
+						/>
+						{name}
+					</span>
+					<button
+						type="button"
+						className="btn btn-ghost btn-xs opacity-0 group-hover:opacity-50 hover:!opacity-100 text-error"
+						onClick={() => onRemove(name)}
+						title={`Remove ${name}`}
+					>
+						&times;
+					</button>
+				</div>
+			</label>
+		);
+	}
 
 	return (
 		<label className="form-control w-full group">
