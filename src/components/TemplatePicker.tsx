@@ -1,10 +1,23 @@
+import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 export default function TemplatePicker() {
-	const { templates, loading, error, selectTemplate, setStep } =
+	const { templates, loading, error, selectTemplate, loadTemplates, setStep } =
 		useWorkflowStore();
-	const { settings } = useSettingsStore();
+	const { settings, save } = useSettingsStore();
+
+	const pickTemplatesDir = async () => {
+		const selected = await open({
+			directory: true,
+			title: "Select Templates Folder",
+			defaultPath: settings.templates_dir ?? undefined,
+		});
+		if (selected) {
+			await save({ templates_dir: selected });
+			loadTemplates(selected);
+		}
+	};
 
 	if (loading) {
 		return (
@@ -16,16 +29,25 @@ export default function TemplatePicker() {
 
 	if (!settings.templates_dir) {
 		return (
-			<div className="flex flex-col items-center justify-center min-h-screen gap-4 p-8">
-				<p className="text-error">
-					No templates folder configured. Please go back and set one.
+			<div className="flex flex-col items-center justify-center min-h-screen gap-6 p-8">
+				<h2 className="text-2xl font-bold">Set Templates Folder</h2>
+				<p className="text-base-content/70 text-center max-w-md">
+					Before selecting a template, you need to choose the folder where
+					your template documents are stored.
 				</p>
 				<button
 					type="button"
-					className="btn btn-ghost"
+					className="btn btn-primary"
+					onClick={pickTemplatesDir}
+				>
+					Select Templates Folder
+				</button>
+				<button
+					type="button"
+					className="btn btn-ghost btn-sm"
 					onClick={() => setStep("select-directory")}
 				>
-					Back
+					&larr; Back
 				</button>
 			</div>
 		);
