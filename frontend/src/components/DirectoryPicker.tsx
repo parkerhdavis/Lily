@@ -2,12 +2,9 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
 
-const QUESTIONNAIRE_FILENAME = "ClientQuestionnaire.docx";
-
 export default function DirectoryPicker() {
 	const { settings, save } = useSettingsStore();
-	const { setWorkingDir, loadTemplates, selectTemplate, templates } =
-		useWorkflowStore();
+	const { setWorkingDir, loadTemplates } = useWorkflowStore();
 
 	const pickWorkingDir = async () => {
 		const selected = await open({
@@ -18,43 +15,11 @@ export default function DirectoryPicker() {
 		if (selected) {
 			save({ last_working_dir: selected });
 
-			// Load templates first if we have a templates dir configured,
-			// so we can check for a ClientQuestionnaire.docx
 			if (settings.templates_dir) {
 				await loadTemplates(settings.templates_dir);
 			}
 
 			setWorkingDir(selected);
-
-			// If this is a brand-new client folder (no .lily file with
-			// documents yet), auto-copy the ClientQuestionnaire.docx if it
-			// exists at the root of the templates directory.
-			// We check after a brief delay to let the .lily file load complete.
-			if (settings.templates_dir) {
-				const currentTemplates = useWorkflowStore.getState().templates;
-				const hasQuestionnaire = currentTemplates.includes(
-					QUESTIONNAIRE_FILENAME,
-				);
-
-				if (hasQuestionnaire) {
-					// Wait for the .lily file to load, then check if it's empty
-					const checkAndCopy = () => {
-						const { lilyFile } = useWorkflowStore.getState();
-						if (lilyFile !== null) {
-							if (Object.keys(lilyFile.documents).length === 0) {
-								selectTemplate(
-									QUESTIONNAIRE_FILENAME,
-									settings.templates_dir!,
-								);
-							}
-							return;
-						}
-						// .lily file hasn't loaded yet, try again shortly
-						setTimeout(checkAndCopy, 50);
-					};
-					checkAndCopy();
-				}
-			}
 		}
 	};
 
