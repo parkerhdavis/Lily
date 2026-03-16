@@ -8,6 +8,15 @@ pub struct AppSettings {
     pub templates_dir: Option<String>,
     /// Last-used working directory.
     pub last_working_dir: Option<String>,
+    /// Recently-used working directories (most-recent first).
+    #[serde(default)]
+    pub recent_directories: Vec<String>,
+    /// Remembered window width from last session.
+    #[serde(default)]
+    pub window_width: Option<u32>,
+    /// Remembered window height from last session.
+    #[serde(default)]
+    pub window_height: Option<u32>,
 }
 
 fn settings_path() -> Result<PathBuf, String> {
