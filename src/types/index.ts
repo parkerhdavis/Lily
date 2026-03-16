@@ -5,6 +5,7 @@ export interface AppSettings {
 
 export type WorkflowStep =
 	| "select-directory"
+	| "client-hub"
 	| "select-template"
 	| "edit-variables";
 

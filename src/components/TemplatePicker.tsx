@@ -172,7 +172,9 @@ function TemplateFolder({
 				className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-medium gap-2"
 				onClick={() => setExpanded(!expanded)}
 			>
-				<span className="text-xs opacity-40">{expanded ? "\u25BE" : "\u25B8"}</span>
+				<span className="text-xs opacity-40">
+					{expanded ? "\u25BE" : "\u25B8"}
+				</span>
 				<FolderIcon open={expanded} />
 				<span>{node.name}</span>
 			</button>
@@ -260,28 +262,12 @@ export default function TemplatePicker() {
 		selectTemplate,
 		openDocument,
 		loadTemplates,
-		setStep,
+		returnToHub,
 	} = useWorkflowStore();
 	const { settings, save } = useSettingsStore();
 
 	// Build tree from flat paths
 	const tree = useMemo(() => buildTree(templates), [templates]);
-
-	// Build client documents list from .lily file
-	const clientDocs = useMemo(() => {
-		if (!lilyFile?.documents) return [];
-		return Object.entries(lilyFile.documents)
-			.map(([filename, meta]) => ({
-				filename,
-				templateRelPath: meta.template_rel_path,
-				modifiedAt: meta.modified_at,
-			}))
-			.sort(
-				(a, b) =>
-					new Date(b.modifiedAt).getTime() -
-					new Date(a.modifiedAt).getTime(),
-			);
-	}, [lilyFile]);
 
 	// Conflict dialog state
 	const [conflictDocs, setConflictDocs] = useState<
@@ -338,13 +324,6 @@ export default function TemplatePicker() {
 		setPendingTemplate(null);
 	};
 
-	const handleClientDocClick = (
-		filename: string,
-		templateRelPath: string,
-	) => {
-		openDocument(filename, templateRelPath);
-	};
-
 	if (loading) {
 		return (
 			<div className="flex items-center justify-center min-h-screen">
@@ -371,7 +350,7 @@ export default function TemplatePicker() {
 				<button
 					type="button"
 					className="btn btn-ghost btn-sm"
-					onClick={() => setStep("select-directory")}
+					onClick={returnToHub}
 				>
 					&larr; Back
 				</button>
@@ -386,11 +365,11 @@ export default function TemplatePicker() {
 				<button
 					type="button"
 					className="btn btn-ghost btn-sm"
-					onClick={() => setStep("select-directory")}
+					onClick={returnToHub}
 				>
 					&larr; Back
 				</button>
-				<h2 className="text-xl font-bold">Select a Template</h2>
+				<h2 className="text-xl font-bold">Add New Document</h2>
 			</div>
 
 			{error && (
@@ -399,75 +378,27 @@ export default function TemplatePicker() {
 				</div>
 			)}
 
-			{/* Two-panel layout */}
-			<div className="flex flex-1 overflow-hidden">
-				{/* Left panel: Template Library */}
-				<div className="flex-1 overflow-y-auto p-4 border-r border-base-300">
-					<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50 mb-3">
-						Template Library
-					</h3>
-					{tree.length === 0 ? (
-						<p className="text-sm text-base-content/50">
-							No .docx templates found in the configured folder.
-						</p>
-					) : (
-						<div className="flex flex-col gap-0.5">
-							{tree.map((node) => (
-								<TemplateTreeItem
-									key={node.kind === "file" ? node.relPath : node.name}
-									node={node}
-									lilyFile={lilyFile}
-									onTemplateClick={handleTemplateClick}
-								/>
-							))}
-						</div>
-					)}
-				</div>
-
-				{/* Right panel: Client Documents */}
-				<div className="w-80 shrink-0 overflow-y-auto p-4 bg-base-100">
-					<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50 mb-3">
-						Client Documents
-					</h3>
-					{clientDocs.length === 0 ? (
-						<p className="text-sm text-base-content/50">
-							No documents in this folder yet. Select a template to
-							create one.
-						</p>
-					) : (
-						<div className="flex flex-col gap-1">
-							{clientDocs.map((doc) => (
-								<button
-									type="button"
-									key={doc.filename}
-									className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal"
-									onClick={() =>
-										handleClientDocClick(
-											doc.filename,
-											doc.templateRelPath,
-										)
-									}
-								>
-									<div className="flex flex-col items-start gap-0.5 min-w-0">
-										<span className="font-medium truncate w-full">
-											{stripDocx(doc.filename)}
-										</span>
-										<span className="text-xs text-base-content/40 truncate w-full">
-											from{" "}
-											{stripDocx(
-												doc.templateRelPath
-													.split("/")
-													.pop() ?? doc.templateRelPath,
-											)}
-											{" \u00B7 "}
-											{formatDate(doc.modifiedAt)}
-										</span>
-									</div>
-								</button>
-							))}
-						</div>
-					)}
-				</div>
+			{/* Template library */}
+			<div className="flex-1 overflow-y-auto p-4">
+				<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50 mb-3">
+					Template Library
+				</h3>
+				{tree.length === 0 ? (
+					<p className="text-sm text-base-content/50">
+						No .docx templates found in the configured folder.
+					</p>
+				) : (
+					<div className="flex flex-col gap-0.5">
+						{tree.map((node) => (
+							<TemplateTreeItem
+								key={node.kind === "file" ? node.relPath : node.name}
+								node={node}
+								lilyFile={lilyFile}
+								onTemplateClick={handleTemplateClick}
+							/>
+						))}
+					</div>
+				)}
 			</div>
 
 			{/* Conflict dialog: existing document(s) found for this template */}
