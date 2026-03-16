@@ -42,6 +42,12 @@ interface WorkflowState {
 	addClientVariable: (name: string) => Promise<void>;
 	/** Remove a variable from the client-level pool. */
 	removeClientVariable: (name: string) => Promise<void>;
+	/** Delete a document from disk and the .lily file. */
+	deleteDocument: (filename: string) => Promise<void>;
+	/** Create a new versioned copy of an existing document. */
+	newVersionDocument: (filename: string) => Promise<void>;
+	/** Open a template file in the OS default application. */
+	openTemplateFile: (templateRelPath: string) => Promise<void>;
 	/** Reload the .lily file from disk into the store. */
 	reloadLilyFile: () => Promise<void>;
 	/** Navigate to Add New Document (template selection). */
@@ -323,6 +329,47 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			}
 		} catch (err) {
 			console.error("Failed to remove client variable:", err);
+		}
+	},
+
+	deleteDocument: async (filename) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		try {
+			await invoke("delete_document", { workingDir, filename });
+			await get().reloadLilyFile();
+		} catch (err) {
+			console.error("Failed to delete document:", err);
+		}
+	},
+
+	newVersionDocument: async (filename) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		try {
+			await invoke<string>("new_version_document", {
+				workingDir,
+				filename,
+			});
+			await get().reloadLilyFile();
+		} catch (err) {
+			console.error("Failed to create new version:", err);
+		}
+	},
+
+	openTemplateFile: async (templateRelPath) => {
+		const settings = (await invoke("load_settings")) as {
+			templates_dir: string | null;
+		};
+		if (!settings.templates_dir) return;
+
+		const fullPath = `${settings.templates_dir}/${templateRelPath}`;
+		try {
+			await invoke("open_file_in_os", { filePath: fullPath });
+		} catch (err) {
+			console.error("Failed to open template file:", err);
 		}
 	},
 

@@ -1,6 +1,8 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+
+const QUESTIONNAIRE_FILENAME = "ClientQuestionnaire.docx";
 
 /** Format an ISO date string to a readable local format. */
 function formatDate(iso: string): string {
@@ -28,6 +30,12 @@ function getFolderName(dirPath: string): string {
 	return segments[segments.length - 1] || dirPath;
 }
 
+interface ClientDoc {
+	filename: string;
+	templateRelPath: string;
+	modifiedAt: string;
+}
+
 export default function ClientHub() {
 	const {
 		workingDir,
@@ -39,7 +47,11 @@ export default function ClientHub() {
 		saveClientVariable,
 		addClientVariable,
 		removeClientVariable,
+		deleteDocument,
+		newVersionDocument,
+		openTemplateFile,
 		loadTemplates,
+		reloadLilyFile,
 		reset,
 	} = useWorkflowStore();
 	const { settings } = useSettingsStore();
@@ -49,7 +61,7 @@ export default function ClientHub() {
 	const newVarInputRef = useRef<HTMLInputElement>(null);
 
 	// Build client documents list from .lily file, sorted by modification date
-	const clientDocs = useMemo(() => {
+	const allDocs = useMemo(() => {
 		if (!lilyFile?.documents) return [];
 		return Object.entries(lilyFile.documents)
 			.map(([filename, meta]) => ({
@@ -64,6 +76,22 @@ export default function ClientHub() {
 			);
 	}, [lilyFile]);
 
+	// Separate the questionnaire from other documents
+	const questionnaireDocs = useMemo(
+		() =>
+			allDocs.filter(
+				(d) => d.templateRelPath === QUESTIONNAIRE_FILENAME,
+			),
+		[allDocs],
+	);
+	const otherDocs = useMemo(
+		() =>
+			allDocs.filter(
+				(d) => d.templateRelPath !== QUESTIONNAIRE_FILENAME,
+			),
+		[allDocs],
+	);
+
 	// Sort variables alphabetically for display
 	const sortedVariables = useMemo(() => {
 		if (!lilyFile?.variables) return [];
@@ -73,7 +101,6 @@ export default function ClientHub() {
 	}, [lilyFile]);
 
 	const handleVariableBlur = (name: string, value: string) => {
-		// Auto-save on blur: persist to .lily file
 		const currentValue = lilyFile?.variables[name] ?? "";
 		if (value !== currentValue) {
 			saveClientVariable(name, value);
@@ -89,7 +116,6 @@ export default function ClientHub() {
 			setNewVarName("");
 			setAddingVar(false);
 		} catch (err) {
-			// Variable already exists or other error — keep the input open
 			console.error("Failed to add variable:", err);
 		}
 	};
@@ -105,23 +131,14 @@ export default function ClientHub() {
 
 	const handleStartAddVar = () => {
 		setAddingVar(true);
-		// Focus the input after it renders
 		setTimeout(() => newVarInputRef.current?.focus(), 0);
 	};
 
 	const handleAddDocument = () => {
-		// Load templates if needed, then navigate to template picker
 		if (settings.templates_dir) {
 			loadTemplates(settings.templates_dir);
 		}
 		startAddDocument();
-	};
-
-	const handleClientDocClick = (
-		filename: string,
-		templateRelPath: string,
-	) => {
-		openDocument(filename, templateRelPath);
 	};
 
 	const folderName = workingDir ? getFolderName(workingDir) : "Client";
@@ -161,10 +178,81 @@ export default function ClientHub() {
 				</div>
 			)}
 
-			{/* Two-panel layout: variables + documents */}
+			{/* Two-panel layout: documents (main) + variables (sidebar) */}
 			<div className="flex flex-1 overflow-hidden">
-				{/* Left panel: Client Variables */}
+				{/* Main panel: Documents */}
 				<div className="flex-1 overflow-y-auto p-4 border-r border-base-300">
+					<div className="flex items-center justify-between mb-4">
+						<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50">
+							Documents
+						</h3>
+						<button
+							type="button"
+							className="btn btn-primary btn-xs"
+							onClick={handleAddDocument}
+						>
+							+ New Document
+						</button>
+					</div>
+
+					{allDocs.length === 0 ? (
+						<div className="text-sm text-base-content/50 space-y-3">
+							<p>No documents in this folder yet.</p>
+							<button
+								type="button"
+								className="btn btn-primary btn-sm"
+								onClick={handleAddDocument}
+							>
+								Add New Document
+							</button>
+						</div>
+					) : (
+						<div className="flex flex-col gap-1">
+							{/* Client Questionnaire section */}
+							{questionnaireDocs.length > 0 && (
+								<>
+									<div className="mb-1">
+										<span className="text-xs font-semibold uppercase tracking-wider text-base-content/40">
+											Client Questionnaire
+										</span>
+									</div>
+									{questionnaireDocs.map((doc) => (
+										<DocumentRow
+											key={doc.filename}
+											doc={doc}
+											onOpen={openDocument}
+											onDelete={deleteDocument}
+											onNewVersion={newVersionDocument}
+											onOpenTemplate={openTemplateFile}
+											onReload={reloadLilyFile}
+										/>
+									))}
+									{otherDocs.length > 0 && (
+										<div className="divider my-2 text-xs text-base-content/30">
+											Documents
+										</div>
+									)}
+								</>
+							)}
+
+							{/* Other documents */}
+							{otherDocs.map((doc) => (
+								<DocumentRow
+									key={doc.filename}
+									doc={doc}
+									onOpen={openDocument}
+									onDelete={deleteDocument}
+									onNewVersion={newVersionDocument}
+									onOpenTemplate={openTemplateFile}
+									onReload={reloadLilyFile}
+								/>
+							))}
+						</div>
+					)}
+				</div>
+
+				{/* Right sidebar: Client Variables */}
+				<div className="w-80 shrink-0 overflow-y-auto p-4 bg-base-100">
 					<div className="flex items-center justify-between mb-4">
 						<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50">
 							Client Variables
@@ -238,84 +326,195 @@ export default function ClientHub() {
 						</div>
 					)}
 				</div>
-
-				{/* Right panel: Documents */}
-				<div className="w-80 shrink-0 overflow-y-auto p-4 bg-base-100">
-					<div className="flex items-center justify-between mb-3">
-						<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50">
-							Documents
-						</h3>
-						<button
-							type="button"
-							className="btn btn-primary btn-xs"
-							onClick={handleAddDocument}
-						>
-							+ New
-						</button>
-					</div>
-
-					{clientDocs.length === 0 ? (
-						<div className="text-sm text-base-content/50 space-y-3">
-							<p>No documents in this folder yet.</p>
-							<button
-								type="button"
-								className="btn btn-primary btn-sm w-full"
-								onClick={handleAddDocument}
-							>
-								Add New Document
-							</button>
-						</div>
-					) : (
-						<div className="flex flex-col gap-1">
-							{clientDocs.map((doc) => (
-								<button
-									type="button"
-									key={doc.filename}
-									className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal"
-									onClick={() =>
-										handleClientDocClick(
-											doc.filename,
-											doc.templateRelPath,
-										)
-									}
-								>
-									<div className="flex flex-col items-start gap-0.5 min-w-0">
-										<span className="font-medium truncate w-full">
-											{stripDocx(doc.filename)}
-										</span>
-										<span className="text-xs text-base-content/40 truncate w-full">
-											from{" "}
-											{stripDocx(
-												doc.templateRelPath
-													.split("/")
-													.pop() ??
-													doc.templateRelPath,
-											)}
-											{" \u00B7 "}
-											{formatDate(doc.modifiedAt)}
-										</span>
-									</div>
-								</button>
-							))}
-
-							<div className="mt-2">
-								<button
-									type="button"
-									className="btn btn-ghost btn-sm w-full text-base-content/50"
-									onClick={handleAddDocument}
-								>
-									+ Add New Document
-								</button>
-							</div>
-						</div>
-					)}
-				</div>
 			</div>
 		</div>
 	);
 }
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
+
+function DocumentRow({
+	doc,
+	onOpen,
+	onDelete,
+	onNewVersion,
+	onOpenTemplate,
+	onReload,
+}: {
+	doc: ClientDoc;
+	onOpen: (filename: string, templateRelPath: string) => void;
+	onDelete: (filename: string) => Promise<void>;
+	onNewVersion: (filename: string) => Promise<void>;
+	onOpenTemplate: (templateRelPath: string) => Promise<void>;
+	onReload: () => Promise<void>;
+}) {
+	const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(
+		null,
+	);
+	const [confirmingDelete, setConfirmingDelete] = useState(false);
+	const menuRef = useRef<HTMLDivElement>(null);
+	const deleteDialogRef = useRef<HTMLDialogElement>(null);
+
+	// Close the context menu when clicking outside
+	useEffect(() => {
+		if (!menuPos) return;
+
+		const handleClick = (e: MouseEvent) => {
+			if (
+				menuRef.current &&
+				!menuRef.current.contains(e.target as Node)
+			) {
+				setMenuPos(null);
+			}
+		};
+		const handleEscape = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setMenuPos(null);
+		};
+
+		document.addEventListener("mousedown", handleClick);
+		document.addEventListener("keydown", handleEscape);
+		return () => {
+			document.removeEventListener("mousedown", handleClick);
+			document.removeEventListener("keydown", handleEscape);
+		};
+	}, [menuPos]);
+
+	const handleContextMenu = (e: React.MouseEvent) => {
+		e.preventDefault();
+		setMenuPos({ x: e.clientX, y: e.clientY });
+	};
+
+	const handleNewVersion = async () => {
+		setMenuPos(null);
+		await onNewVersion(doc.filename);
+	};
+
+	const handleDeleteClick = () => {
+		setMenuPos(null);
+		setConfirmingDelete(true);
+		setTimeout(() => deleteDialogRef.current?.showModal(), 0);
+	};
+
+	const handleConfirmDelete = async () => {
+		deleteDialogRef.current?.close();
+		setConfirmingDelete(false);
+		await onDelete(doc.filename);
+	};
+
+	const handleCancelDelete = () => {
+		deleteDialogRef.current?.close();
+		setConfirmingDelete(false);
+	};
+
+	const handleOpenTemplate = async () => {
+		setMenuPos(null);
+		await onOpenTemplate(doc.templateRelPath);
+	};
+
+	return (
+		<>
+			<button
+				type="button"
+				className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal"
+				onClick={() => onOpen(doc.filename, doc.templateRelPath)}
+				onContextMenu={handleContextMenu}
+			>
+				<div className="flex flex-col items-start gap-0.5 min-w-0">
+					<span className="font-medium truncate w-full">
+						{stripDocx(doc.filename)}
+					</span>
+					<span className="text-xs text-base-content/40 truncate w-full">
+						from{" "}
+						{stripDocx(
+							doc.templateRelPath.split("/").pop() ??
+								doc.templateRelPath,
+						)}
+						{" \u00B7 "}
+						{formatDate(doc.modifiedAt)}
+					</span>
+				</div>
+			</button>
+
+			{/* Context menu */}
+			{menuPos && (
+				<div
+					ref={menuRef}
+					className="fixed z-50 menu bg-base-200 rounded-box shadow-lg border border-base-300 w-48 p-1"
+					style={{ left: menuPos.x, top: menuPos.y }}
+				>
+					<li>
+						<button
+							type="button"
+							className="text-sm"
+							onClick={handleNewVersion}
+						>
+							New Version
+						</button>
+					</li>
+					<li>
+						<button
+							type="button"
+							className="text-sm text-error"
+							onClick={handleDeleteClick}
+						>
+							Delete
+						</button>
+					</li>
+					<div className="divider my-0" />
+					<li>
+						<button
+							type="button"
+							className="text-sm"
+							onClick={handleOpenTemplate}
+						>
+							Open Template
+						</button>
+					</li>
+				</div>
+			)}
+
+			{/* Delete confirmation dialog */}
+			{confirmingDelete && (
+				// biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close is a convenience
+				<dialog
+					ref={deleteDialogRef}
+					className="modal"
+					onClick={(e) => {
+						if (e.target === deleteDialogRef.current)
+							handleCancelDelete();
+					}}
+				>
+					<div className="modal-box">
+						<h3 className="text-lg font-bold mb-2">
+							Delete document?
+						</h3>
+						<p className="text-base-content/70 mb-4">
+							Are you sure you want to delete{" "}
+							<strong>{doc.filename}</strong>? This cannot be
+							undone.
+						</p>
+						<div className="modal-action">
+							<button
+								type="button"
+								className="btn btn-ghost btn-sm"
+								onClick={handleCancelDelete}
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								className="btn btn-error btn-sm"
+								onClick={handleConfirmDelete}
+							>
+								Delete
+							</button>
+						</div>
+					</div>
+				</dialog>
+			)}
+		</>
+	);
+}
 
 function VariableField({
 	name,
