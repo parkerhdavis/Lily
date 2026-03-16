@@ -1,5 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import type { VariableInfo } from "@/types";
+
+/**
+ * Fuzzy-filter a list of variables by a search query.
+ * The query is split into whitespace-separated tokens. A variable matches
+ * if every token appears (case-insensitive) in either the variable name
+ * or its current value.
+ */
+function fuzzyFilterVariables(
+	variables: VariableInfo[],
+	values: Record<string, string>,
+	query: string,
+): VariableInfo[] {
+	const trimmed = query.trim().toLowerCase();
+	if (!trimmed) return variables;
+
+	const tokens = trimmed.split(/\s+/);
+	return variables.filter((v) => {
+		const name = v.display_name.toLowerCase();
+		const value = (values[v.display_name] ?? "").toLowerCase();
+		return tokens.every((t) => name.includes(t) || value.includes(t));
+	});
+}
 
 /** Extract the display filename (without .docx extension) from a full path. */
 function getDisplayName(docPath: string): string {
@@ -43,12 +66,13 @@ export default function VariableEditor() {
 		updateVariable,
 		renameDocument,
 		saveDocument,
-		setStep,
+		returnToHub,
 	} = useWorkflowStore();
 
 	const [selectedVariable, setSelectedVariable] = useState<string | null>(
 		null,
 	);
+	const [varSearch, setVarSearch] = useState("");
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
 	const titleInputRef = useRef<HTMLInputElement>(null);
@@ -147,6 +171,11 @@ export default function VariableEditor() {
 		updateVariable(name, value);
 	};
 
+	const filteredVariables = useMemo(
+		() => fuzzyFilterVariables(variables, variableValues, varSearch),
+		[variables, variableValues, varSearch],
+	);
+
 	const filledCount = Object.values(variableValues).filter(
 		(v) => v.length > 0,
 	).length;
@@ -158,7 +187,7 @@ export default function VariableEditor() {
 				<button
 					type="button"
 					className="btn btn-ghost btn-sm"
-					onClick={() => setStep("select-template")}
+					onClick={returnToHub}
 				>
 					&larr; Back
 				</button>
@@ -220,16 +249,29 @@ export default function VariableEditor() {
 			<div className="flex flex-1 overflow-hidden">
 				{/* Variable sidebar */}
 				<div className="w-80 shrink-0 border-r border-base-300 overflow-y-auto p-4 bg-base-100">
-					<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50 mb-4">
+					<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50 mb-3">
 						Variables
 					</h3>
+					{variables.length > 0 && (
+						<input
+							type="text"
+							className="input input-bordered input-sm w-full mb-3"
+							placeholder="Search variables..."
+							value={varSearch}
+							onChange={(e) => setVarSearch(e.target.value)}
+						/>
+					)}
 					{variables.length === 0 ? (
 						<p className="text-sm text-base-content/50">
 							No variables found in this document.
 						</p>
+					) : filteredVariables.length === 0 ? (
+						<p className="text-sm text-base-content/50">
+							No variables match your search.
+						</p>
 					) : (
 						<div className="flex flex-col gap-3">
-							{variables.map((varInfo) => {
+							{filteredVariables.map((varInfo) => {
 								const name = varInfo.display_name;
 								const isFilled = Boolean(variableValues[name]);
 								return (
