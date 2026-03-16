@@ -1925,6 +1925,7 @@ dependencies = [
  "chrono",
  "dirs",
  "docx-rs",
+ "regex",
  "serde",
  "serde_json",
  "tauri",
