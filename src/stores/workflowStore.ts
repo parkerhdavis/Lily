@@ -117,11 +117,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				variables: variableValues,
 			});
 
-			// Refresh preview after save
-			const documentHtml = await invoke<string>("get_document_html", {
-				docxPath: documentPath,
-			});
-			set({ documentHtml, loading: false });
+			// Don't refresh documentHtml — the live preview depends on the
+			// original placeholder spans remaining in the HTML so the
+			// client-side replacement continues to work after save.
+			set({ loading: false });
 		} catch (err) {
 			set({ error: String(err), loading: false });
 		}
