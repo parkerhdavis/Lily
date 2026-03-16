@@ -21,3 +21,8 @@ export interface SidecarFile {
 	version: number;
 	documents: Record<string, DocumentMeta>;
 }
+
+/** A node in the template folder tree. */
+export type TemplateTreeNode =
+	| { kind: "folder"; name: string; children: TemplateTreeNode[] }
+	| { kind: "file"; name: string; relPath: string };
