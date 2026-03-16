@@ -8,7 +8,7 @@ use zip::read::ZipArchive;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
-use crate::sidecar;
+use crate::lily_file;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -43,8 +43,8 @@ pub fn copy_template(
     let dest = Path::new(&dest_dir).join(&filename);
     fs::copy(src, &dest).map_err(|e| format!("Failed to copy template: {}", e))?;
 
-    // Record template provenance in the sidecar file
-    sidecar::record_document(&dest_dir, &filename, &template_rel_path)?;
+    // Record template provenance in the .lily file
+    lily_file::record_document(&dest_dir, &filename, &template_rel_path)?;
 
     Ok(dest.to_string_lossy().to_string())
 }
@@ -78,10 +78,10 @@ pub fn rename_document(docx_path: String, new_filename: String) -> Result<String
 
     fs::rename(&docx_path, &new_path).map_err(|e| format!("Failed to rename document: {}", e))?;
 
-    // Update the sidecar entry (best-effort)
+    // Update the .lily file entry (best-effort)
     let working_dir = parent.to_string_lossy().to_string();
-    if let Err(e) = sidecar::rename_document_entry(&working_dir, &old_filename, &new_filename) {
-        eprintln!("Warning: failed to update sidecar after rename: {}", e);
+    if let Err(e) = lily_file::rename_document_entry(&working_dir, &old_filename, &new_filename) {
+        eprintln!("Warning: failed to update .lily file after rename: {}", e);
     }
 
     Ok(new_path.to_string_lossy().to_string())
@@ -184,14 +184,14 @@ pub fn replace_variables(
     fs::write(&docx_path, output.into_inner())
         .map_err(|e| format!("Failed to write docx: {}", e))?;
 
-    // Update variable values in the sidecar file
+    // Update variable values in the .lily file
     let path = Path::new(&docx_path);
     if let (Some(parent), Some(filename)) = (path.parent(), path.file_name()) {
         let working_dir = parent.to_string_lossy().to_string();
         let filename = filename.to_string_lossy().to_string();
-        // Best-effort: don't fail the save if sidecar update fails
-        if let Err(e) = sidecar::update_document_variables(&working_dir, &filename, variables) {
-            eprintln!("Warning: failed to update sidecar: {}", e);
+        // Best-effort: don't fail the save if .lily file update fails
+        if let Err(e) = lily_file::update_variables(&working_dir, &filename, variables) {
+            eprintln!("Warning: failed to update .lily file: {}", e);
         }
     }
 
