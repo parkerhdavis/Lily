@@ -104,6 +104,28 @@ pub fn update_document_variables(
     write_sidecar(working_dir, &sidecar)
 }
 
+/// Rename a document entry in the sidecar (update the key from old to new filename).
+pub fn rename_document_entry(
+    working_dir: &str,
+    old_filename: &str,
+    new_filename: &str,
+) -> Result<(), String> {
+    let mut sidecar = read_sidecar(working_dir)?;
+    match sidecar.documents.remove(old_filename) {
+        Some(mut meta) => {
+            meta.modified_at = Utc::now();
+            sidecar.documents.insert(new_filename.to_string(), meta);
+        }
+        None => {
+            return Err(format!(
+                "Document '{}' not found in sidecar file",
+                old_filename
+            ));
+        }
+    }
+    write_sidecar(working_dir, &sidecar)
+}
+
 // --- Tauri commands ---
 
 /// Load the sidecar file for a working directory.

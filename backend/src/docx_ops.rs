@@ -32,6 +32,44 @@ pub fn copy_template(
     Ok(dest.to_string_lossy().to_string())
 }
 
+/// Rename a document file on disk and update its sidecar entry.
+/// Returns the new full path.
+#[tauri::command]
+pub fn rename_document(docx_path: String, new_filename: String) -> Result<String, String> {
+    let path = Path::new(&docx_path);
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Cannot determine parent directory".to_string())?;
+    let old_filename = path
+        .file_name()
+        .ok_or_else(|| "Cannot determine filename".to_string())?
+        .to_string_lossy()
+        .to_string();
+
+    // Ensure the new filename ends with .docx
+    let new_filename = if new_filename.ends_with(".docx") {
+        new_filename
+    } else {
+        format!("{}.docx", new_filename)
+    };
+
+    let new_path = parent.join(&new_filename);
+
+    if new_path.exists() {
+        return Err(format!("A file named '{}' already exists", new_filename));
+    }
+
+    fs::rename(&docx_path, &new_path).map_err(|e| format!("Failed to rename document: {}", e))?;
+
+    // Update the sidecar entry (best-effort)
+    let working_dir = parent.to_string_lossy().to_string();
+    if let Err(e) = sidecar::rename_document_entry(&working_dir, &old_filename, &new_filename) {
+        eprintln!("Warning: failed to update sidecar after rename: {}", e);
+    }
+
+    Ok(new_path.to_string_lossy().to_string())
+}
+
 /// Extract all unique {Variable} placeholders from a .docx file.
 /// Returns them sorted alphabetically.
 #[tauri::command]
