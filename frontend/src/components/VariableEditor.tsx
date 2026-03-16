@@ -56,11 +56,33 @@ const VARIABLE_SPAN_RE =
 
 /**
  * Regex that matches a conditional variable-highlight span.
+ * Uses [\s\S]*? for the inner content to handle nested braces.
  * Captures: [1] = canonical key, [2] = original case (label),
  *           [3] = true text, [4] = false text
  */
 const CONDITIONAL_SPAN_RE =
-	/<span class="variable-highlight" data-variable="([^"]*)" data-original-case="([^"]*)" data-conditional="true" data-true-text="([^"]*)" data-false-text="([^"]*)">\{[^}]*\}<\/span>/g;
+	/<span class="variable-highlight" data-variable="([^"]*)" data-original-case="([^"]*)" data-conditional="true" data-true-text="([^"]*)" data-false-text="([^"]*)">\{[\s\S]*?\}<\/span>/g;
+
+/**
+ * Resolve `{Variable Name}` placeholders in a text string using the current
+ * variable values and canonical-to-display name mapping. Used to fill in
+ * nested replacement variables inside conditional text branches.
+ */
+function resolveNestedVariables(
+	text: string,
+	variableValues: Record<string, string>,
+	canonicalToDisplay: Record<string, string>,
+): string {
+	return text.replace(/\{([^}]+)\}/g, (_match, innerName: string) => {
+		const trimmed = innerName.trim();
+		const canonical = trimmed.toLowerCase();
+		const displayName = canonicalToDisplay[canonical];
+		if (!displayName) return _match;
+		const value = variableValues[displayName] ?? "";
+		if (!value) return _match;
+		return applyCasing(value, trimmed);
+	});
+}
 
 export default function VariableEditor() {
 	const {
@@ -164,7 +186,13 @@ export default function VariableEditor() {
 
 				const value = variableValues[displayName] ?? "false";
 				const isTrue = value === "true";
-				const resolvedText = isTrue ? trueText : falseText;
+				const branchText = isTrue ? trueText : falseText;
+				// Resolve any nested {Var} references in the branch text
+				const resolvedText = resolveNestedVariables(
+					branchText,
+					variableValues,
+					canonicalToDisplay,
+				);
 				const isSelected = displayName === selectedVariable;
 
 				// If resolved text is empty, show the label as placeholder

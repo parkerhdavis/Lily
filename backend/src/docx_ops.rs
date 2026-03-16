@@ -159,24 +159,20 @@ fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
             },
             Ok(xml::reader::XmlEvent::Characters(text)) => {
                 if in_t {
-                    // Scan for {Variable} patterns in text content
+                    // Scan for {Variable} patterns in text content, with
+                    // brace-depth tracking to support nested variables inside
+                    // conditional branches.
                     let mut chars = text.chars().peekable();
                     while let Some(c) = chars.next() {
                         if c == '{' {
-                            let mut var_name = String::new();
-                            let mut found_close = false;
-                            for inner in chars.by_ref() {
-                                if inner == '}' {
-                                    found_close = true;
-                                    break;
+                            if let Some(var_name) = scan_brace_content(&mut chars) {
+                                if var_name.is_empty() {
+                                    continue;
                                 }
-                                var_name.push(inner);
-                            }
-                            if found_close && !var_name.is_empty() && !var_name.contains('{') {
                                 let trimmed = var_name.trim().to_string();
                                 // For conditional variables, use the label as the key
                                 if is_conditional_variable(&trimmed) {
-                                    if let Some((label, _, _)) =
+                                    if let Some((label, true_text, false_text)) =
                                         parse_conditional_variable(&trimmed)
                                     {
                                         let key = label.to_lowercase();
@@ -188,8 +184,24 @@ fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
                                         if !variants.contains(&trimmed) {
                                             variants.push(trimmed);
                                         }
+
+                                        // Also register any nested replacement
+                                        // variables found inside the true/false branches
+                                        for branch in [&true_text, &false_text] {
+                                            for nested in extract_nested_variables(branch) {
+                                                let nkey = nested.to_lowercase();
+                                                if !groups.contains_key(&nkey) {
+                                                    keys_in_order.push(nkey.clone());
+                                                }
+                                                let nvariants = groups.entry(nkey).or_default();
+                                                if !nvariants.contains(&nested) {
+                                                    nvariants.push(nested);
+                                                }
+                                            }
+                                        }
                                     }
-                                } else {
+                                } else if !trimmed.contains('{') {
+                                    // Simple replacement variable (no nested braces)
                                     let key = trimmed.to_lowercase();
                                     if !groups.contains_key(&key) {
                                         keys_in_order.push(key.clone());
@@ -261,14 +273,16 @@ pub fn replace_variables(
     for info in &var_infos {
         if let Some(value) = variables.get(&info.display_name) {
             if info.is_conditional {
-                // For conditional variables, resolve the true/false text
-                // The stored value is "true" or "false"
+                // For conditional variables, resolve the true/false text.
+                // The stored value is "true" or "false".
                 let is_true = value == "true";
                 for variant in &info.variants {
                     if let Some((label, true_text, false_text)) =
                         parse_conditional_variable(variant)
                     {
-                        let resolved = if is_true { true_text } else { false_text };
+                        let branch = if is_true { true_text } else { false_text };
+                        // Resolve any nested {Var} references within the branch
+                        let resolved = resolve_nested_variables(&branch, &variables);
                         // Use the label as the display_name for the SDT tag
                         placeholder_map.insert(variant.clone(), (label, resolved));
                     }
@@ -296,7 +310,9 @@ pub fn replace_variables(
                 // Use first variant to get the true/false text
                 if let Some(variant) = info.variants.first() {
                     if let Some((_, true_text, false_text)) = parse_conditional_variable(variant) {
-                        let resolved = if is_true { true_text } else { false_text };
+                        let branch = if is_true { true_text } else { false_text };
+                        // Resolve any nested {Var} references within the branch
+                        let resolved = resolve_nested_variables(&branch, &variables);
                         sdt_value_map.insert(info.display_name.clone(), resolved);
                     }
                 }
@@ -442,24 +458,31 @@ fn normalize_split_variables(xml: &str) -> String {
         // Extract the text content between <w:t...> and </w:t>
         let text_content = &t_open_re.captures(remaining).unwrap()[1];
 
-        // Check if this text has an unmatched `{`
-        let open_count = text_content.chars().filter(|&c| c == '{').count();
-        let close_count = text_content.chars().filter(|&c| c == '}').count();
+        // Check if this text has unbalanced braces — more `{` than `}` means
+        // part of a variable extends into subsequent runs. Use depth tracking
+        // to support nested variables (e.g., conditionals containing {Var}).
+        let mut brace_depth: i32 = 0;
+        for ch in text_content.chars() {
+            if ch == '{' {
+                brace_depth += 1;
+            } else if ch == '}' {
+                brace_depth -= 1;
+            }
+        }
 
-        if open_count <= close_count || !text_content.contains('{') {
-            // No unmatched `{`, move on
+        if brace_depth <= 0 || !text_content.contains('{') {
+            // All braces balanced or net-negative — no split variable here
             search_from = abs_end;
             continue;
         }
 
-        // We have an unmatched `{`. Find the position of the last unmatched `{`
-        // and collect text from subsequent <w:t> elements until we find the `}`
+        // We have unbalanced `{`. Collect text from subsequent <w:t> elements
+        // until the brace depth returns to zero (outermost `}` is found).
         let mut merged_text = text_content.to_string();
         let mut scan_pos = abs_end;
         let mut last_consumed_end = abs_end;
         let mut found_close = false;
 
-        // We need to scan forward through subsequent runs to find `}`
         while scan_pos < result.len() {
             let scan_remaining = &result[scan_pos..];
             let Some(next_t) = t_open_re.find(scan_remaining) else {
@@ -469,8 +492,7 @@ fn normalize_split_variables(xml: &str) -> String {
             let next_abs_start = scan_pos + next_t.start();
             let next_abs_end = scan_pos + next_t.end();
 
-            // Check if there's a </w:r> and <w:r> between current and next <w:t>
-            // (we only merge within the same paragraph — if we hit </w:p> stop)
+            // Only merge within the same paragraph — stop at </w:p>
             let between = &result[last_consumed_end..next_abs_start];
             if between.contains("</w:p>") {
                 break;
@@ -480,7 +502,16 @@ fn normalize_split_variables(xml: &str) -> String {
             merged_text.push_str(next_text);
             last_consumed_end = next_abs_end;
 
-            if next_text.contains('}') {
+            // Update brace depth with the new text
+            for ch in next_text.chars() {
+                if ch == '{' {
+                    brace_depth += 1;
+                } else if ch == '}' {
+                    brace_depth -= 1;
+                }
+            }
+
+            if brace_depth <= 0 {
                 found_close = true;
                 break;
             }
@@ -489,30 +520,20 @@ fn normalize_split_variables(xml: &str) -> String {
         }
 
         if !found_close {
-            // Couldn't find the closing `}`, skip this `{`
+            // Couldn't find balancing `}`, skip
             search_from = abs_end;
             continue;
         }
 
         // Verify the merged text actually contains a valid {Variable} pattern
+        // (uses depth-tracking to support nested variables in conditionals)
         let has_valid_var = {
             let mut found = false;
             let mut chars = merged_text.chars().peekable();
             while let Some(c) = chars.next() {
-                if c == '{' {
-                    let mut name = String::new();
-                    let mut closed = false;
-                    for inner in chars.by_ref() {
-                        if inner == '}' {
-                            closed = true;
-                            break;
-                        }
-                        name.push(inner);
-                    }
-                    if closed && !name.is_empty() && !name.contains('{') {
-                        found = true;
-                        break;
-                    }
+                if c == '{' && scan_brace_content(&mut chars).is_some() {
+                    found = true;
+                    break;
                 }
             }
             found
@@ -1189,19 +1210,15 @@ fn find_variables(text: &str) -> Vec<VariableInfo> {
 
     while let Some(c) = chars.next() {
         if c == '{' {
-            let mut var_name = String::new();
-            let mut found_close = false;
-            for inner in chars.by_ref() {
-                if inner == '}' {
-                    found_close = true;
-                    break;
+            if let Some(var_name) = scan_brace_content(&mut chars) {
+                if var_name.is_empty() {
+                    continue;
                 }
-                var_name.push(inner);
-            }
-            if found_close && !var_name.is_empty() && !var_name.contains('{') {
                 let trimmed = var_name.trim().to_string();
                 if is_conditional_variable(&trimmed) {
-                    if let Some((label, _, _)) = parse_conditional_variable(&trimmed) {
+                    if let Some((label, true_text, false_text)) =
+                        parse_conditional_variable(&trimmed)
+                    {
                         let key = label.to_lowercase();
                         conditional_keys.insert(key.clone());
                         if !groups.contains_key(&key) {
@@ -1211,8 +1228,23 @@ fn find_variables(text: &str) -> Vec<VariableInfo> {
                         if !variants.contains(&trimmed) {
                             variants.push(trimmed);
                         }
+
+                        // Also register nested replacement variables
+                        for branch in [&true_text, &false_text] {
+                            for nested in extract_nested_variables(branch) {
+                                let nkey = nested.to_lowercase();
+                                if !groups.contains_key(&nkey) {
+                                    keys_in_order.push(nkey.clone());
+                                }
+                                let nvariants = groups.entry(nkey).or_default();
+                                if !nvariants.contains(&nested) {
+                                    nvariants.push(nested);
+                                }
+                            }
+                        }
                     }
-                } else {
+                } else if !trimmed.contains('{') {
+                    // Simple replacement variable (no nested braces)
                     let key = trimmed.to_lowercase();
                     if !groups.contains_key(&key) {
                         keys_in_order.push(key.clone());
@@ -1286,6 +1318,32 @@ fn is_title_case(s: &str) -> bool {
     true
 }
 
+/// Consume characters after an opening `{` from a peekable char iterator,
+/// tracking brace depth to handle nested `{...}` blocks (e.g., replacement
+/// variables inside conditional text branches). Returns the full content
+/// between the outermost braces, or `None` if the closing `}` is never found.
+///
+/// After a successful call the iterator is positioned just past the closing `}`.
+fn scan_brace_content(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
+    let mut depth: u32 = 1;
+    let mut content = String::new();
+    for c in chars.by_ref() {
+        if c == '{' {
+            depth += 1;
+            content.push(c);
+        } else if c == '}' {
+            depth -= 1;
+            if depth == 0 {
+                return Some(content);
+            }
+            content.push(c);
+        } else {
+            content.push(c);
+        }
+    }
+    None // Unbalanced — never found the outermost closing brace
+}
+
 /// Check whether a variable's raw content (between `{}`) is a conditional
 /// variable. Conditional variables contain `??` as the ternary operator.
 fn is_conditional_variable(raw_content: &str) -> bool {
@@ -1312,6 +1370,86 @@ fn parse_conditional_variable(raw_content: &str) -> Option<(String, String, Stri
         (rest.trim().to_string(), String::new())
     };
     Some((label, true_text, false_text))
+}
+
+/// Extract all `{Variable Name}` references from a text string.
+/// Returns a list of the raw inner content of each `{...}` found.
+/// Only returns simple (non-nested) replacement variables — i.e., variables
+/// whose content does NOT itself contain `{`.
+fn extract_nested_variables(text: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '{' {
+            let mut inner = String::new();
+            let mut found_close = false;
+            for ch in chars.by_ref() {
+                if ch == '}' {
+                    found_close = true;
+                    break;
+                }
+                inner.push(ch);
+            }
+            if found_close && !inner.is_empty() && !inner.contains('{') {
+                result.push(inner.trim().to_string());
+            }
+        }
+    }
+    result
+}
+
+/// Resolve `{Variable Name}` references in a text string using the provided
+/// variable values map. Applies casing rules to each replacement based on the
+/// original casing of the placeholder.
+fn resolve_nested_variables(text: &str, variables: &HashMap<String, String>) -> String {
+    let mut result = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '{' {
+            let mut inner = String::new();
+            let mut found_close = false;
+            for ch in chars.by_ref() {
+                if ch == '}' {
+                    found_close = true;
+                    break;
+                }
+                inner.push(ch);
+            }
+            if found_close && !inner.is_empty() && !inner.contains('{') {
+                let trimmed = inner.trim();
+                // Look up value by case-insensitive key
+                let key = trimmed.to_lowercase();
+                let resolved = variables
+                    .iter()
+                    .find(|(k, _)| k.to_lowercase() == key)
+                    .map(|(_, v)| apply_casing(v, trimmed));
+                if let Some(value) = resolved {
+                    if !value.is_empty() {
+                        result.push_str(&value);
+                    } else {
+                        // Empty value — keep the placeholder
+                        result.push('{');
+                        result.push_str(&inner);
+                        result.push('}');
+                    }
+                } else {
+                    // Unknown variable — keep the placeholder
+                    result.push('{');
+                    result.push_str(&inner);
+                    result.push('}');
+                }
+            } else {
+                result.push('{');
+                result.push_str(&inner);
+                if found_close {
+                    result.push('}');
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 /// Apply the casing pattern of `original_var_name` to `value`.
@@ -2287,16 +2425,11 @@ fn highlight_variables(text: &str) -> String {
 
     while let Some(c) = chars.next() {
         if c == '{' {
-            let mut var_content = String::new();
-            let mut found_close = false;
-            for inner in chars.by_ref() {
-                if inner == '}' {
-                    found_close = true;
-                    break;
+            if let Some(var_content) = scan_brace_content(&mut chars) {
+                if var_content.is_empty() {
+                    result.push_str("{}");
+                    continue;
                 }
-                var_content.push(inner);
-            }
-            if found_close && !var_content.is_empty() {
                 let trimmed = var_content.trim();
                 if is_conditional_variable(trimmed) {
                     if let Some((label, true_text, false_text)) =
@@ -2314,19 +2447,25 @@ fn highlight_variables(text: &str) -> String {
                     } else {
                         // Malformed conditional — treat as plain text
                         result.push('{');
-                        result.push_str(&var_content);
+                        result.push_str(&escape_html(&var_content));
                         result.push('}');
                     }
-                } else {
+                } else if !trimmed.contains('{') {
+                    // Simple replacement variable
                     let canonical = trimmed.to_lowercase();
                     result.push_str(&format!(
                         "<span class=\"variable-highlight\" data-variable=\"{}\" data-original-case=\"{}\">{{{}}}</span>",
                         canonical, var_content, var_content
                     ));
+                } else {
+                    // Contains nested braces but isn't a conditional — emit as-is
+                    result.push('{');
+                    result.push_str(&var_content);
+                    result.push('}');
                 }
             } else {
+                // Unbalanced brace — emit the `{` literally
                 result.push('{');
-                result.push_str(&var_content);
             }
         } else {
             result.push(c);
@@ -2767,6 +2906,118 @@ mod tests {
         assert!(result.contains("data-conditional=\"true\""));
         assert!(result.contains("data-true-text=\"\""));
         assert!(result.contains("data-false-text=\"couple text\""));
+    }
+
+    // ─── Nested variable tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_find_variables_nested_in_conditional() {
+        let text =
+            "Hello {Client Is Couple ?? I am married to {Client Spouse Name} :: I am not married}";
+        let vars = find_variables(text);
+        assert_eq!(vars.len(), 2, "Expected 2 variables, got: {:?}", vars);
+        // The conditional should be first (appears first in text)
+        assert_eq!(vars[0].display_name, "Client Is Couple");
+        assert!(vars[0].is_conditional);
+        // The nested replacement variable should also be extracted
+        assert_eq!(vars[1].display_name, "Client Spouse Name");
+        assert!(!vars[1].is_conditional);
+    }
+
+    #[test]
+    fn test_find_all_variables_nested_in_conditional() {
+        // Simulate XML with a nested conditional variable
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{Client Is Couple ?? married to {Spouse Name} :: single}</w:t></w:r></w:p></w:body></w:document>"#;
+        let normalized = normalize_split_variables(xml);
+        let vars = find_all_variables(&normalized);
+        assert_eq!(vars.len(), 2, "Expected 2 variables, got: {:?}", vars);
+        assert_eq!(vars[0].display_name, "Client Is Couple");
+        assert!(vars[0].is_conditional);
+        assert_eq!(vars[1].display_name, "Spouse Name");
+        assert!(!vars[1].is_conditional);
+    }
+
+    #[test]
+    fn test_highlight_variables_nested_conditional() {
+        let result = highlight_variables(
+            "{Client Is Couple ?? I am married to {Client Spouse Name} :: I am not married}",
+        );
+        // Should produce a single conditional span for the outer variable
+        assert!(
+            result.contains("data-conditional=\"true\""),
+            "Expected conditional attribute, got: {}",
+            result
+        );
+        assert!(
+            result.contains("data-variable=\"client is couple\""),
+            "Expected canonical key from label, got: {}",
+            result
+        );
+        // The true text should contain the nested {Client Spouse Name} reference
+        assert!(
+            result.contains("data-true-text=\"I am married to {Client Spouse Name}\""),
+            "Expected true text with nested var, got: {}",
+            result
+        );
+        assert!(
+            result.contains("data-false-text=\"I am not married\""),
+            "Expected false text, got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_resolve_nested_variables() {
+        let mut vars = HashMap::new();
+        vars.insert("Client Spouse Name".to_string(), "Jane Doe".to_string());
+        vars.insert("City".to_string(), "Denver".to_string());
+
+        let result =
+            resolve_nested_variables("I am married to {Client Spouse Name} in {City}", &vars);
+        assert_eq!(result, "I am married to Jane Doe in Denver");
+    }
+
+    #[test]
+    fn test_resolve_nested_variables_casing() {
+        let mut vars = HashMap::new();
+        vars.insert("Client Spouse Name".to_string(), "Jane Doe".to_string());
+
+        // ALL CAPS variant should uppercase the value
+        let result = resolve_nested_variables("married to {CLIENT SPOUSE NAME}", &vars);
+        assert_eq!(result, "married to JANE DOE");
+    }
+
+    #[test]
+    fn test_resolve_nested_variables_missing() {
+        let vars = HashMap::new();
+        let result = resolve_nested_variables("married to {Unknown Var}", &vars);
+        assert_eq!(result, "married to {Unknown Var}");
+    }
+
+    #[test]
+    fn test_scan_brace_content_nested() {
+        let text = "outer ?? text {inner} :: end}rest";
+        let mut chars = text.chars().peekable();
+        let content = scan_brace_content(&mut chars);
+        // Note: scan_brace_content is called AFTER the opening {, so we simulate
+        // by including the content after the first {
+        assert_eq!(content, Some("outer ?? text {inner} :: end".to_string()));
+    }
+
+    #[test]
+    fn test_scan_brace_content_simple() {
+        let text = "Client Name}more";
+        let mut chars = text.chars().peekable();
+        let content = scan_brace_content(&mut chars);
+        assert_eq!(content, Some("Client Name".to_string()));
+    }
+
+    #[test]
+    fn test_scan_brace_content_unbalanced() {
+        let text = "no closing brace";
+        let mut chars = text.chars().peekable();
+        let content = scan_brace_content(&mut chars);
+        assert_eq!(content, None);
     }
 
     #[test]
