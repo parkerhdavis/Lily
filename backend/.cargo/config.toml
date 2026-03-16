@@ -1,0 +1,7 @@
+# Cargo configuration for Lily backend
+# This configures the build output directory
+
+[build]
+# IMPORTANT: Use top-level target directory (../target) instead of backend/target
+# This keeps all build artifacts in one place at the project root
+target-dir = "../target"
