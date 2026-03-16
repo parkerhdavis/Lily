@@ -8,7 +8,10 @@ mod settings;
 use docx_ops::{
     copy_template, extract_variables, get_document_html, rename_document, replace_variables,
 };
-use lily_file::{load_lily_file_cmd, save_variables};
+use lily_file::{
+    add_client_variable, load_lily_file_cmd, remove_client_variable, save_client_variables,
+    save_variables,
+};
 use settings::{load_settings, save_settings};
 
 fn main() {
@@ -26,6 +29,9 @@ fn main() {
             list_templates,
             load_lily_file_cmd,
             save_variables,
+            save_client_variables,
+            add_client_variable,
+            remove_client_variable,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

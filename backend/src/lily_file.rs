@@ -273,3 +273,41 @@ pub fn save_variables(
 ) -> Result<(), String> {
     update_variables(&working_dir, &filename, variable_values)
 }
+
+/// Save client-level variable values without associating them with a specific
+/// document. Used by the Client Hub for direct variable editing.
+#[tauri::command]
+pub fn save_client_variables(
+    working_dir: String,
+    variable_values: HashMap<String, String>,
+) -> Result<(), String> {
+    let mut lily = read_lily_file(&working_dir)?;
+
+    for (key, value) in variable_values {
+        lily.variables.insert(key, value);
+    }
+
+    write_lily_file(&working_dir, &lily)
+}
+
+/// Add a new variable to the client-level pool with an empty value.
+/// Returns an error if the variable already exists (case-sensitive check on the key).
+#[tauri::command]
+pub fn add_client_variable(working_dir: String, variable_name: String) -> Result<(), String> {
+    let mut lily = read_lily_file(&working_dir)?;
+
+    if lily.variables.contains_key(&variable_name) {
+        return Err(format!("Variable '{}' already exists", variable_name));
+    }
+
+    lily.variables.insert(variable_name, String::new());
+    write_lily_file(&working_dir, &lily)
+}
+
+/// Remove a variable from the client-level pool.
+#[tauri::command]
+pub fn remove_client_variable(working_dir: String, variable_name: String) -> Result<(), String> {
+    let mut lily = read_lily_file(&working_dir)?;
+    lily.variables.remove(&variable_name);
+    write_lily_file(&working_dir, &lily)
+}

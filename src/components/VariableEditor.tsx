@@ -43,7 +43,7 @@ export default function VariableEditor() {
 		updateVariable,
 		renameDocument,
 		saveDocument,
-		setStep,
+		returnToHub,
 	} = useWorkflowStore();
 
 	const [selectedVariable, setSelectedVariable] = useState<string | null>(
@@ -158,7 +158,7 @@ export default function VariableEditor() {
 				<button
 					type="button"
 					className="btn btn-ghost btn-sm"
-					onClick={() => setStep("select-template")}
+					onClick={returnToHub}
 				>
 					&larr; Back
 				</button>

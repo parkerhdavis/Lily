@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { WorkflowStep, LilyFile, VariableInfo } from "@/types";
 
+const QUESTIONNAIRE_FILENAME = "ClientQuestionnaire.docx";
+
 interface WorkflowState {
 	step: WorkflowStep;
 	workingDir: string | null;
@@ -34,6 +36,18 @@ interface WorkflowState {
 	renameDocument: (newFilename: string) => Promise<void>;
 	saveDocument: () => Promise<void>;
 	refreshPreview: () => Promise<void>;
+	/** Save a single client variable (auto-save on blur from the Client Hub). */
+	saveClientVariable: (name: string, value: string) => Promise<void>;
+	/** Add a new variable to the client-level pool. */
+	addClientVariable: (name: string) => Promise<void>;
+	/** Remove a variable from the client-level pool. */
+	removeClientVariable: (name: string) => Promise<void>;
+	/** Reload the .lily file from disk into the store. */
+	reloadLilyFile: () => Promise<void>;
+	/** Navigate to Add New Document (template selection). */
+	startAddDocument: () => void;
+	/** Return to the Client Hub, clearing document-specific state. */
+	returnToHub: () => void;
 	reset: () => void;
 }
 
@@ -54,12 +68,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 	setStep: (step) => set({ step }),
 
 	setWorkingDir: (dir) => {
+		set({ workingDir: dir, step: "client-hub" });
+
 		// Load .lily file data for the selected working directory
 		invoke<LilyFile>("load_lily_file_cmd", { workingDir: dir })
 			.then((lilyFile) => set({ lilyFile }))
-			.catch((err) => console.error("Failed to load .lily file:", err));
-
-		set({ workingDir: dir, step: "select-template" });
+			.catch((err) =>
+				console.error("Failed to load .lily file:", err),
+			);
 	},
 
 	loadTemplates: async (templatesDir) => {
@@ -235,6 +251,113 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		} catch (err) {
 			console.error("Failed to refresh preview:", err);
 		}
+	},
+
+	saveClientVariable: async (name, value) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		try {
+			await invoke("save_client_variables", {
+				workingDir,
+				variableValues: { [name]: value },
+			});
+			// Update the local lilyFile state to reflect the change
+			const { lilyFile } = get();
+			if (lilyFile) {
+				set({
+					lilyFile: {
+						...lilyFile,
+						variables: { ...lilyFile.variables, [name]: value },
+					},
+				});
+			}
+		} catch (err) {
+			console.error("Failed to save client variable:", err);
+		}
+	},
+
+	addClientVariable: async (name) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		try {
+			await invoke("add_client_variable", {
+				workingDir,
+				variableName: name,
+			});
+			// Update local state
+			const { lilyFile } = get();
+			if (lilyFile) {
+				set({
+					lilyFile: {
+						...lilyFile,
+						variables: { ...lilyFile.variables, [name]: "" },
+					},
+				});
+			}
+		} catch (err) {
+			throw err;
+		}
+	},
+
+	removeClientVariable: async (name) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		try {
+			await invoke("remove_client_variable", {
+				workingDir,
+				variableName: name,
+			});
+			// Update local state
+			const { lilyFile } = get();
+			if (lilyFile) {
+				const { [name]: _, ...rest } = lilyFile.variables;
+				set({
+					lilyFile: {
+						...lilyFile,
+						variables: rest,
+					},
+				});
+			}
+		} catch (err) {
+			console.error("Failed to remove client variable:", err);
+		}
+	},
+
+	reloadLilyFile: async () => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		try {
+			const lilyFile = await invoke<LilyFile>("load_lily_file_cmd", {
+				workingDir,
+			});
+			set({ lilyFile });
+		} catch (err) {
+			console.error("Failed to reload .lily file:", err);
+		}
+	},
+
+	startAddDocument: () => {
+		set({ step: "select-template" });
+	},
+
+	returnToHub: () => {
+		// Clear document-specific state but keep workingDir, lilyFile, templates
+		set({
+			step: "client-hub",
+			documentPath: null,
+			documentHtml: "",
+			variables: [],
+			variableValues: {},
+			templateRelPath: null,
+			dirty: false,
+			error: null,
+		});
+		// Reload .lily file to pick up any changes made while editing
+		get().reloadLilyFile();
 	},
 
 	reset: () =>
