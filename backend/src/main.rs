@@ -5,7 +5,9 @@ mod docx_ops;
 mod settings;
 mod sidecar;
 
-use docx_ops::{copy_template, extract_variables, get_document_html, replace_variables};
+use docx_ops::{
+    copy_template, extract_variables, get_document_html, rename_document, replace_variables,
+};
 use settings::{load_settings, save_settings};
 use sidecar::{load_sidecar, save_document_meta};
 
@@ -17,6 +19,7 @@ fn main() {
             copy_template,
             extract_variables,
             replace_variables,
+            rename_document,
             get_document_html,
             load_settings,
             save_settings,
