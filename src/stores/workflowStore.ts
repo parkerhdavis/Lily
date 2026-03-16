@@ -131,6 +131,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				variableValues[v.display_name] = savedVars[v.display_name] ?? "";
 			}
 
+			// Store the variable names in the .lily document metadata so they
+			// survive across save cycles (where placeholders get replaced)
+			await invoke("set_document_variables", {
+				workingDir,
+				filename,
+				variableNames: variables.map((v) => v.display_name),
+			});
+
 			// Reload .lily file to pick up the new document entry
 			const updatedLilyFile = await invoke<LilyFile>(
 				"load_lily_file_cmd",
@@ -170,9 +178,23 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			const docPath = `${workingDir}/${filename}`;
 
 			// Extract variables from the existing document
-			const variables = await invoke<VariableInfo[]>("extract_variables", {
+			let variables = await invoke<VariableInfo[]>("extract_variables", {
 				docxPath: docPath,
 			});
+
+			// If no variables were found in the docx (placeholders have been
+			// replaced with real values on a previous save), fall back to the
+			// stored variable_names list in the .lily document metadata.
+			if (variables.length === 0) {
+				const storedNames =
+					lilyFile?.documents[filename]?.variable_names ?? [];
+				if (storedNames.length > 0) {
+					variables = storedNames.map((name) => ({
+						display_name: name,
+						variants: [name],
+					}));
+				}
+			}
 
 			// Get HTML preview
 			const documentHtml = await invoke<string>("get_document_html", {

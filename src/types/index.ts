@@ -14,6 +14,10 @@ export interface DocumentMeta {
 	template_rel_path: string;
 	created_at: string;
 	modified_at: string;
+	/** Display names of variables this document uses. Recorded when the
+	 *  template is first processed so the variable list survives after
+	 *  placeholders are replaced with real values in the docx. */
+	variable_names: string[];
 }
 
 /** The .lily project file stored in each client/working directory. */

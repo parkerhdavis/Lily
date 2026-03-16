@@ -11,6 +11,7 @@ use docx_ops::{
 use lily_file::{
     add_client_variable, delete_document, load_lily_file_cmd, new_version_document,
     open_file_in_os, remove_client_variable, save_client_variables, save_variables,
+    set_document_variables,
 };
 use settings::{load_settings, save_settings};
 
@@ -32,6 +33,7 @@ fn main() {
             save_client_variables,
             add_client_variable,
             remove_client_variable,
+            set_document_variables,
             delete_document,
             new_version_document,
             open_file_in_os,
