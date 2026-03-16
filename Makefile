@@ -37,7 +37,8 @@ ifeq ($(DETECTED_OS),windows)
     .SHELLFLAGS := -NoProfile -Command
     BUN := bun
     # Run the tauri CLI JS entry point directly with bun to avoid needing node on PATH.
-    TAURI := bun .\node_modules\@tauri-apps\cli\tauri.js
+    # Path is relative to backend/ since Tauri commands must run from there.
+    TAURI := bun ..\node_modules\@tauri-apps\cli\tauri.js
     MKDIR := New-Item -ItemType Directory -Force -Path
     RM := Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     NULL := $$null
@@ -45,7 +46,8 @@ else
     BUN := bun
     # Run the tauri CLI JS entry point directly with bun to avoid the #!/usr/bin/env node shim,
     # since node may not be on PATH (bun replaces it as our JS runtime).
-    TAURI := bun ./node_modules/@tauri-apps/cli/tauri.js
+    # Path is relative to backend/ since Tauri commands must run from there.
+    TAURI := bun ../node_modules/@tauri-apps/cli/tauri.js
     MKDIR := mkdir -p
     RM := rm -rf
     NULL := /dev/null
@@ -95,7 +97,7 @@ help:
 ifeq ($(DETECTED_OS),windows)
 dev:
 	@echo "Starting Tauri development server (frontend + Rust)..."
-	$(TAURI) dev
+	cd backend; $(TAURI) dev
 
 dev-frontend:
 	@echo "Starting Vite dev server only (rapid UI iteration)..."
@@ -107,7 +109,7 @@ dev:
 	@$(BUN) run dev > $(NULL) 2>&1 & echo $$! > .vite.pid
 	@sleep 2
 	@echo "  -> Starting Tauri..."
-	@$(TAURI) dev || (kill `cat .vite.pid` 2>/dev/null; rm -f .vite.pid; exit 1)
+	@cd backend && $(TAURI) dev || (kill `cat ../.vite.pid` 2>/dev/null; rm -f ../.vite.pid; exit 1)
 	@kill `cat .vite.pid` 2>/dev/null || true
 	@rm -f .vite.pid
 
@@ -149,7 +151,7 @@ build:
 	@echo "  -> Building frontend..."
 	$(BUN) run build
 	@echo "  -> Building Tauri app for Windows..."
-	$$env:PATH = "$$env:USERPROFILE\.cargo\bin;$$env:PATH"; $(TAURI) build
+	$$env:PATH = "$$env:USERPROFILE\.cargo\bin;$$env:PATH"; cd backend; $(TAURI) build
 	@echo ""
 	@echo "Windows build complete!"
 	@echo ""
@@ -175,7 +177,7 @@ build-windows:
 	@echo "  -> Building frontend..."
 	$(BUN) run build
 	@echo "  -> Building Tauri app for Windows..."
-	$$env:PATH = "$$env:USERPROFILE\.cargo\bin;$$env:PATH"; $(TAURI) build
+	$$env:PATH = "$$env:USERPROFILE\.cargo\bin;$$env:PATH"; cd backend; $(TAURI) build
 	@echo ""
 	@echo "Windows build complete!"
 	@echo ""
@@ -192,7 +194,7 @@ build-linux:
 	@echo "  -> Building frontend..."
 	@$(BUN) run build
 	@echo "  -> Building Tauri app for Linux..."
-	@$(TAURI) build
+	@cd backend && $(TAURI) build
 	@echo ""
 	@echo "Linux build complete!"
 	@echo ""
@@ -210,7 +212,7 @@ build-macos:
 	@echo "  -> Building frontend..."
 	@$(BUN) run build
 	@echo "  -> Building Tauri app for macOS..."
-	@$(TAURI) build
+	@cd backend && $(TAURI) build
 	@echo ""
 	@echo "macOS build complete!"
 	@echo ""
