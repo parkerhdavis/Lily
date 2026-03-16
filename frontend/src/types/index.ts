@@ -29,8 +29,12 @@ export interface LilyFile {
 	/** Client-level variable values shared across all documents. */
 	variables: Record<string, string>;
 	/** Display names of conditional (ternary) variables that render as
-	 *  checkboxes. */
+	 *  toggles. */
 	conditional_variables: string[];
+	/** Full conditional definitions keyed by display name.  Each entry
+	 *  holds every distinct `"Label ?? true_text :: false_text"` string
+	 *  found in the template(s) for that label. */
+	conditional_definitions: Record<string, string[]>;
 	/** Map from document filename to its metadata. */
 	documents: Record<string, DocumentMeta>;
 }

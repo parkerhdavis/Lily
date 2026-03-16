@@ -55,13 +55,58 @@ const VARIABLE_SPAN_RE =
 	/<span class="variable-highlight" data-variable="([^"]*)" data-original-case="([^"]*)">\{[^}]*\}<\/span>/g;
 
 /**
- * Regex that matches a conditional variable-highlight span.
- * Uses [\s\S]*? for the inner content to handle nested braces.
- * Captures: [1] = canonical key, [2] = original case (label),
- *           [3] = true text, [4] = false text
+ * Regex that matches a conditional variable-highlight span from fresh
+ * {Placeholder} text.  Captures: [1] = canonical key, [2] = original case,
+ * [3] = true text, [4] = false text
  */
 const CONDITIONAL_SPAN_RE =
-	/<span class="variable-highlight" data-variable="([^"]*)" data-original-case="([^"]*)" data-conditional="true" data-true-text="([^"]*)" data-false-text="([^"]*)">\{[\s\S]*?\}<\/span>/g;
+	/<span class="variable-highlight[\s\w]*" data-variable="([^"]*)" data-original-case="([^"]*)" data-conditional="true" data-true-text="([^"]*)" data-false-text="([^"]*)">[\s\S]*?<\/span>/g;
+
+/**
+ * Regex that matches an SDT-generated variable-highlight span (from a
+ * previously saved document).  These do NOT have data-conditional attributes;
+ * the conditional logic is handled using definitions from the .lily file.
+ * Captures: [1] = canonical key, [2] = original case, [3] = current text
+ */
+const SDT_FILLED_SPAN_RE =
+	/<span class="variable-highlight filled" data-variable="([^"]*)" data-original-case="([^"]*)">([^<]*)<\/span>/g;
+
+/**
+ * Regex that matches a bookmark-generated zero-width anchor span (from a
+ * previously saved empty conditional).  These are invisible by default but
+ * need to be expanded when the conditional is toggled to true.
+ * Captures: [1] = canonical key, [2] = original case
+ */
+const BOOKMARK_SPAN_RE =
+	/<span class="variable-bookmark" data-variable="([^"]*)" data-original-case="([^"]*)"><\/span>/g;
+
+/**
+ * Parse a conditional definition string into its true/false branch text.
+ * Expected syntax: `Label ?? "true text" :: "false text"`
+ * Both branch texts must be wrapped in double quotes.
+ */
+function parseConditionalDef(
+	def: string,
+): { trueText: string; falseText: string } | null {
+	const qqIdx = def.indexOf(" ?? ");
+	if (qqIdx < 0) return null;
+	const rest = def.substring(qqIdx + 4).trim();
+
+	if (!rest.startsWith('"')) return null;
+	const closeIdx = rest.indexOf('"', 1);
+	if (closeIdx < 0) return null;
+	const trueText = rest.substring(1, closeIdx);
+
+	let remainder = rest.substring(closeIdx + 1).trim();
+	let falseText = "";
+	if (remainder.startsWith("::")) {
+		remainder = remainder.substring(2).trim();
+		if (remainder.startsWith('"') && remainder.endsWith('"')) {
+			falseText = remainder.substring(1, remainder.length - 1);
+		}
+	}
+	return { trueText, falseText };
+}
 
 /**
  * Resolve `{Variable Name}` placeholders in a text string using the current
@@ -93,6 +138,7 @@ export default function VariableEditor() {
 		dirty,
 		loading,
 		error,
+		lilyFile,
 		updateVariable,
 		renameDocument,
 		saveDocument,
@@ -106,6 +152,13 @@ export default function VariableEditor() {
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
 	const titleInputRef = useRef<HTMLInputElement>(null);
+	const varSearchRef = useRef<HTMLInputElement>(null);
+	const previewRef = useRef<HTMLDivElement>(null);
+	const sidebarRef = useRef<HTMLDivElement>(null);
+	// Track which occurrence index we're on per variable for prev/next navigation
+	const [occurrenceIndex, setOccurrenceIndex] = useState<
+		Record<string, number>
+	>({});
 
 	// Build a lookup from canonical (lowercase) key to display_name
 	const canonicalToDisplay = useMemo(() => {
@@ -125,6 +178,7 @@ export default function VariableEditor() {
 	}, [editingTitle]);
 
 	// Ctrl+S / Cmd+S keyboard shortcut for saving
+	// Ctrl+F / Cmd+F keyboard shortcut to focus variable search
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			if ((e.ctrlKey || e.metaKey) && e.key === "s") {
@@ -133,10 +187,103 @@ export default function VariableEditor() {
 					saveDocument();
 				}
 			}
+			if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+				e.preventDefault();
+				varSearchRef.current?.focus();
+			}
 		};
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [loading, saveDocument]);
+
+	// Handle clicks on variable highlights in the document preview
+	const handlePreviewClick = useCallback(
+		(e: React.MouseEvent) => {
+			const target = e.target as HTMLElement;
+			const span = target.closest<HTMLElement>(
+				"[data-variable]",
+			);
+			if (!span) return;
+
+			const canonical = span.dataset.variable;
+			if (!canonical) return;
+
+			const displayName = canonicalToDisplay[canonical];
+			if (!displayName) return;
+
+			// Select the variable and scroll its sidebar entry into view
+			setSelectedVariable(displayName);
+			const sidebarEl = sidebarRef.current?.querySelector(
+				`[data-var-entry="${CSS.escape(displayName)}"]`,
+			);
+			if (sidebarEl) {
+				sidebarEl.scrollIntoView({
+					behavior: "smooth",
+					block: "center",
+				});
+				// Focus the input inside the entry if it's a text variable
+				const input =
+					sidebarEl.querySelector<HTMLInputElement>(
+						"input[type=text]",
+					);
+				if (input) {
+					setTimeout(() => input.focus(), 100);
+				}
+			}
+		},
+		[canonicalToDisplay],
+	);
+
+	// Scroll to a specific occurrence of a variable in the document preview
+	const scrollToOccurrence = useCallback(
+		(displayName: string, direction: "prev" | "next") => {
+			if (!previewRef.current) return;
+			const canonical = displayName.toLowerCase();
+			const spans = Array.from(
+				previewRef.current.querySelectorAll<HTMLElement>(
+					`[data-variable="${CSS.escape(canonical)}"]`,
+				),
+			);
+			if (spans.length === 0) return;
+
+			const currentIdx = occurrenceIndex[displayName] ?? -1;
+			let newIdx: number;
+			if (direction === "next") {
+				newIdx =
+					currentIdx + 1 >= spans.length ? 0 : currentIdx + 1;
+			} else {
+				newIdx =
+					currentIdx - 1 < 0
+						? spans.length - 1
+						: currentIdx - 1;
+			}
+
+			setOccurrenceIndex((prev) => ({
+				...prev,
+				[displayName]: newIdx,
+			}));
+			setSelectedVariable(displayName);
+
+			spans[newIdx].scrollIntoView({
+				behavior: "smooth",
+				block: "center",
+			});
+		},
+		[occurrenceIndex],
+	);
+
+	// Count occurrences of a variable in the preview
+	const getOccurrenceCount = useCallback(
+		(displayName: string): number => {
+			if (!previewRef.current) return 0;
+			const canonical = displayName.toLowerCase();
+			return previewRef.current.querySelectorAll(
+				`[data-variable="${CSS.escape(canonical)}"]`,
+			).length;
+		},
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[documentHtml, variableValues, selectedVariable],
+	);
 
 	const startEditingTitle = () => {
 		if (!documentPath) return;
@@ -167,11 +314,18 @@ export default function VariableEditor() {
 		}
 	};
 
+	// Conditional definitions from the .lily file, keyed by display name.
+	const conditionalDefs = lilyFile?.conditional_definitions ?? {};
+
 	// Build a live preview by replacing variable placeholders in the HTML.
 	// Handles both replacement variables and conditional variables.
 	// Red = unfilled, yellow = selected, green = filled & not selected.
 	const getLivePreviewHtml = useCallback(() => {
-		// First pass: replace conditional variable spans
+		// Track occurrence counters for SDT-filled conditional spans
+		// so each occurrence maps to its corresponding definition.
+		const sdtOccurrenceCounts: Record<string, number> = {};
+
+		// First pass: replace conditional variable spans (from fresh {Placeholder} text)
 		const withConditionals = documentHtml.replace(
 			CONDITIONAL_SPAN_RE,
 			(
@@ -187,7 +341,6 @@ export default function VariableEditor() {
 				const value = variableValues[displayName] ?? "false";
 				const isTrue = value === "true";
 				const branchText = isTrue ? trueText : falseText;
-				// Resolve any nested {Var} references in the branch text
 				const resolvedText = resolveNestedVariables(
 					branchText,
 					variableValues,
@@ -195,23 +348,80 @@ export default function VariableEditor() {
 				);
 				const isSelected = displayName === selectedVariable;
 
-				// If resolved text is empty, show the label as placeholder
 				if (!resolvedText) {
-					const cssClass = isSelected
-						? "variable-highlight selected"
-						: "variable-highlight";
-					return `<span class="${cssClass}" data-variable="${canonicalKey}" data-original-case="${_originalCase}" data-conditional="true" data-true-text="${trueText}" data-false-text="${falseText}">&nbsp;</span>`;
+					if (isSelected) {
+						return `<span class="variable-highlight selected" data-variable="${canonicalKey}" data-original-case="${_originalCase}">&nbsp;</span>`;
+					}
+					return "";
 				}
 
 				const cssClass = isSelected
 					? "variable-highlight selected"
 					: "variable-highlight filled";
-				return `<span class="${cssClass}" data-variable="${canonicalKey}" data-original-case="${_originalCase}" data-conditional="true" data-true-text="${trueText}" data-false-text="${falseText}">${resolvedText}</span>`;
+				return `<span class="${cssClass}" data-variable="${canonicalKey}" data-original-case="${_originalCase}">${resolvedText}</span>`;
 			},
 		);
 
-		// Second pass: replace regular (replacement) variable spans
-		return withConditionals.replace(
+		// Second pass: replace SDT-filled spans AND bookmark spans for
+		// conditional variables in a single pass (document order matters for
+		// matching definitions).  Uses a combined regex so occurrence counters
+		// stay correct across interleaved SDTs and bookmarks.
+		const COMBINED_SDT_BM_RE =
+			/<span class="variable-(?:highlight filled|bookmark)" data-variable="([^"]*)" data-original-case="([^"]*)">[^<]*<\/span>/g;
+
+		const withSdtConditionals = withConditionals.replace(
+			COMBINED_SDT_BM_RE,
+			(
+				match,
+				canonicalKey: string,
+				originalCase: string,
+			) => {
+				const displayName = canonicalToDisplay[canonicalKey];
+				if (!displayName) return match;
+
+				// Check if this is a conditional variable
+				const defs = conditionalDefs[displayName];
+				if (!defs || defs.length === 0) {
+					// Not conditional — leave as-is for the regular pass
+					return match;
+				}
+
+				// Get the Nth definition for this label
+				const idx = sdtOccurrenceCounts[displayName] ?? 0;
+				sdtOccurrenceCounts[displayName] = idx + 1;
+				const def = defs[idx] ?? defs[0];
+
+				// Parse the definition to get true/false text
+				const parsed = parseConditionalDef(def);
+				if (!parsed) return match;
+				const { trueText, falseText } = parsed;
+
+				const value = variableValues[displayName] ?? "false";
+				const isTrue = value === "true";
+				const branchText = isTrue ? trueText : falseText;
+				const resolvedText = resolveNestedVariables(
+					branchText,
+					variableValues,
+					canonicalToDisplay,
+				);
+				const isSelected = displayName === selectedVariable;
+
+				if (!resolvedText) {
+					if (isSelected) {
+						return `<span class="variable-highlight selected" data-variable="${canonicalKey}" data-original-case="${originalCase}">&nbsp;</span>`;
+					}
+					return "";
+				}
+
+				const cssClass = isSelected
+					? "variable-highlight selected"
+					: "variable-highlight filled";
+				return `<span class="${cssClass}" data-variable="${canonicalKey}" data-original-case="${originalCase}">${resolvedText}</span>`;
+			},
+		);
+
+		// Third pass: replace regular (replacement) variable spans
+		return withSdtConditionals.replace(
 			VARIABLE_SPAN_RE,
 			(match, canonicalKey: string, originalCase: string) => {
 				const displayName = canonicalToDisplay[canonicalKey];
@@ -234,7 +444,7 @@ export default function VariableEditor() {
 				return match;
 			},
 		);
-	}, [documentHtml, variableValues, selectedVariable, canonicalToDisplay]);
+	}, [documentHtml, variableValues, selectedVariable, canonicalToDisplay, conditionalDefs]);
 
 	const handleVariableChange = (name: string, value: string) => {
 		updateVariable(name, value);
@@ -326,114 +536,214 @@ export default function VariableEditor() {
 			{/* Main content: sidebar + preview */}
 			<div className="flex flex-1 overflow-hidden">
 				{/* Variable sidebar */}
-				<div className="w-80 shrink-0 border-r border-base-300 overflow-y-auto p-4 bg-base-100">
+				<div
+					ref={sidebarRef}
+					className="w-80 shrink-0 border-r border-base-300 overflow-y-auto p-4 bg-base-100"
+				>
 					<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50 mb-3">
 						Variables
 					</h3>
-					{variables.length > 0 && (
+				{variables.length > 0 && (
+					<div className="pb-3 mb-3 border-b border-base-300">
 						<input
+							ref={varSearchRef}
 							type="text"
-							className="input input-bordered input-sm w-full mb-3"
-							placeholder="Search variables..."
+							className="input input-bordered input-sm w-full"
+							placeholder="Search variables... (Ctrl+F)"
 							value={varSearch}
 							onChange={(e) => setVarSearch(e.target.value)}
 						/>
-					)}
-					{variables.length === 0 ? (
-						<p className="text-sm text-base-content/50">
-							No variables found in this document.
-						</p>
-					) : filteredVariables.length === 0 ? (
-						<p className="text-sm text-base-content/50">
-							No variables match your search.
-						</p>
-					) : (
-					<div className="flex flex-col gap-3">
-						{filteredVariables.map((varInfo) => {
-							const name = varInfo.display_name;
+					</div>
+				)}
+				{variables.length === 0 ? (
+					<p className="text-sm text-base-content/50">
+						No variables found in this document.
+					</p>
+				) : filteredVariables.length === 0 ? (
+					<p className="text-sm text-base-content/50">
+						No variables match your search.
+					</p>
+				) : (
+				<div className="flex flex-col divide-y divide-base-200">
+					{filteredVariables.map((varInfo) => {
+						const name = varInfo.display_name;
 
-							if (varInfo.is_conditional) {
-								const isChecked =
-									variableValues[name] === "true";
-								return (
-									<label
-										key={name}
-										className="form-control w-full"
-									>
-										<div className="label cursor-pointer">
-											<span className="label-text text-sm font-medium flex items-center gap-1.5">
-												<input
-													type="checkbox"
-													className="checkbox checkbox-sm checkbox-primary"
-													checked={isChecked}
-													onChange={(e) =>
-														handleVariableChange(
-															name,
-															e.target.checked
-																? "true"
-																: "false",
-														)
-													}
-													onFocus={() =>
-														setSelectedVariable(
-															name,
-														)
-													}
-													onBlur={() =>
-														setSelectedVariable(
-															null,
-														)
-													}
-												/>
-												{name}
-											</span>
-										</div>
-									</label>
-								);
-							}
-
-							const isFilled = Boolean(variableValues[name]);
+						if (varInfo.is_conditional) {
+							const isTrue =
+								variableValues[name] === "true";
 							return (
-								<label
+								<div
 									key={name}
-									className="form-control w-full"
+									data-var-entry={name}
+									className="py-3 w-full"
 								>
-									<div className="label">
-										<span className="label-text text-sm font-medium flex items-center gap-1.5">
-											<span
-												className={`inline-block size-2 shrink-0 rounded-full ${isFilled ? "bg-success" : "bg-error"}`}
-											/>
+									<div className="flex items-center justify-between mb-1.5">
+										<span className="label-text text-sm font-medium">
 											{name}
 										</span>
+										<div className="join">
+											<button
+												type="button"
+												className="join-item btn btn-ghost btn-xs px-1"
+												onClick={() =>
+													scrollToOccurrence(
+														name,
+														"prev",
+													)
+												}
+												title="Previous occurrence"
+											>
+												&lsaquo;
+											</button>
+											<button
+												type="button"
+												className="join-item btn btn-ghost btn-xs px-1"
+												onClick={() =>
+													scrollToOccurrence(
+														name,
+														"next",
+													)
+												}
+												title="Next occurrence"
+											>
+												&rsaquo;
+											</button>
+										</div>
 									</div>
-									<input
-										type="text"
-										className="input input-bordered input-sm w-full"
-										placeholder={`Enter ${name}`}
-										value={variableValues[name] ?? ""}
-										onChange={(e) =>
-											handleVariableChange(
-												name,
-												e.target.value,
-											)
-										}
-										onFocus={() =>
-											setSelectedVariable(name)
-										}
-										onBlur={() =>
-											setSelectedVariable(null)
-										}
-									/>
-								</label>
+									<div className="flex rounded-lg overflow-hidden border border-base-300">
+										<button
+											type="button"
+											className={`flex-1 text-xs font-semibold py-1.5 transition-colors ${
+												isTrue
+													? "bg-success text-success-content"
+													: "bg-base-200 text-base-content/40 hover:bg-base-300"
+											}`}
+											onClick={() => {
+												handleVariableChange(
+													name,
+													"true",
+												);
+											}}
+											onFocus={() =>
+												setSelectedVariable(
+													name,
+												)
+											}
+											onBlur={() =>
+												setSelectedVariable(
+													null,
+												)
+											}
+										>
+											True
+										</button>
+										<button
+											type="button"
+											className={`flex-1 text-xs font-semibold py-1.5 transition-colors ${
+												!isTrue
+													? "bg-error text-error-content"
+													: "bg-base-200 text-base-content/40 hover:bg-base-300"
+											}`}
+											onClick={() => {
+												handleVariableChange(
+													name,
+													"false",
+												);
+											}}
+											onFocus={() =>
+												setSelectedVariable(
+													name,
+												)
+											}
+											onBlur={() =>
+												setSelectedVariable(
+													null,
+												)
+											}
+										>
+											False
+										</button>
+									</div>
+								</div>
 							);
-						})}
-					</div>
-					)}
+						}
+
+						const isFilled = Boolean(variableValues[name]);
+						return (
+							<div
+								key={name}
+								data-var-entry={name}
+								className="py-3 w-full"
+							>
+								<div className="flex items-center justify-between mb-1">
+									<span className="label-text text-sm font-medium flex items-center gap-1.5">
+										<span
+											className={`inline-block size-2 shrink-0 rounded-full ${isFilled ? "bg-success" : "bg-error"}`}
+										/>
+										{name}
+									</span>
+									<div className="join">
+										<button
+											type="button"
+											className="join-item btn btn-ghost btn-xs px-1"
+											onClick={() =>
+												scrollToOccurrence(
+													name,
+													"prev",
+												)
+											}
+											title="Previous occurrence"
+										>
+											&lsaquo;
+										</button>
+										<button
+											type="button"
+											className="join-item btn btn-ghost btn-xs px-1"
+											onClick={() =>
+												scrollToOccurrence(
+													name,
+													"next",
+												)
+											}
+											title="Next occurrence"
+										>
+											&rsaquo;
+										</button>
+									</div>
+								</div>
+								<input
+									type="text"
+									className="input input-bordered input-sm w-full"
+									placeholder={`Enter ${name}`}
+									value={variableValues[name] ?? ""}
+									onChange={(e) =>
+										handleVariableChange(
+											name,
+											e.target.value,
+										)
+									}
+									onFocus={() =>
+										setSelectedVariable(name)
+									}
+									onBlur={() =>
+										setSelectedVariable(null)
+									}
+								/>
+							</div>
+						);
+					})}
+				</div>
+				)}
 				</div>
 
 				{/* Document preview */}
-				<div className="flex-1 overflow-y-auto p-8 bg-base-200">
+				{/* biome-ignore lint/a11y/useKeyWithClickEvents: preview click selects variables */}
+				<div
+					className="flex-1 overflow-y-auto p-8 bg-base-200"
+					onClick={handlePreviewClick}
+				>
 					<div
+						ref={previewRef}
 						className="bg-white rounded-lg shadow-md p-8 max-w-4xl mx-auto prose prose-sm"
 						// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
 						dangerouslySetInnerHTML={{

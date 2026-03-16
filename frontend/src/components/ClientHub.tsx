@@ -299,15 +299,17 @@ export default function ClientHub() {
 						</button>
 					</div>
 
-					{sortedVariables.length > 0 && (
+				{sortedVariables.length > 0 && (
+					<div className="pb-3 mb-3 border-b border-base-300">
 						<input
 							type="text"
-							className="input input-bordered input-sm w-full mb-3"
+							className="input input-bordered input-sm w-full"
 							placeholder="Search variables..."
 							value={varSearch}
 							onChange={(e) => setVarSearch(e.target.value)}
 						/>
-					)}
+					</div>
+				)}
 
 					{sortedVariables.length === 0 && !addingVar ? (
 						<div className="text-sm text-base-content/50 space-y-2">
@@ -322,20 +324,20 @@ export default function ClientHub() {
 							No variables match your search.
 						</p>
 					) : (
-						<div className="flex flex-col gap-3">
-						{filteredVariables.map(([name, value]) => (
-							<VariableField
-								key={name}
-								name={name}
-								value={value}
-								isConditional={conditionalVarNames.has(
-									name,
-								)}
-								onBlur={handleVariableBlur}
-								onRemove={removeClientVariable}
-							/>
-						))}
-						</div>
+					<div className="flex flex-col divide-y divide-base-200">
+					{filteredVariables.map(([name, value]) => (
+						<VariableField
+							key={name}
+							name={name}
+							value={value}
+							isConditional={conditionalVarNames.has(
+								name,
+							)}
+							onBlur={handleVariableBlur}
+							onRemove={removeClientVariable}
+						/>
+					))}
+					</div>
 					)}
 
 					{/* Add variable inline form */}
@@ -582,23 +584,11 @@ function VariableField({
 	const [localValue, setLocalValue] = useState(value);
 
 	if (isConditional) {
-		const isChecked = localValue === "true";
+		const isTrue = localValue === "true";
 		return (
-			<label className="form-control w-full group">
-				<div className="label cursor-pointer">
-					<span className="label-text text-sm font-medium flex items-center gap-1.5">
-						<input
-							type="checkbox"
-							className="checkbox checkbox-sm checkbox-primary"
-							checked={isChecked}
-							onChange={(e) => {
-								const newVal = e.target.checked
-									? "true"
-									: "false";
-								setLocalValue(newVal);
-								onBlur(name, newVal);
-							}}
-						/>
+			<div className="py-3 w-full group">
+				<div className="flex items-center justify-between mb-1.5">
+					<span className="label-text text-sm font-medium">
 						{name}
 					</span>
 					<button
@@ -610,13 +600,43 @@ function VariableField({
 						&times;
 					</button>
 				</div>
-			</label>
+				<div className="flex rounded-lg overflow-hidden border border-base-300">
+					<button
+						type="button"
+						className={`flex-1 text-xs font-semibold py-1.5 transition-colors ${
+							isTrue
+								? "bg-success text-success-content"
+								: "bg-base-200 text-base-content/40 hover:bg-base-300"
+						}`}
+						onClick={() => {
+							setLocalValue("true");
+							onBlur(name, "true");
+						}}
+					>
+						True
+					</button>
+					<button
+						type="button"
+						className={`flex-1 text-xs font-semibold py-1.5 transition-colors ${
+							!isTrue
+								? "bg-error text-error-content"
+								: "bg-base-200 text-base-content/40 hover:bg-base-300"
+						}`}
+						onClick={() => {
+							setLocalValue("false");
+							onBlur(name, "false");
+						}}
+					>
+						False
+					</button>
+				</div>
+			</div>
 		);
 	}
 
 	return (
-		<label className="form-control w-full group">
-			<div className="label">
+		<div className="py-3 w-full group">
+			<div className="flex items-center justify-between mb-1">
 				<span className="label-text text-sm font-medium flex items-center gap-1.5">
 					<span
 						className={`inline-block size-2 shrink-0 rounded-full ${localValue ? "bg-success" : "bg-base-300"}`}
@@ -640,6 +660,6 @@ function VariableField({
 				onChange={(e) => setLocalValue(e.target.value)}
 				onBlur={() => onBlur(name, localValue)}
 			/>
-		</label>
+		</div>
 	);
 }
