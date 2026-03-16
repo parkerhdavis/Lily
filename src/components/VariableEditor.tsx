@@ -1,5 +1,11 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
+
+/** Extract the display filename (without .docx extension) from a full path. */
+function getDisplayName(docPath: string): string {
+	const filename = docPath.split("/").pop() ?? docPath.split("\\").pop() ?? docPath;
+	return filename.replace(/\.docx$/i, "");
+}
 
 export default function VariableEditor() {
 	const {
@@ -7,9 +13,11 @@ export default function VariableEditor() {
 		variableValues,
 		documentHtml,
 		documentPath,
+		dirty,
 		loading,
 		error,
 		updateVariable,
+		renameDocument,
 		saveDocument,
 		setStep,
 	} = useWorkflowStore();
@@ -17,6 +25,60 @@ export default function VariableEditor() {
 	const [selectedVariable, setSelectedVariable] = useState<string | null>(
 		null,
 	);
+	const [editingTitle, setEditingTitle] = useState(false);
+	const [titleDraft, setTitleDraft] = useState("");
+	const titleInputRef = useRef<HTMLInputElement>(null);
+
+	// Focus the title input when entering edit mode
+	useEffect(() => {
+		if (editingTitle && titleInputRef.current) {
+			titleInputRef.current.focus();
+			titleInputRef.current.select();
+		}
+	}, [editingTitle]);
+
+	// Ctrl+S / Cmd+S keyboard shortcut for saving
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+				e.preventDefault();
+				if (!loading) {
+					saveDocument();
+				}
+			}
+		};
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [loading, saveDocument]);
+
+	const startEditingTitle = () => {
+		if (!documentPath) return;
+		setTitleDraft(getDisplayName(documentPath));
+		setEditingTitle(true);
+	};
+
+	const commitTitle = async () => {
+		setEditingTitle(false);
+		const trimmed = titleDraft.trim();
+		if (!trimmed || !documentPath) return;
+
+		const currentName = getDisplayName(documentPath);
+		if (trimmed === currentName) return;
+
+		await renameDocument(trimmed);
+	};
+
+	const cancelEditingTitle = () => {
+		setEditingTitle(false);
+	};
+
+	const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+		if (e.key === "Enter") {
+			commitTitle();
+		} else if (e.key === "Escape") {
+			cancelEditingTitle();
+		}
+	};
 
 	// Build a live preview by replacing variable placeholders in the HTML.
 	// Red = unfilled, yellow = selected, green = filled & not selected.
@@ -60,27 +122,50 @@ export default function VariableEditor() {
 				>
 					&larr; Back
 				</button>
-				<div className="flex-1">
-					<h2 className="text-lg font-semibold truncate">
-						{documentPath?.split("/").pop() ??
-							documentPath?.split("\\").pop()}
-					</h2>
+				<div className="flex-1 min-w-0">
+					{editingTitle ? (
+						<input
+							ref={titleInputRef}
+							type="text"
+							className="input input-bordered input-sm text-lg font-semibold w-full max-w-md"
+							value={titleDraft}
+							onChange={(e) => setTitleDraft(e.target.value)}
+							onBlur={commitTitle}
+							onKeyDown={handleTitleKeyDown}
+						/>
+					) : (
+						<h2
+							className="text-lg font-semibold truncate cursor-pointer hover:text-primary transition-colors"
+							onDoubleClick={startEditingTitle}
+							title="Double-click to rename"
+						>
+							{documentPath ? getDisplayName(documentPath) : ""}
+							<span className="text-base-content/30 font-normal">.docx</span>
+						</h2>
+					)}
 					<p className="text-xs text-base-content/50">
 						{filledCount} of {variables.length} variables filled
 					</p>
 				</div>
-				<button
-					type="button"
-					className="btn btn-primary btn-sm"
-					onClick={saveDocument}
-					disabled={loading}
-				>
-					{loading ? (
-						<span className="loading loading-spinner loading-xs" />
-					) : (
-						"Save Now"
+				<div className="flex items-center gap-2">
+					{dirty && (
+						<span className="badge badge-warning badge-sm">
+							Unsaved
+						</span>
 					)}
-				</button>
+					<button
+						type="button"
+						className="btn btn-primary btn-sm"
+						onClick={saveDocument}
+						disabled={loading}
+					>
+						{loading ? (
+							<span className="loading loading-spinner loading-xs" />
+						) : (
+							"Save"
+						)}
+					</button>
+				</div>
 			</div>
 
 			{error && (

@@ -14,6 +14,8 @@ interface WorkflowState {
 	templateRelPath: string | null;
 	/** Sidecar data for the current working directory. */
 	sidecar: SidecarFile | null;
+	/** Whether the document has unsaved changes. */
+	dirty: boolean;
 	loading: boolean;
 	error: string | null;
 
@@ -25,6 +27,7 @@ interface WorkflowState {
 		templatesDir: string,
 	) => Promise<void>;
 	updateVariable: (name: string, value: string) => void;
+	renameDocument: (newFilename: string) => Promise<void>;
 	saveDocument: () => Promise<void>;
 	refreshPreview: () => Promise<void>;
 	reset: () => void;
@@ -40,6 +43,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 	templates: [],
 	templateRelPath: null,
 	sidecar: null,
+	dirty: false,
 	loading: false,
 	error: null,
 
@@ -49,9 +53,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		// Load sidecar data for the selected working directory
 		invoke<SidecarFile>("load_sidecar", { workingDir: dir })
 			.then((sidecar) => set({ sidecar }))
-			.catch((err) =>
-				console.error("Failed to load sidecar:", err),
-			);
+			.catch((err) => console.error("Failed to load sidecar:", err));
 
 		set({ workingDir: dir, step: "select-template" });
 	},
@@ -114,6 +116,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				variableValues,
 				documentHtml,
 				sidecar,
+				dirty: false,
 				step: "edit-variables",
 				loading: false,
 			});
@@ -126,7 +129,24 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		const { variableValues } = get();
 		set({
 			variableValues: { ...variableValues, [name]: value },
+			dirty: true,
 		});
+	},
+
+	renameDocument: async (newFilename) => {
+		const { documentPath } = get();
+		if (!documentPath) return;
+
+		set({ loading: true, error: null });
+		try {
+			const newPath = await invoke<string>("rename_document", {
+				docxPath: documentPath,
+				newFilename,
+			});
+			set({ documentPath: newPath, loading: false });
+		} catch (err) {
+			set({ error: String(err), loading: false });
+		}
 	},
 
 	saveDocument: async () => {
@@ -151,7 +171,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			// Don't refresh documentHtml — the live preview depends on the
 			// original placeholder spans remaining in the HTML so the
 			// client-side replacement continues to work after save.
-			set({ loading: false });
+			set({ loading: false, dirty: false });
 		} catch (err) {
 			set({ error: String(err), loading: false });
 		}
@@ -182,6 +202,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			templates: [],
 			templateRelPath: null,
 			sidecar: null,
+			dirty: false,
 			error: null,
 		}),
 }));
