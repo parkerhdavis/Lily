@@ -3,9 +3,11 @@
 
 mod docx_ops;
 mod settings;
+mod sidecar;
 
 use docx_ops::{copy_template, extract_variables, get_document_html, replace_variables};
 use settings::{load_settings, save_settings};
+use sidecar::{load_sidecar, save_document_meta};
 
 fn main() {
     tauri::Builder::default()
@@ -19,6 +21,8 @@ fn main() {
             load_settings,
             save_settings,
             list_templates,
+            load_sidecar,
+            save_document_meta,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -29,7 +33,10 @@ fn main() {
 fn list_templates(templates_dir: String) -> Result<Vec<String>, String> {
     let path = std::path::Path::new(&templates_dir);
     if !path.exists() {
-        return Err(format!("Templates directory does not exist: {}", templates_dir));
+        return Err(format!(
+            "Templates directory does not exist: {}",
+            templates_dir
+        ));
     }
     let mut results = Vec::new();
     collect_docx_files(path, path, &mut results)?;
