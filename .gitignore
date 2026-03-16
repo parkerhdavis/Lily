@@ -3,7 +3,7 @@ frontend/node_modules/
 
 # Build output
 frontend/dist/
-backend/target/
+target/
 
 # Bun
 frontend/bun.lock

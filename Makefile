@@ -193,9 +193,9 @@ build:
 	@echo ""
 	@echo "Windows build complete!"
 	@echo ""
-	@echo "Build outputs in backend/target/release/bundle/:"
-	@echo "  - MSI Installer:  backend/target/release/bundle/msi/"
-	@echo "  - NSIS Installer: backend/target/release/bundle/nsis/"
+	@echo "Build outputs in target/release/bundle/:"
+	@echo "  - MSI Installer:  target/release/bundle/msi/"
+	@echo "  - NSIS Installer: target/release/bundle/nsis/"
 else
 build:
 ifeq ($(DETECTED_OS),linux)
@@ -219,9 +219,9 @@ build-windows:
 	@echo ""
 	@echo "Windows build complete!"
 	@echo ""
-	@echo "Build outputs in backend/target/release/bundle/:"
-	@echo "  - MSI Installer:  backend/target/release/bundle/msi/"
-	@echo "  - NSIS Installer: backend/target/release/bundle/nsis/"
+	@echo "Build outputs in target/release/bundle/:"
+	@echo "  - MSI Installer:  target/release/bundle/msi/"
+	@echo "  - NSIS Installer: target/release/bundle/nsis/"
 
 build-macos:
 	@echo "ERROR: macOS builds must be run on macOS"
@@ -236,10 +236,10 @@ build-linux:
 	@echo ""
 	@echo "Linux build complete!"
 	@echo ""
-	@echo "Build outputs in backend/target/release/bundle/:"
-	@echo "  - AppImage: backend/target/release/bundle/appimage/"
-	@echo "  - Debian:   backend/target/release/bundle/deb/"
-	@echo "  - RPM:      backend/target/release/bundle/rpm/"
+	@echo "Build outputs in target/release/bundle/:"
+	@echo "  - AppImage: target/release/bundle/appimage/"
+	@echo "  - Debian:   target/release/bundle/deb/"
+	@echo "  - RPM:      target/release/bundle/rpm/"
 
 build-windows:
 	@echo "ERROR: Windows builds must be run on Windows"
@@ -254,9 +254,9 @@ build-macos:
 	@echo ""
 	@echo "macOS build complete!"
 	@echo ""
-	@echo "Build outputs in backend/target/release/bundle/:"
-	@echo "  - DMG:  backend/target/release/bundle/dmg/"
-	@echo "  - App:  backend/target/release/bundle/macos/"
+	@echo "Build outputs in target/release/bundle/:"
+	@echo "  - DMG:  target/release/bundle/dmg/"
+	@echo "  - App:  target/release/bundle/macos/"
 endif
 
 ifeq ($(DETECTED_OS),windows)
@@ -344,14 +344,14 @@ clean:
 	@echo "Cleaning build artifacts..."
 	if (Test-Path frontend\node_modules) { Remove-Item -Recurse -Force frontend\node_modules }
 	if (Test-Path frontend\dist) { Remove-Item -Recurse -Force frontend\dist }
-	if (Test-Path backend\target) { Remove-Item -Recurse -Force backend\target }
+	if (Test-Path target) { Remove-Item -Recurse -Force target }
 	@echo "Cleanup complete"
 else
 clean:
 	@echo "Cleaning build artifacts..."
 	@$(RM) frontend/node_modules
 	@$(RM) frontend/dist
-	@$(RM) backend/target
+	@$(RM) target
 	@echo "Cleanup complete"
 endif
 
