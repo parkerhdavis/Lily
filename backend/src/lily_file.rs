@@ -24,7 +24,10 @@ pub struct LilyFile {
 }
 
 /// Metadata for a single document in the working directory.
-/// Variables are stored at the top-level `LilyFile.variables`, not here.
+/// Variable values are stored at the top-level `LilyFile.variables`, not here.
+/// However, the *names* of variables this document uses are stored here so that
+/// reopening a saved document (where `{Placeholder}` text has been replaced
+/// with actual values) still knows which variables apply.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentMeta {
     /// Relative path of the source template within the templates directory
@@ -34,6 +37,11 @@ pub struct DocumentMeta {
     pub created_at: DateTime<Utc>,
     /// When the document was last saved/modified through Lily.
     pub modified_at: DateTime<Utc>,
+    /// Display names of the variables this document uses, recorded when the
+    /// template is first processed. Used to restore the variable list after
+    /// placeholders have been replaced with real values.
+    #[serde(default)]
+    pub variable_names: Vec<String>,
 }
 
 impl Default for LilyFile {
@@ -163,13 +171,15 @@ fn migrate_legacy_sidecar(working_dir: &str) -> Result<LilyFile, String> {
             }
         }
 
-        // Create a document entry without variable_values
+        // Create a document entry; derive variable_names from the legacy keys
+        let variable_names: Vec<String> = meta.variable_values.keys().cloned().collect();
         lily.documents.insert(
             filename,
             DocumentMeta {
                 template_rel_path: meta.template_rel_path,
                 created_at: meta.created_at,
                 modified_at: meta.modified_at,
+                variable_names,
             },
         );
     }
@@ -205,6 +215,7 @@ pub fn record_document(
             template_rel_path: template_rel_path.to_string(),
             created_at: now,
             modified_at: now,
+            variable_names: Vec::new(),
         },
     );
     write_lily_file(working_dir, &lily)
@@ -312,6 +323,25 @@ pub fn remove_client_variable(working_dir: String, variable_name: String) -> Res
     write_lily_file(&working_dir, &lily)
 }
 
+/// Store the list of variable names (display names) that a document uses.
+/// Called after extracting variables from a freshly created document so that
+/// the variable list survives across save cycles (where placeholders are
+/// replaced with real values in the docx).
+#[tauri::command]
+pub fn set_document_variables(
+    working_dir: String,
+    filename: String,
+    variable_names: Vec<String>,
+) -> Result<(), String> {
+    let mut lily = read_lily_file(&working_dir)?;
+    if let Some(meta) = lily.documents.get_mut(&filename) {
+        meta.variable_names = variable_names;
+    } else {
+        return Err(format!("Document '{}' not found in .lily file", filename));
+    }
+    write_lily_file(&working_dir, &lily)
+}
+
 /// Delete a document file from disk and remove its entry from the .lily file.
 #[tauri::command]
 pub fn delete_document(working_dir: String, filename: String) -> Result<(), String> {
@@ -363,7 +393,23 @@ pub fn new_version_document(working_dir: String, filename: String) -> Result<Str
     fs::copy(&src_path, &dest_path).map_err(|e| format!("Failed to copy document: {}", e))?;
 
     // Record the new document in the .lily file, sharing the same template origin
-    record_document(&working_dir, &new_filename, &meta.template_rel_path)?;
+    // and variable_names from the source document
+    let template_rel_path = meta.template_rel_path.clone();
+    let variable_names = meta.variable_names.clone();
+    drop(lily);
+
+    let mut lily = read_lily_file(&working_dir)?;
+    let now = Utc::now();
+    lily.documents.insert(
+        new_filename.clone(),
+        DocumentMeta {
+            template_rel_path,
+            created_at: now,
+            modified_at: now,
+            variable_names,
+        },
+    );
+    write_lily_file(&working_dir, &lily)?;
 
     Ok(new_filename)
 }
