@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type { WorkflowStep } from "@/types";
+import type { WorkflowStep, SidecarFile } from "@/types";
 
 interface WorkflowState {
 	step: WorkflowStep;
@@ -10,6 +10,10 @@ interface WorkflowState {
 	variables: string[];
 	variableValues: Record<string, string>;
 	templates: string[];
+	/** The relative path of the selected template within the templates dir. */
+	templateRelPath: string | null;
+	/** Sidecar data for the current working directory. */
+	sidecar: SidecarFile | null;
 	loading: boolean;
 	error: string | null;
 
@@ -34,12 +38,23 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 	variables: [],
 	variableValues: {},
 	templates: [],
+	templateRelPath: null,
+	sidecar: null,
 	loading: false,
 	error: null,
 
 	setStep: (step) => set({ step }),
 
-	setWorkingDir: (dir) => set({ workingDir: dir, step: "select-template" }),
+	setWorkingDir: (dir) => {
+		// Load sidecar data for the selected working directory
+		invoke<SidecarFile>("load_sidecar", { workingDir: dir })
+			.then((sidecar) => set({ sidecar }))
+			.catch((err) =>
+				console.error("Failed to load sidecar:", err),
+			);
+
+		set({ workingDir: dir, step: "select-template" });
+	},
 
 	loadTemplates: async (templatesDir) => {
 		set({ loading: true, error: null });
@@ -68,6 +83,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				templatePath: fullTemplatePath,
 				destDir: workingDir,
 				filename,
+				templateRelPath,
 			});
 
 			// Extract variables from the copied document
@@ -86,11 +102,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				variableValues[v] = "";
 			}
 
+			// Reload sidecar to pick up the new document entry
+			const sidecar = await invoke<SidecarFile>("load_sidecar", {
+				workingDir,
+			});
+
 			set({
 				documentPath: docPath,
+				templateRelPath,
 				variables,
 				variableValues,
 				documentHtml,
+				sidecar,
 				step: "edit-variables",
 				loading: false,
 			});
@@ -107,7 +130,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 	},
 
 	saveDocument: async () => {
-		const { documentPath, variableValues } = get();
+		const { documentPath, variableValues, workingDir } = get();
 		if (!documentPath) return;
 
 		set({ loading: true, error: null });
@@ -116,6 +139,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				docxPath: documentPath,
 				variables: variableValues,
 			});
+
+			// Reload sidecar to reflect updated variable values and timestamp
+			if (workingDir) {
+				const sidecar = await invoke<SidecarFile>("load_sidecar", {
+					workingDir,
+				});
+				set({ sidecar });
+			}
 
 			// Don't refresh documentHtml — the live preview depends on the
 			// original placeholder spans remaining in the HTML so the
@@ -149,6 +180,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			variables: [],
 			variableValues: {},
 			templates: [],
+			templateRelPath: null,
+			sidecar: null,
 			error: null,
 		}),
 }));
