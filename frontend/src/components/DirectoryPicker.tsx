@@ -3,8 +3,20 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
 
 export default function DirectoryPicker() {
-	const { settings, save } = useSettingsStore();
+	const { settings, save, addRecentDirectory, removeRecentDirectory } =
+		useSettingsStore();
 	const { setWorkingDir, loadTemplates } = useWorkflowStore();
+
+	const selectDirectory = async (dir: string) => {
+		await addRecentDirectory(dir);
+		save({ last_working_dir: dir });
+
+		if (settings.templates_dir) {
+			await loadTemplates(settings.templates_dir);
+		}
+
+		setWorkingDir(dir);
+	};
 
 	const pickWorkingDir = async () => {
 		const selected = await open({
@@ -13,13 +25,7 @@ export default function DirectoryPicker() {
 			defaultPath: settings.last_working_dir ?? undefined,
 		});
 		if (selected) {
-			save({ last_working_dir: selected });
-
-			if (settings.templates_dir) {
-				await loadTemplates(settings.templates_dir);
-			}
-
-			setWorkingDir(selected);
+			await selectDirectory(selected);
 		}
 	};
 
@@ -32,6 +38,12 @@ export default function DirectoryPicker() {
 		if (selected) {
 			save({ templates_dir: selected });
 		}
+	};
+
+	/** Show just the last path component (the folder name). */
+	const dirName = (path: string) => {
+		const sep = path.includes("\\") ? "\\" : "/";
+		return path.split(sep).filter(Boolean).pop() ?? path;
 	};
 
 	return (
@@ -49,6 +61,48 @@ export default function DirectoryPicker() {
 			>
 				Select Working Directory
 			</button>
+
+			{settings.recent_directories.length > 0 && (
+				<div className="w-full max-w-md">
+					<h2 className="text-sm font-semibold text-base-content/50 mb-2">
+						Recent Directories
+					</h2>
+					<ul className="menu menu-sm bg-base-200 rounded-box gap-1">
+						{settings.recent_directories.map((dir) => (
+							<li key={dir}>
+								<div
+									className="flex items-center justify-between gap-2 cursor-pointer"
+									onClick={() => selectDirectory(dir)}
+									onKeyDown={(e) => {
+										if (e.key === "Enter" || e.key === " ")
+											selectDirectory(dir);
+									}}
+								>
+									<div className="flex flex-col min-w-0">
+										<span className="font-medium truncate">
+											{dirName(dir)}
+										</span>
+										<span className="text-xs text-base-content/40 truncate">
+											{dir}
+										</span>
+									</div>
+									<button
+										type="button"
+										className="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
+										onClick={(e) => {
+											e.stopPropagation();
+											removeRecentDirectory(dir);
+										}}
+										title="Remove from recent"
+									>
+										✕
+									</button>
+								</div>
+							</li>
+						))}
+					</ul>
+				</div>
+			)}
 
 			<div className="divider w-64">Settings</div>
 

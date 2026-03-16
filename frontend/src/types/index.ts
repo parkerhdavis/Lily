@@ -1,6 +1,9 @@
 export interface AppSettings {
 	templates_dir: string | null;
 	last_working_dir: string | null;
+	recent_directories: string[];
+	window_width: number | null;
+	window_height: number | null;
 }
 
 export type WorkflowStep =
