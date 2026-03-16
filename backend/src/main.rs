@@ -14,11 +14,40 @@ use lily_file::{
     set_document_variables,
 };
 use settings::{load_settings, save_settings};
+use tauri::Manager;
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            // Restore saved window size from settings, if available.
+            if let Ok(settings) = settings::load_settings() {
+                if let (Some(w), Some(h)) = (settings.window_width, settings.window_height) {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let size = tauri::LogicalSize::new(w as f64, h as f64);
+                        let _ = window.set_size(size);
+                    }
+                }
+            }
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                // Save current window size to settings before closing.
+                if let Ok(size) = window.inner_size() {
+                    if let Ok(scale) = window.scale_factor() {
+                        let logical_w = (size.width as f64 / scale).round() as u32;
+                        let logical_h = (size.height as f64 / scale).round() as u32;
+                        if let Ok(mut current) = settings::load_settings() {
+                            current.window_width = Some(logical_w);
+                            current.window_height = Some(logical_h);
+                            let _ = settings::save_settings(current);
+                        }
+                    }
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             copy_template,
             extract_variables,
