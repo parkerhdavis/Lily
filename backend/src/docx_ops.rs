@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
@@ -260,10 +260,11 @@ fn extract_text_from_xml(xml: &str) -> String {
 }
 
 /// Find all {Variable Name} patterns in text, grouping by case-insensitive key.
-/// Returns a sorted list of VariableInfo with display_name and all case variants.
+/// Returns a list of VariableInfo ordered by first appearance in the document.
 fn find_variables(text: &str) -> Vec<VariableInfo> {
-    // Key: lowercased trimmed name, Value: ordered list of distinct original casings
-    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // Preserves insertion order: each entry is (lowercased key, distinct original casings)
+    let mut keys_in_order: Vec<String> = Vec::new();
+    let mut groups: HashMap<String, Vec<String>> = HashMap::new();
     let mut chars = text.chars().peekable();
 
     while let Some(c) = chars.next() {
@@ -280,6 +281,9 @@ fn find_variables(text: &str) -> Vec<VariableInfo> {
             if found_close && !var_name.is_empty() && !var_name.contains('{') {
                 let trimmed = var_name.trim().to_string();
                 let key = trimmed.to_lowercase();
+                if !groups.contains_key(&key) {
+                    keys_in_order.push(key.clone());
+                }
                 let variants = groups.entry(key).or_default();
                 if !variants.contains(&trimmed) {
                     variants.push(trimmed);
@@ -288,15 +292,16 @@ fn find_variables(text: &str) -> Vec<VariableInfo> {
         }
     }
 
-    groups
-        .into_values()
-        .map(|variants| {
-            // Pick the best display name: prefer Title Case, else first seen
-            let display_name = pick_display_name(&variants);
-            VariableInfo {
-                display_name,
-                variants,
-            }
+    keys_in_order
+        .into_iter()
+        .filter_map(|key| {
+            groups.remove(&key).map(|variants| {
+                let display_name = pick_display_name(&variants);
+                VariableInfo {
+                    display_name,
+                    variants,
+                }
+            })
         })
         .collect()
 }
@@ -571,5 +576,15 @@ mod tests {
         let result = highlight_variables("{CLIENT NAME}");
         assert!(result.contains("data-variable=\"client name\""));
         assert!(result.contains("data-original-case=\"CLIENT NAME\""));
+    }
+
+    #[test]
+    fn test_find_variables_ordered_by_appearance() {
+        let text = "{Date} then {Client Name} then {Attorney Name}";
+        let vars = find_variables(text);
+        assert_eq!(vars.len(), 3);
+        assert_eq!(vars[0].display_name, "Date");
+        assert_eq!(vars[1].display_name, "Client Name");
+        assert_eq!(vars[2].display_name, "Attorney Name");
     }
 }
