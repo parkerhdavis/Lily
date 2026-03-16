@@ -1,12 +1,12 @@
 # Dependencies
-node_modules/
+frontend/node_modules/
 
 # Build output
-dist/
+frontend/dist/
 backend/target/
 
 # Bun
-bun.lock
+frontend/bun.lock
 
 # Environment
 .env

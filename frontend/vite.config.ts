@@ -25,7 +25,7 @@ export default defineConfig({
 				}
 			: undefined,
 		watch: {
-			ignored: ["**/backend/**"],
+			ignored: ["**/backend/**", "../backend/**"],
 		},
 	},
 	envPrefix: ["VITE_", "TAURI_"],
