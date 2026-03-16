@@ -9,6 +9,7 @@
   border-radius: 2px;
   padding: 0 2px;
   font-weight: 600;
+  cursor: pointer;
 }
 
 .variable-highlight.selected {
@@ -17,6 +18,15 @@
 
 .variable-highlight.filled {
   background-color: oklch(0.88 0.12 145);  /* soft green — filled */
+}
+
+/* Zero-width bookmark anchor for empty conditional variables */
+.variable-bookmark {
+  display: inline;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  font-size: 0;
 }
 
 /* ─── Document preview structural elements ────────────────────────────── */

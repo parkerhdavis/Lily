@@ -20,9 +20,16 @@ pub struct LilyFile {
     /// Client-level variable values shared across all documents.
     pub variables: HashMap<String, String>,
     /// Display names of conditional (ternary) variables. These render as
-    /// checkboxes in the UI and store `"true"` / `"false"` as their value.
+    /// toggles in the UI and store `"true"` / `"false"` as their value.
     #[serde(default)]
     pub conditional_variables: Vec<String>,
+    /// Full conditional definitions extracted from the template, keyed by
+    /// display name.  Each entry holds every distinct definition string
+    /// (`"Label ?? true_text :: false_text"`) found in the template for that
+    /// label.  Stored permanently so that conditional logic survives across
+    /// save/re-open cycles even when placeholders have been replaced.
+    #[serde(default)]
+    pub conditional_definitions: HashMap<String, Vec<String>>,
     /// Map from document filename to its metadata.
     pub documents: HashMap<String, DocumentMeta>,
 }
@@ -54,6 +61,7 @@ impl Default for LilyFile {
             lily_version: 2,
             variables: HashMap::new(),
             conditional_variables: Vec::new(),
+            conditional_definitions: HashMap::new(),
             documents: HashMap::new(),
         }
     }
@@ -329,16 +337,17 @@ pub fn remove_client_variable(working_dir: String, variable_name: String) -> Res
 }
 
 /// Store the list of variable names (display names) that a document uses,
-/// along with the list of conditional variable names.
-/// Called after extracting variables from a freshly created document so that
-/// the variable list survives across save cycles (where placeholders are
-/// replaced with real values in the docx).
+/// along with the list of conditional variable names and their full
+/// definitions.  Called after extracting variables from a freshly created
+/// document so that the variable list and conditional logic survive across
+/// save cycles (where placeholders are replaced with real values in the docx).
 #[tauri::command]
 pub fn set_document_variables(
     working_dir: String,
     filename: String,
     variable_names: Vec<String>,
     conditional_names: Vec<String>,
+    conditional_definitions: HashMap<String, Vec<String>>,
 ) -> Result<(), String> {
     let mut lily = read_lily_file(&working_dir)?;
     if let Some(meta) = lily.documents.get_mut(&filename) {
@@ -350,6 +359,15 @@ pub fn set_document_variables(
     for name in conditional_names {
         if !lily.conditional_variables.contains(&name) {
             lily.conditional_variables.push(name);
+        }
+    }
+    // Merge conditional definitions into the project-level map
+    for (label, defs) in conditional_definitions {
+        let entry = lily.conditional_definitions.entry(label).or_default();
+        for def in defs {
+            if !entry.contains(&def) {
+                entry.push(def);
+            }
         }
     }
     write_lily_file(&working_dir, &lily)

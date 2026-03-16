@@ -133,6 +133,16 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 					savedVars[v.display_name] ?? defaultVal;
 			}
 
+			// Build conditional definitions map from the extracted variables.
+			// Each conditional variable may have multiple variants (different
+			// true/false text) and we store them all keyed by display name.
+			const conditionalDefs: Record<string, string[]> = {};
+			for (const v of variables) {
+				if (v.is_conditional) {
+					conditionalDefs[v.display_name] = v.variants;
+				}
+			}
+
 			// Store the variable names in the .lily document metadata so they
 			// survive across save cycles (where placeholders get replaced)
 			await invoke("set_document_variables", {
@@ -142,6 +152,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				conditionalNames: variables
 					.filter((v) => v.is_conditional)
 					.map((v) => v.display_name),
+				conditionalDefinitions: conditionalDefs,
 			});
 
 			// Reload .lily file to pick up the new document entry
@@ -202,6 +213,21 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				}
 			}
 
+			// After the first save, SDTs and bookmarks no longer carry the
+			// `??` conditional syntax, so extract_variables reports them as
+			// non-conditional. Patch is_conditional using the authoritative
+			// list stored in the .lily file.
+			const conditionalSet = new Set(
+				lilyFile?.conditional_variables ?? [],
+			);
+			if (conditionalSet.size > 0) {
+				variables = variables.map((v) =>
+					conditionalSet.has(v.display_name)
+						? { ...v, is_conditional: true }
+						: v,
+				);
+			}
+
 			// Get HTML preview
 			const documentHtml = await invoke<string>("get_document_html", {
 				docxPath: docPath,
@@ -248,7 +274,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 	},
 
 	saveDocument: async () => {
-		const { documentPath, variableValues, workingDir } = get();
+		const { documentPath, variableValues, workingDir, lilyFile } = get();
 		if (!documentPath) return;
 
 		set({ loading: true, error: null });
@@ -256,6 +282,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			await invoke("replace_variables", {
 				docxPath: documentPath,
 				variables: variableValues,
+				conditionalDefinitions: lilyFile?.conditional_definitions ?? {},
 			});
 
 			// Reload .lily file to reflect updated variable values and timestamp

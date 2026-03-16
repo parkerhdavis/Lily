@@ -105,8 +105,9 @@ pub fn extract_variables(docx_path: String) -> Result<Vec<VariableInfo>, String>
 }
 
 /// Single-pass extraction of all variables from Word XML, in document order.
-/// Finds both `{Placeholder}` patterns in `<w:t>` text and Lily SDT tags
-/// (`<w:tag w:val="lily:..."/>`), interleaved in the order they appear.
+/// Finds `{Placeholder}` patterns in `<w:t>` text, Lily SDT tags
+/// (`<w:tag w:val="lily:..."/>`), and Lily bookmarks
+/// (`<w:bookmarkStart w:name="lily:..."/>`), interleaved in the order they appear.
 fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
     let mut keys_in_order: Vec<String> = Vec::new();
     let mut groups: HashMap<String, Vec<String>> = HashMap::new();
@@ -128,12 +129,30 @@ fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
                     "sdt" => in_sdt = true,
                     "sdtPr" if in_sdt => in_sdt_pr = true,
                     "tag" if in_sdt_pr => {
-                        // Check for lily: prefix
+                        // Check for lily: prefix in SDT tags
                         for attr in &attributes {
                             if attr.name.local_name == "val"
                                 && attr.value.starts_with(SDT_TAG_PREFIX)
                             {
                                 let display_name = attr.value[SDT_TAG_PREFIX.len()..].to_string();
+                                let key = display_name.to_lowercase();
+                                if !groups.contains_key(&key) {
+                                    keys_in_order.push(key.clone());
+                                }
+                                let variants = groups.entry(key).or_default();
+                                if !variants.contains(&display_name) {
+                                    variants.push(display_name);
+                                }
+                            }
+                        }
+                    }
+                    "bookmarkStart" => {
+                        // Check for lily: prefix in bookmark names
+                        for attr in &attributes {
+                            if attr.name.local_name == "name"
+                                && attr.value.starts_with(BOOKMARK_PREFIX)
+                            {
+                                let display_name = attr.value[BOOKMARK_PREFIX.len()..].to_string();
                                 let key = display_name.to_lowercase();
                                 if !groups.contains_key(&key) {
                                     keys_in_order.push(key.clone());
@@ -260,6 +279,7 @@ fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
 pub fn replace_variables(
     docx_path: String,
     variables: HashMap<String, String>,
+    conditional_definitions: HashMap<String, Vec<String>>,
 ) -> Result<(), String> {
     // First, extract the variable info so we know all case variants
     let raw_xml = read_document_xml(&docx_path)?;
@@ -300,27 +320,22 @@ pub fn replace_variables(
         }
     }
 
-    // Build a map from display_name to value for SDT content updates.
-    // For conditional variables, resolve the true/false branch.
+    // Build a map from display_name to value for SDT/bookmark content updates.
+    // This includes ALL variables the caller provides, not just the ones
+    // found in fresh {Placeholder} text. After the first save, conditional
+    // variables exist only as SDTs/bookmarks (not as {Placeholder} text),
+    // so they won't appear in var_infos but still need to be in this map.
+    // The branch resolution for conditionals happens inside
+    // update_sdt_and_bookmark_values using the definition from the SDT tag.
     let mut sdt_value_map: HashMap<String, String> = HashMap::new();
-    for info in &var_infos {
-        if let Some(value) = variables.get(&info.display_name) {
-            if info.is_conditional {
-                let is_true = value == "true";
-                // Use first variant to get the true/false text
-                if let Some(variant) = info.variants.first() {
-                    if let Some((_, true_text, false_text)) = parse_conditional_variable(variant) {
-                        let branch = if is_true { true_text } else { false_text };
-                        // Resolve any nested {Var} references within the branch
-                        let resolved = resolve_nested_variables(&branch, &variables);
-                        sdt_value_map.insert(info.display_name.clone(), resolved);
-                    }
-                }
-            } else if !value.is_empty() {
-                sdt_value_map.insert(info.display_name.clone(), value.clone());
-            }
+    for (name, value) in &variables {
+        if !value.is_empty() {
+            sdt_value_map.insert(name.clone(), value.clone());
         }
     }
+    // Also pass the full variables map so conditionals with nested
+    // {Var} references can be resolved during SDT/bookmark updates.
+    let all_variables = variables.clone();
 
     let file_bytes = fs::read(&docx_path).map_err(|e| format!("Failed to read docx: {}", e))?;
 
@@ -349,6 +364,23 @@ pub fn replace_variables(
         let options =
             SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
+        // Find the max bookmark ID across all XML parts so we can generate
+        // unique IDs for any new lily bookmarks.
+        let mut next_bookmark_id: u64 = entries
+            .iter()
+            .filter(|(name, _)| {
+                name == "word/document.xml"
+                    || name.starts_with("word/header")
+                    || name.starts_with("word/footer")
+            })
+            .map(|(_, content)| {
+                let xml_str = String::from_utf8_lossy(content);
+                find_max_bookmark_id(&xml_str)
+            })
+            .max()
+            .unwrap_or(0)
+            + 1;
+
         for (name, content) in &entries {
             writer
                 .start_file(name, options)
@@ -360,10 +392,20 @@ pub fn replace_variables(
             {
                 let xml_str = String::from_utf8_lossy(content);
                 let normalized = normalize_split_variables(&xml_str);
-                // First update any existing Lily SDTs
-                let with_sdts_updated = update_sdt_values(&normalized, &sdt_value_map);
+                // First update any existing Lily SDTs and bookmarks
+                let with_markers_updated = update_sdt_and_bookmark_values(
+                    &normalized,
+                    &sdt_value_map,
+                    &all_variables,
+                    &conditional_definitions,
+                    &mut next_bookmark_id,
+                );
                 // Then replace any remaining fresh {Placeholder} text with SDT-wrapped values
-                let replaced = replace_placeholders_with_sdt(&with_sdts_updated, &placeholder_map);
+                let replaced = replace_placeholders_with_sdt(
+                    &with_markers_updated,
+                    &placeholder_map,
+                    &mut next_bookmark_id,
+                );
                 writer
                     .write_all(replaced.as_bytes())
                     .map_err(|e| format!("Failed to write entry: {}", e))?;
@@ -1351,23 +1393,43 @@ fn is_conditional_variable(raw_content: &str) -> bool {
 }
 
 /// Parse a conditional variable's raw content into (label, true_text, false_text).
-/// Input: `"Client Is Single ?? single text :: couple text"`
-/// Returns: `Some(("Client Is Single", "single text", "couple text"))`
 ///
-/// The `::` separator between true and false branches is required. If the
-/// format doesn't match, returns `None`.
+/// Expected syntax:
+///   `Client Is Single ?? "single text" :: "couple text"`
+///   → `("Client Is Single", "single text", "couple text")`
+///
+/// Both branch texts must be wrapped in double quotes. Content inside the
+/// quotes is preserved exactly (including whitespace). The `::` separator
+/// between true and false branches is required.
 fn parse_conditional_variable(raw_content: &str) -> Option<(String, String, String)> {
     let (label, rest) = raw_content.split_once("??")?;
     let label = label.trim().to_string();
     if label.is_empty() {
         return None;
     }
-    // Split on :: for true/false branches
-    let (true_text, false_text) = if let Some((t, f)) = rest.split_once("::") {
-        (t.trim().to_string(), f.trim().to_string())
+
+    let rest = rest.trim();
+
+    if !rest.starts_with('"') {
+        return None;
+    }
+
+    // Find the closing quote for the true-text
+    let after_open = &rest[1..];
+    let close_idx = after_open.find('"')?;
+    let true_text = after_open[..close_idx].to_string();
+
+    // After the closing quote, look for ::
+    let remainder = after_open[close_idx + 1..].trim();
+    let false_text = if let Some(after_sep) = remainder.strip_prefix("::") {
+        let after_sep = after_sep.trim();
+        if after_sep.starts_with('"') && after_sep.ends_with('"') {
+            after_sep[1..after_sep.len() - 1].to_string()
+        } else {
+            String::new()
+        }
     } else {
-        // No :: means the entire rest is the true_text, false_text is empty
-        (rest.trim().to_string(), String::new())
+        String::new()
     };
     Some((label, true_text, false_text))
 }
@@ -1478,6 +1540,17 @@ fn apply_casing(value: &str, original_var_name: &str) -> String {
 }
 
 const SDT_TAG_PREFIX: &str = "lily:";
+const BOOKMARK_PREFIX: &str = "lily:";
+
+/// Find the maximum bookmark ID used in an XML string.
+/// Returns 0 if no bookmarks exist.
+fn find_max_bookmark_id(xml: &str) -> u64 {
+    let re = Regex::new(r#"<w:bookmarkStart\s+w:id="(\d+)""#).expect("invalid regex");
+    re.captures_iter(xml)
+        .filter_map(|c| c[1].parse::<u64>().ok())
+        .max()
+        .unwrap_or(0)
+}
 
 /// Find variable names from Lily SDT content controls in the XML.
 /// Scans for `<w:tag w:val="lily:Variable Name"/>` inside `<w:sdtPr>` elements.
@@ -1514,6 +1587,7 @@ fn find_sdt_variables(xml: &str) -> Vec<String> {
 fn replace_placeholders_with_sdt(
     xml: &str,
     replacements: &HashMap<String, (String, String)>,
+    next_bookmark_id: &mut u64,
 ) -> String {
     if replacements.is_empty() {
         return xml.to_string();
@@ -1581,13 +1655,24 @@ fn replace_placeholders_with_sdt(
                             ));
                         }
 
-                        // The SDT-wrapped replacement
+                        // The SDT-wrapped replacement.
+                        // The tag uses the display_name (label) for the SDT
+                        // identity. Definitions are stored in the .lily file.
                         let escaped_val = escape_xml_text(value);
                         let escaped_display = escape_xml_text(display_name);
-                        output_parts.push(format!(
-                            "<w:sdt><w:sdtPr><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
-                            SDT_TAG_PREFIX, escaped_display, escaped_display, rpr, escaped_val
-                        ));
+                        if value.is_empty() {
+                            let bid = *next_bookmark_id;
+                            *next_bookmark_id += 1;
+                            output_parts.push(format!(
+                                "<w:bookmarkStart w:id=\"{}\" w:name=\"{}{}\"/><w:bookmarkEnd w:id=\"{}\"/>",
+                                bid, BOOKMARK_PREFIX, escaped_display, bid
+                            ));
+                        } else {
+                            output_parts.push(format!(
+                                "<w:sdt><w:sdtPr><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
+                                SDT_TAG_PREFIX, escaped_display, escaped_display, rpr, escaped_val
+                            ));
+                        }
 
                         // Continue with the text after the placeholder
                         text = text[pos + pattern.len()..].to_string();
@@ -1624,50 +1709,158 @@ fn replace_placeholders_with_sdt(
     result
 }
 
-/// Update the text content inside existing Lily SDT content controls.
-/// Finds each `<w:sdt>` with a `lily:` tag and replaces the `<w:t>` text
-/// inside its `<w:sdtContent>` with the new value (applying appropriate casing).
-fn update_sdt_values(xml: &str, values: &HashMap<String, String>) -> String {
+/// Update existing Lily variable markers in the XML.
+///
+/// Handles two kinds of markers:
+/// 1. **SDT content controls** (`<w:sdt>` with a `lily:` tag) — updates the
+///    text inside, or converts to a zero-width bookmark when the value is empty.
+/// 2. **Bookmarks** (`<w:bookmarkStart w:name="lily:..."/>`) — converts back
+///    to an SDT when the value becomes non-empty.
+///
+/// For conditional variables, the definitions are looked up from the
+/// `conditional_definitions` map (stored in the `.lily` file) by matching
+/// each occurrence in document order to the corresponding definition.
+fn update_sdt_and_bookmark_values(
+    xml: &str,
+    values: &HashMap<String, String>,
+    all_variables: &HashMap<String, String>,
+    conditional_definitions: &HashMap<String, Vec<String>>,
+    next_bookmark_id: &mut u64,
+) -> String {
     if values.is_empty() {
         return xml.to_string();
     }
 
-    // Match entire SDT blocks: <w:sdt>...<w:tag w:val="lily:Name"/>...</w:sdt>
-    let sdt_re = Regex::new(r#"<w:sdt>(.*?)</w:sdt>"#).expect("invalid regex");
+    // Track occurrence index per label so the Nth marker for a label
+    // maps to the Nth definition in conditional_definitions.
+    let mut occurrence_counts: HashMap<String, usize> = HashMap::new();
+
+    // Helper: resolve a label's value for its Nth occurrence.
+    let mut resolve_label = |label: &str| -> Option<String> {
+        let value = values.get(label)?;
+
+        if let Some(defs) = conditional_definitions.get(label) {
+            let idx = occurrence_counts.entry(label.to_string()).or_insert(0);
+            let def = defs.get(*idx).or_else(|| defs.first())?;
+            *idx += 1;
+
+            let (_, true_text, false_text) = parse_conditional_variable(def)?;
+            let is_true = value == "true";
+            let branch = if is_true { true_text } else { false_text };
+            Some(resolve_nested_variables(&branch, all_variables))
+        } else {
+            Some(value.clone())
+        }
+    };
+
+    // Single-pass replacement: match both SDTs and bookmarks in document
+    // order using a combined regex so occurrence counters stay correct.
+    let combined_re = Regex::new(
+        r#"(?:<w:sdt>(.*?)</w:sdt>|<w:bookmarkStart\s+w:id="\d+"\s+w:name="lily:([^"]*)"\s*/><w:bookmarkEnd\s+w:id="\d+"\s*/>)"#
+    ).expect("invalid regex");
     let tag_re = Regex::new(r#"<w:tag\s+w:val="lily:([^"]*)"\s*/>"#).expect("invalid regex");
     let t_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
+    let rpr_re = Regex::new(r#"<w:rPr>(.*?)</w:rPr>"#).expect("invalid regex");
 
-    sdt_re
-        .replace_all(xml, |caps: &regex::Captures| {
-            let inner = &caps[1];
+    let mut result = String::new();
+    let mut last_end = 0;
 
-            // Extract the variable display name from the tag
+    for caps in combined_re.captures_iter(xml) {
+        let m = caps.get(0).unwrap();
+        result.push_str(&xml[last_end..m.start()]);
+        last_end = m.end();
+
+        if let Some(sdt_inner) = caps.get(1) {
+            // ── SDT match ───────────────────────────────────────────
+            let inner = sdt_inner.as_str();
             let Some(tag_caps) = tag_re.captures(inner) else {
-                return caps[0].to_string();
+                result.push_str(m.as_str());
+                continue;
             };
-            let display_name = &tag_caps[1];
+            let label = &tag_caps[1];
 
-            // Look up the new value
-            let Some(value) = values.get(display_name) else {
-                return caps[0].to_string();
+            if !values.contains_key(label) {
+                result.push_str(m.as_str());
+                continue;
+            }
+
+            let Some(resolved) = resolve_label(label) else {
+                result.push_str(m.as_str());
+                continue;
             };
 
-            // Find the <w:t> inside sdtContent and get the original case from tag
-            // For SDTs we use the display_name for casing (title case = as-is)
-            let new_value = escape_xml_text(value);
+            let escaped_label = escape_xml_text(label);
 
-            // Replace the text content inside the <w:t> element within sdtContent
-            let new_inner = t_re
-                .replace(inner, |t_caps: &regex::Captures| {
-                    let full = t_caps[0].to_string();
-                    let tag_end = full.find('>').unwrap() + 1;
-                    format!("{}{}</w:t>", &full[..tag_end], new_value)
-                })
-                .to_string();
+            if resolved.is_empty() {
+                let bid = *next_bookmark_id;
+                *next_bookmark_id += 1;
+                result.push_str(&format!(
+                    "<w:bookmarkStart w:id=\"{}\" w:name=\"{}{}\"/><w:bookmarkEnd w:id=\"{}\"/>",
+                    bid, BOOKMARK_PREFIX, escaped_label, bid
+                ));
+            } else {
+                let new_value = escape_xml_text(&resolved);
 
-            format!("<w:sdt>{}</w:sdt>", new_inner)
-        })
-        .to_string()
+                if !t_re.is_match(inner) {
+                    result.push_str(&format!(
+                        "<w:sdt><w:sdtPr><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
+                        SDT_TAG_PREFIX, escaped_label, escaped_label, new_value
+                    ));
+                } else {
+                    let new_inner = t_re
+                        .replace(inner, |t_caps: &regex::Captures| {
+                            let full = t_caps[0].to_string();
+                            let tag_end = full.find('>').unwrap() + 1;
+                            format!("{}{}</w:t>", &full[..tag_end], new_value)
+                        })
+                        .to_string();
+                    result.push_str(&format!("<w:sdt>{}</w:sdt>", new_inner));
+                }
+            }
+        } else if let Some(bm_label) = caps.get(2) {
+            // ── Bookmark match ──────────────────────────────────────
+            let label = bm_label.as_str();
+
+            if !values.contains_key(label) {
+                result.push_str(m.as_str());
+                continue;
+            }
+
+            let Some(resolved) = resolve_label(label) else {
+                result.push_str(m.as_str());
+                continue;
+            };
+
+            let escaped_label = escape_xml_text(label);
+
+            if resolved.is_empty() {
+                let bid = *next_bookmark_id;
+                *next_bookmark_id += 1;
+                result.push_str(&format!(
+                    "<w:bookmarkStart w:id=\"{}\" w:name=\"{}{}\"/><w:bookmarkEnd w:id=\"{}\"/>",
+                    bid, BOOKMARK_PREFIX, escaped_label, bid
+                ));
+            } else {
+                // Extract run properties from the preceding XML context
+                // so the new SDT inherits the same font/size/style.
+                let preceding = &xml[..m.start()];
+                let rpr = rpr_re
+                    .find_iter(preceding)
+                    .last()
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_default();
+
+                let escaped_value = escape_xml_text(&resolved);
+                result.push_str(&format!(
+                    "<w:sdt><w:sdtPr><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
+                    SDT_TAG_PREFIX, escaped_label, escaped_label, rpr, escaped_value
+                ));
+            }
+        }
+    }
+
+    result.push_str(&xml[last_end..]);
+    result
 }
 
 /// Convert Word XML to an HTML preview with high-fidelity rendering.
@@ -1856,6 +2049,21 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                             .iter()
                             .find(|a| a.name.local_name == "val")
                             .map(|a| a.value.clone());
+                    }
+                    // ─── Lily bookmarks (empty variable placeholders) ─
+                    "bookmarkStart" => {
+                        for attr in &attributes {
+                            if attr.name.local_name == "name"
+                                && attr.value.starts_with(BOOKMARK_PREFIX)
+                            {
+                                let var_name = &attr.value[BOOKMARK_PREFIX.len()..];
+                                let canonical = var_name.to_lowercase();
+                                current_para.push_str(&format!(
+                                    "<span class=\"variable-bookmark\" data-variable=\"{}\" data-original-case=\"{}\"></span>",
+                                    escape_html(&canonical), escape_html(var_name)
+                                ));
+                            }
+                        }
                     }
                     // ─── SDT (structured document tag) ───────────────
                     "sdt" => {
@@ -2265,13 +2473,16 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                 if in_t {
                     let escaped = escape_html(&text);
 
-                    // If we're inside a Lily SDT content, wrap in a variable span
+                    // If we're inside a Lily SDT content, wrap in a variable span.
+                    // The span only gets data-variable and data-original-case;
+                    // conditional logic is handled by the frontend using
+                    // definitions from the .lily file.
                     let highlighted = if in_sdt_content {
                         if let Some(ref var_name) = sdt_var_name {
                             let canonical = var_name.to_lowercase();
                             format!(
                                 "<span class=\"variable-highlight filled\" data-variable=\"{}\" data-original-case=\"{}\">{}</span>",
-                                canonical, var_name, escaped
+                                escape_html(&canonical), escape_html(var_name), escaped
                             )
                         } else {
                             escaped
@@ -2582,7 +2793,8 @@ mod tests {
             "Client Name".to_string(),
             ("Client Name".to_string(), "Jane Doe".to_string()),
         );
-        let result = replace_placeholders_with_sdt(xml, &replacements);
+        let mut next_bid = 1u64;
+        let result = replace_placeholders_with_sdt(xml, &replacements, &mut next_bid);
         assert!(
             result.contains("<w:sdt>"),
             "Expected SDT wrapper, got: {}",
@@ -2626,7 +2838,11 @@ mod tests {
         let xml = r#"<w:sdt><w:sdtPr><w:tag w:val="lily:Client Name"/></w:sdtPr><w:sdtContent><w:r><w:t>Old Value</w:t></w:r></w:sdtContent></w:sdt>"#;
         let mut values = HashMap::new();
         values.insert("Client Name".to_string(), "New Value".to_string());
-        let result = update_sdt_values(xml, &values);
+        let mut next_bid = 1u64;
+        let all_vars = HashMap::new();
+        let cond_defs = HashMap::new();
+        let result =
+            update_sdt_and_bookmark_values(xml, &values, &all_vars, &cond_defs, &mut next_bid);
         assert!(
             result.contains("New Value"),
             "Expected updated value, got: {}",
@@ -2786,10 +3002,12 @@ mod tests {
     #[test]
     fn test_is_conditional_variable() {
         assert!(is_conditional_variable(
-            "Client Is Single ?? single text :: couple text"
+            r#"Client Is Single ?? "single text" :: "couple text""#
         ));
-        assert!(is_conditional_variable("Label ?? true :: false"));
-        assert!(is_conditional_variable("Label ?? only true text ::"));
+        assert!(is_conditional_variable(r#"Label ?? "true" :: "false""#));
+        assert!(is_conditional_variable(
+            r#"Label ?? "only true text" :: """#
+        ));
         assert!(!is_conditional_variable("Client Name"));
         assert!(!is_conditional_variable("Date"));
         // Single ? should NOT be treated as conditional
@@ -2798,75 +3016,73 @@ mod tests {
 
     #[test]
     fn test_parse_conditional_variable() {
-        let result = parse_conditional_variable("Client Is Single ?? single text :: couple text");
-        assert_eq!(
-            result,
-            Some((
-                "Client Is Single".to_string(),
-                "single text".to_string(),
-                "couple text".to_string()
-            ))
-        );
-    }
-
-    #[test]
-    fn test_parse_conditional_variable_empty_true() {
-        let result = parse_conditional_variable("Client Is Single ?? :: couple text");
-        assert_eq!(
-            result,
-            Some((
-                "Client Is Single".to_string(),
-                String::new(),
-                "couple text".to_string()
-            ))
-        );
-    }
-
-    #[test]
-    fn test_parse_conditional_variable_empty_false() {
-        let result = parse_conditional_variable("Client Is Single ?? single text ::");
-        assert_eq!(
-            result,
-            Some((
-                "Client Is Single".to_string(),
-                "single text".to_string(),
-                String::new()
-            ))
-        );
-    }
-
-    #[test]
-    fn test_parse_conditional_variable_no_separator() {
-        // No :: means all of rest is true_text, false_text is empty
-        let result = parse_conditional_variable("Flag ?? only true text");
-        assert_eq!(
-            result,
-            Some((
-                "Flag".to_string(),
-                "only true text".to_string(),
-                String::new()
-            ))
-        );
-    }
-
-    #[test]
-    fn test_parse_conditional_variable_with_colons_in_text() {
-        // Text can contain single colons — only :: is the separator
         let result =
-            parse_conditional_variable("Is Trust ?? Trust dated: Jan 1 :: No trust established");
+            parse_conditional_variable(r#"Client Is Single ?? "single text" :: "couple text""#);
+        assert_eq!(
+            result,
+            Some((
+                "Client Is Single".to_string(),
+                "single text".to_string(),
+                "couple text".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_conditional_variable_quoted_empty_false() {
+        let result = parse_conditional_variable(r#"Client Is Single ?? "single text" :: """#);
+        assert_eq!(
+            result,
+            Some((
+                "Client Is Single".to_string(),
+                "single text".to_string(),
+                String::new()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_conditional_variable_quoted_preserves_spaces() {
+        // Trailing space inside quotes should be preserved
+        let result =
+            parse_conditional_variable(r#"Label ?? "text with trailing space " :: "other text""#);
+        assert_eq!(
+            result,
+            Some((
+                "Label".to_string(),
+                "text with trailing space ".to_string(),
+                "other text".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_conditional_variable_with_special_content() {
+        // Colons and :: inside quotes should be preserved as content
+        let result = parse_conditional_variable(
+            r#"Is Trust ?? "Trust dated: Jan 1, 2020" :: "No trust :: established""#,
+        );
         assert_eq!(
             result,
             Some((
                 "Is Trust".to_string(),
-                "Trust dated: Jan 1".to_string(),
-                "No trust established".to_string()
+                "Trust dated: Jan 1, 2020".to_string(),
+                "No trust :: established".to_string()
             ))
         );
     }
 
     #[test]
+    fn test_parse_conditional_variable_rejects_unquoted() {
+        // Unquoted syntax should no longer parse
+        let result = parse_conditional_variable("Label ?? true text :: false text");
+        assert_eq!(result, None);
+    }
+
+    #[test]
     fn test_find_variables_conditional() {
-        let text = "Hello {Client Is Single ?? single text :: couple text} and {Client Name}";
+        let text =
+            r#"Hello {Client Is Single ?? "single text" :: "couple text"} and {Client Name}"#;
         let vars = find_variables(text);
         assert_eq!(vars.len(), 2);
         assert_eq!(vars[0].display_name, "Client Is Single");
@@ -2877,7 +3093,7 @@ mod tests {
 
     #[test]
     fn test_highlight_variables_conditional() {
-        let result = highlight_variables("{Client Is Single ?? single text :: couple text}");
+        let result = highlight_variables(r#"{Client Is Single ?? "single text" :: "couple text"}"#);
         assert!(
             result.contains("data-conditional=\"true\""),
             "Expected conditional attribute, got: {}",
@@ -2902,7 +3118,7 @@ mod tests {
 
     #[test]
     fn test_highlight_variables_conditional_empty_branch() {
-        let result = highlight_variables("{Client Is Single ?? :: couple text}");
+        let result = highlight_variables(r#"{Client Is Single ?? "" :: "couple text"}"#);
         assert!(result.contains("data-conditional=\"true\""));
         assert!(result.contains("data-true-text=\"\""));
         assert!(result.contains("data-false-text=\"couple text\""));
@@ -2912,22 +3128,18 @@ mod tests {
 
     #[test]
     fn test_find_variables_nested_in_conditional() {
-        let text =
-            "Hello {Client Is Couple ?? I am married to {Client Spouse Name} :: I am not married}";
+        let text = r#"Hello {Client Is Couple ?? "I am married to {Client Spouse Name}" :: "I am not married"}"#;
         let vars = find_variables(text);
         assert_eq!(vars.len(), 2, "Expected 2 variables, got: {:?}", vars);
-        // The conditional should be first (appears first in text)
         assert_eq!(vars[0].display_name, "Client Is Couple");
         assert!(vars[0].is_conditional);
-        // The nested replacement variable should also be extracted
         assert_eq!(vars[1].display_name, "Client Spouse Name");
         assert!(!vars[1].is_conditional);
     }
 
     #[test]
     fn test_find_all_variables_nested_in_conditional() {
-        // Simulate XML with a nested conditional variable
-        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{Client Is Couple ?? married to {Spouse Name} :: single}</w:t></w:r></w:p></w:body></w:document>"#;
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{Client Is Couple ?? "married to {Spouse Name}" :: "single"}</w:t></w:r></w:p></w:body></w:document>"#;
         let normalized = normalize_split_variables(xml);
         let vars = find_all_variables(&normalized);
         assert_eq!(vars.len(), 2, "Expected 2 variables, got: {:?}", vars);
@@ -2940,7 +3152,7 @@ mod tests {
     #[test]
     fn test_highlight_variables_nested_conditional() {
         let result = highlight_variables(
-            "{Client Is Couple ?? I am married to {Client Spouse Name} :: I am not married}",
+            r#"{Client Is Couple ?? "I am married to {Client Spouse Name}" :: "I am not married"}"#,
         );
         // Should produce a single conditional span for the outer variable
         assert!(
