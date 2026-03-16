@@ -6,13 +6,17 @@ use zip::read::ZipArchive;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
+use crate::sidecar;
+
 /// Copy a template .docx file to the working directory.
+/// Records the template provenance in the directory's sidecar file.
 /// Returns the path to the new copy.
 #[tauri::command]
 pub fn copy_template(
     template_path: String,
     dest_dir: String,
     filename: String,
+    template_rel_path: String,
 ) -> Result<String, String> {
     let src = Path::new(&template_path);
     if !src.exists() {
@@ -21,6 +25,10 @@ pub fn copy_template(
 
     let dest = Path::new(&dest_dir).join(&filename);
     fs::copy(src, &dest).map_err(|e| format!("Failed to copy template: {}", e))?;
+
+    // Record template provenance in the sidecar file
+    sidecar::record_document(&dest_dir, &filename, &template_rel_path)?;
+
     Ok(dest.to_string_lossy().to_string())
 }
 
@@ -97,6 +105,17 @@ pub fn replace_variables(
 
     fs::write(&docx_path, output.into_inner())
         .map_err(|e| format!("Failed to write docx: {}", e))?;
+
+    // Update variable values in the sidecar file
+    let path = Path::new(&docx_path);
+    if let (Some(parent), Some(filename)) = (path.parent(), path.file_name()) {
+        let working_dir = parent.to_string_lossy().to_string();
+        let filename = filename.to_string_lossy().to_string();
+        // Best-effort: don't fail the save if sidecar update fails
+        if let Err(e) = sidecar::update_document_variables(&working_dir, &filename, variables) {
+            eprintln!("Warning: failed to update sidecar: {}", e);
+        }
+    }
 
     Ok(())
 }
