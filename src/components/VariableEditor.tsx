@@ -19,19 +19,24 @@ export default function VariableEditor() {
 	);
 
 	// Build a live preview by replacing variable placeholders in the HTML.
-	// Unfilled variables stay yellow; filled entries for the selected variable are green.
+	// Red = unfilled, yellow = selected, green = filled & not selected.
 	const getLivePreviewHtml = useCallback(() => {
 		let html = documentHtml;
 		for (const [name, value] of Object.entries(variableValues)) {
 			const pattern = `<span class="variable-highlight" data-variable="${name}">{${name}}</span>`;
-			if (value) {
-				const isSelected = name === selectedVariable;
-				const cls = isSelected
-					? "variable-highlight selected"
-					: "variable-highlight";
-				const replacement = `<span class="${cls}" data-variable="${name}">${value}</span>`;
+			const isSelected = name === selectedVariable;
+
+			if (isSelected) {
+				// Selected variable is always yellow, showing value if filled
+				const display = value || `{${name}}`;
+				const replacement = `<span class="variable-highlight selected" data-variable="${name}">${display}</span>`;
+				html = html.replaceAll(pattern, replacement);
+			} else if (value) {
+				// Filled and not selected — green
+				const replacement = `<span class="variable-highlight filled" data-variable="${name}">${value}</span>`;
 				html = html.replaceAll(pattern, replacement);
 			}
+			// Unfilled and not selected — leave as-is (base red styling)
 		}
 		return html;
 	}, [documentHtml, variableValues, selectedVariable]);
@@ -97,10 +102,15 @@ export default function VariableEditor() {
 						</p>
 					) : (
 						<div className="flex flex-col gap-3">
-							{variables.map((variable) => (
+							{variables.map((variable) => {
+							const isFilled = Boolean(variableValues[variable]);
+							return (
 								<label key={variable} className="form-control w-full">
 									<div className="label">
-										<span className="label-text text-sm font-medium">
+										<span className="label-text text-sm font-medium flex items-center gap-1.5">
+											<span
+												className={`inline-block size-2 shrink-0 rounded-full ${isFilled ? "bg-success" : "bg-error"}`}
+											/>
 											{variable}
 										</span>
 									</div>
@@ -116,7 +126,8 @@ export default function VariableEditor() {
 										onBlur={() => setSelectedVariable(null)}
 									/>
 								</label>
-							))}
+							);
+						})}
 						</div>
 					)}
 				</div>
