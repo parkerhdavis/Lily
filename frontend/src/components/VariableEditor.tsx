@@ -48,11 +48,19 @@ function applyCasing(value: string, originalCase: string): string {
 }
 
 /**
- * Regex that matches a variable-highlight span.
- * Captures: [1] = canonical key, [2] = original case, [3] = display text (e.g. {CLIENT NAME})
+ * Regex that matches a replacement variable-highlight span (non-conditional).
+ * Captures: [1] = canonical key, [2] = original case
  */
 const VARIABLE_SPAN_RE =
 	/<span class="variable-highlight" data-variable="([^"]*)" data-original-case="([^"]*)">\{[^}]*\}<\/span>/g;
+
+/**
+ * Regex that matches a conditional variable-highlight span.
+ * Captures: [1] = canonical key, [2] = original case (label),
+ *           [3] = true text, [4] = false text
+ */
+const CONDITIONAL_SPAN_RE =
+	/<span class="variable-highlight" data-variable="([^"]*)" data-original-case="([^"]*)" data-conditional="true" data-true-text="([^"]*)" data-false-text="([^"]*)">\{[^}]*\}<\/span>/g;
 
 export default function VariableEditor() {
 	const {
@@ -138,11 +146,44 @@ export default function VariableEditor() {
 	};
 
 	// Build a live preview by replacing variable placeholders in the HTML.
-	// Matches spans by canonical (lowercase) data-variable key, applies
-	// casing from data-original-case.
+	// Handles both replacement variables and conditional variables.
 	// Red = unfilled, yellow = selected, green = filled & not selected.
 	const getLivePreviewHtml = useCallback(() => {
-		return documentHtml.replace(
+		// First pass: replace conditional variable spans
+		const withConditionals = documentHtml.replace(
+			CONDITIONAL_SPAN_RE,
+			(
+				match,
+				canonicalKey: string,
+				_originalCase: string,
+				trueText: string,
+				falseText: string,
+			) => {
+				const displayName = canonicalToDisplay[canonicalKey];
+				if (!displayName) return match;
+
+				const value = variableValues[displayName] ?? "false";
+				const isTrue = value === "true";
+				const resolvedText = isTrue ? trueText : falseText;
+				const isSelected = displayName === selectedVariable;
+
+				// If resolved text is empty, show the label as placeholder
+				if (!resolvedText) {
+					const cssClass = isSelected
+						? "variable-highlight selected"
+						: "variable-highlight";
+					return `<span class="${cssClass}" data-variable="${canonicalKey}" data-original-case="${_originalCase}" data-conditional="true" data-true-text="${trueText}" data-false-text="${falseText}">&nbsp;</span>`;
+				}
+
+				const cssClass = isSelected
+					? "variable-highlight selected"
+					: "variable-highlight filled";
+				return `<span class="${cssClass}" data-variable="${canonicalKey}" data-original-case="${_originalCase}" data-conditional="true" data-true-text="${trueText}" data-false-text="${falseText}">${resolvedText}</span>`;
+			},
+		);
+
+		// Second pass: replace regular (replacement) variable spans
+		return withConditionals.replace(
 			VARIABLE_SPAN_RE,
 			(match, canonicalKey: string, originalCase: string) => {
 				const displayName = canonicalToDisplay[canonicalKey];
@@ -176,8 +217,17 @@ export default function VariableEditor() {
 		[variables, variableValues, varSearch],
 	);
 
-	const filledCount = Object.values(variableValues).filter(
-		(v) => v.length > 0,
+	// Build a set of conditional variable names for quick lookup
+	const conditionalVarNames = useMemo(() => {
+		const set = new Set<string>();
+		for (const v of variables) {
+			if (v.is_conditional) set.add(v.display_name);
+		}
+		return set;
+	}, [variables]);
+
+	const filledCount = Object.entries(variableValues).filter(
+		([name, v]) => conditionalVarNames.has(name) || v.length > 0,
 	).length;
 
 	return (
@@ -270,45 +320,86 @@ export default function VariableEditor() {
 							No variables match your search.
 						</p>
 					) : (
-						<div className="flex flex-col gap-3">
-							{filteredVariables.map((varInfo) => {
-								const name = varInfo.display_name;
-								const isFilled = Boolean(variableValues[name]);
+					<div className="flex flex-col gap-3">
+						{filteredVariables.map((varInfo) => {
+							const name = varInfo.display_name;
+
+							if (varInfo.is_conditional) {
+								const isChecked =
+									variableValues[name] === "true";
 								return (
 									<label
 										key={name}
 										className="form-control w-full"
 									>
-										<div className="label">
+										<div className="label cursor-pointer">
 											<span className="label-text text-sm font-medium flex items-center gap-1.5">
-												<span
-													className={`inline-block size-2 shrink-0 rounded-full ${isFilled ? "bg-success" : "bg-error"}`}
+												<input
+													type="checkbox"
+													className="checkbox checkbox-sm checkbox-primary"
+													checked={isChecked}
+													onChange={(e) =>
+														handleVariableChange(
+															name,
+															e.target.checked
+																? "true"
+																: "false",
+														)
+													}
+													onFocus={() =>
+														setSelectedVariable(
+															name,
+														)
+													}
+													onBlur={() =>
+														setSelectedVariable(
+															null,
+														)
+													}
 												/>
 												{name}
 											</span>
 										</div>
-										<input
-											type="text"
-											className="input input-bordered input-sm w-full"
-											placeholder={`Enter ${name}`}
-											value={variableValues[name] ?? ""}
-											onChange={(e) =>
-												handleVariableChange(
-													name,
-													e.target.value,
-												)
-											}
-											onFocus={() =>
-												setSelectedVariable(name)
-											}
-											onBlur={() =>
-												setSelectedVariable(null)
-											}
-										/>
 									</label>
 								);
-							})}
-						</div>
+							}
+
+							const isFilled = Boolean(variableValues[name]);
+							return (
+								<label
+									key={name}
+									className="form-control w-full"
+								>
+									<div className="label">
+										<span className="label-text text-sm font-medium flex items-center gap-1.5">
+											<span
+												className={`inline-block size-2 shrink-0 rounded-full ${isFilled ? "bg-success" : "bg-error"}`}
+											/>
+											{name}
+										</span>
+									</div>
+									<input
+										type="text"
+										className="input input-bordered input-sm w-full"
+										placeholder={`Enter ${name}`}
+										value={variableValues[name] ?? ""}
+										onChange={(e) =>
+											handleVariableChange(
+												name,
+												e.target.value,
+											)
+										}
+										onFocus={() =>
+											setSelectedVariable(name)
+										}
+										onBlur={() =>
+											setSelectedVariable(null)
+										}
+									/>
+								</label>
+							);
+						})}
+					</div>
 					)}
 				</div>
 
