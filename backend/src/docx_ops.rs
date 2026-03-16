@@ -87,21 +87,49 @@ pub fn rename_document(docx_path: String, new_filename: String) -> Result<String
     Ok(new_path.to_string_lossy().to_string())
 }
 
-/// Extract all unique {Variable} placeholders from a .docx file.
+/// Extract all unique variable references from a .docx file.
+/// Looks for both `{Variable}` placeholders in text AND Lily SDT content
+/// controls (`<w:sdt>` with `lily:` tag prefix) from previous saves.
 /// Variables that differ only in case are grouped into one entry.
-/// Returns a list of VariableInfo sorted by display name.
 #[tauri::command]
 pub fn extract_variables(docx_path: String) -> Result<Vec<VariableInfo>, String> {
     let raw_xml = read_document_xml(&docx_path)?;
     let xml_content = normalize_split_variables(&raw_xml);
+
+    // First, find variables from {Placeholder} syntax in text
     let text = extract_text_from_xml(&xml_content);
-    Ok(find_variables(&text))
+    let mut vars = find_variables(&text);
+
+    // Also scan for Lily SDT content controls (from previously saved documents)
+    let sdt_vars = find_sdt_variables(&xml_content);
+    for sdt_var in sdt_vars {
+        // Only add if not already found via placeholder syntax
+        let already_exists = vars
+            .iter()
+            .any(|v| v.display_name.to_lowercase() == sdt_var.to_lowercase());
+        if !already_exists {
+            vars.push(VariableInfo {
+                display_name: sdt_var.clone(),
+                variants: vec![sdt_var],
+            });
+        }
+    }
+
+    Ok(vars)
 }
 
 /// Replace variables in a .docx file with the provided values.
 /// The `variables` map is keyed by display_name (canonical form).
-/// Each occurrence in the document is replaced with a case-matched version
-/// of the value: ALL CAPS → uppercased, all lower → lowercased, otherwise as-is.
+///
+/// For fresh `{Placeholder}` text: replaces the text and wraps it in an SDT
+/// (Structured Document Tag / Content Control) with a `lily:VarName` tag so
+/// the variable identity is preserved in the docx XML permanently.
+///
+/// For existing Lily SDTs (from a previous save): updates the text content
+/// inside the SDT without creating a new wrapper.
+///
+/// Case-matching: ALL CAPS placeholders get uppercased values, all-lower get
+/// lowercased, otherwise as-is.
 #[tauri::command]
 pub fn replace_variables(
     docx_path: String,
@@ -113,8 +141,9 @@ pub fn replace_variables(
     let text = extract_text_from_xml(&xml_content);
     let var_infos = find_variables(&text);
 
-    // Build a map from each original-cased variant to the appropriately-cased value
-    let mut replacement_map: HashMap<String, String> = HashMap::new();
+    // Build a map from each original-cased variant to (display_name, cased_value)
+    // for fresh {Placeholder} replacement
+    let mut placeholder_map: HashMap<String, (String, String)> = HashMap::new();
     for info in &var_infos {
         if let Some(value) = variables.get(&info.display_name) {
             if value.is_empty() {
@@ -122,10 +151,17 @@ pub fn replace_variables(
             }
             for variant in &info.variants {
                 let cased_value = apply_casing(value, variant);
-                replacement_map.insert(variant.clone(), cased_value);
+                placeholder_map.insert(variant.clone(), (info.display_name.clone(), cased_value));
             }
         }
     }
+
+    // Build a map from display_name to value for SDT content updates
+    let sdt_value_map: HashMap<String, String> = variables
+        .iter()
+        .filter(|(_, v)| !v.is_empty())
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
 
     let file_bytes = fs::read(&docx_path).map_err(|e| format!("Failed to read docx: {}", e))?;
 
@@ -165,7 +201,10 @@ pub fn replace_variables(
             {
                 let xml_str = String::from_utf8_lossy(content);
                 let normalized = normalize_split_variables(&xml_str);
-                let replaced = replace_in_xml(&normalized, &replacement_map);
+                // First update any existing Lily SDTs
+                let with_sdts_updated = update_sdt_values(&normalized, &sdt_value_map);
+                // Then replace any remaining fresh {Placeholder} text with SDT-wrapped values
+                let replaced = replace_placeholders_with_sdt(&with_sdts_updated, &placeholder_map);
                 writer
                     .write_all(replaced.as_bytes())
                     .map_err(|e| format!("Failed to write entry: {}", e))?;
@@ -559,23 +598,206 @@ fn apply_casing(value: &str, original_var_name: &str) -> String {
     }
 }
 
-/// Replace {Variable} placeholders in raw XML content.
-/// The `replacements` map goes from original-cased variable name to
-/// the appropriately-cased replacement value.
-fn replace_in_xml(xml: &str, replacements: &HashMap<String, String>) -> String {
-    let mut result = xml.to_string();
-    for (var_name, value) in replacements {
-        let pattern = format!("{{{}}}", var_name);
-        result = result.replace(&pattern, value);
+const SDT_TAG_PREFIX: &str = "lily:";
+
+/// Find variable names from Lily SDT content controls in the XML.
+/// Scans for `<w:tag w:val="lily:Variable Name"/>` inside `<w:sdtPr>` elements.
+/// Returns a deduplicated list of display names in order of appearance.
+fn find_sdt_variables(xml: &str) -> Vec<String> {
+    let tag_re = Regex::new(r#"<w:tag\s+w:val="lily:([^"]*)"\s*/>"#).expect("invalid regex");
+    let mut seen = std::collections::HashSet::new();
+    let mut result = Vec::new();
+
+    for cap in tag_re.captures_iter(xml) {
+        let name = cap[1].to_string();
+        if seen.insert(name.to_lowercase()) {
+            result.push(name);
+        }
     }
+
     result
 }
 
+/// Replace `{Variable}` placeholders in raw XML with SDT-wrapped values.
+/// Each `{VarName}` is replaced with a Content Control that preserves the
+/// variable identity:
+///
+/// ```xml
+/// <w:sdt>
+///   <w:sdtPr><w:tag w:val="lily:Display Name"/><w:alias w:val="Display Name"/></w:sdtPr>
+///   <w:sdtContent><w:r>...<w:t>value</w:t></w:r></w:sdtContent>
+/// </w:sdt>
+/// ```
+///
+/// The `replacements` map goes from original-cased variant to
+/// (display_name, cased_value).
+fn replace_placeholders_with_sdt(
+    xml: &str,
+    replacements: &HashMap<String, (String, String)>,
+) -> String {
+    if replacements.is_empty() {
+        return xml.to_string();
+    }
+
+    // We need to find <w:r>...</w:r> runs that contain {Variable} text and
+    // wrap them in SDTs. We use regex to find runs containing placeholders.
+    let run_re = Regex::new(r#"<w:r\b[^>]*>.*?</w:r>"#).expect("invalid regex");
+    let t_content_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
+    let rpr_re = Regex::new(r#"<w:rPr>.*?</w:rPr>"#).expect("invalid regex");
+
+    let mut result = String::new();
+    let mut last_end = 0;
+
+    for run_match in run_re.find_iter(xml) {
+        let run_str = run_match.as_str();
+
+        // Check if this run contains any {Variable} placeholder
+        let mut has_replacement = false;
+        if let Some(t_caps) = t_content_re.captures(run_str) {
+            let text = &t_caps[1];
+            for var_name in replacements.keys() {
+                let pattern = format!("{{{}}}", var_name);
+                if text.contains(&pattern) {
+                    has_replacement = true;
+                    break;
+                }
+            }
+        }
+
+        if !has_replacement {
+            // No placeholder in this run, keep as-is
+            result.push_str(&xml[last_end..run_match.end()]);
+            last_end = run_match.end();
+            continue;
+        }
+
+        // This run has placeholder(s). Replace text and wrap in SDT(s).
+        // For simplicity, handle the common case: one placeholder per run.
+        result.push_str(&xml[last_end..run_match.start()]);
+        let rpr = rpr_re
+            .find(run_str)
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default();
+
+        // Get the text content
+        if let Some(t_caps) = t_content_re.captures(run_str) {
+            let mut text = t_caps[1].to_string();
+            let mut output_parts: Vec<String> = Vec::new();
+
+            // Process each placeholder in the text
+            loop {
+                // Find the next {Variable} in the remaining text
+                let mut found = false;
+                for (var_name, (display_name, value)) in replacements {
+                    let pattern = format!("{{{}}}", var_name);
+                    if let Some(pos) = text.find(&pattern) {
+                        // Text before the placeholder (as a plain run)
+                        let before = &text[..pos];
+                        if !before.is_empty() {
+                            output_parts.push(format!(
+                                "<w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r>",
+                                rpr,
+                                escape_xml_text(before)
+                            ));
+                        }
+
+                        // The SDT-wrapped replacement
+                        let escaped_val = escape_xml_text(value);
+                        let escaped_display = escape_xml_text(display_name);
+                        output_parts.push(format!(
+                            "<w:sdt><w:sdtPr><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
+                            SDT_TAG_PREFIX, escaped_display, escaped_display, rpr, escaped_val
+                        ));
+
+                        // Continue with the text after the placeholder
+                        text = text[pos + pattern.len()..].to_string();
+                        found = true;
+                        break;
+                    }
+                }
+
+                if !found {
+                    // No more placeholders; emit remaining text as a plain run
+                    if !text.is_empty() {
+                        output_parts.push(format!(
+                            "<w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r>",
+                            rpr,
+                            escape_xml_text(&text)
+                        ));
+                    }
+                    break;
+                }
+            }
+
+            for part in &output_parts {
+                result.push_str(part);
+            }
+        } else {
+            // No <w:t> found, keep the run as-is
+            result.push_str(run_str);
+        }
+
+        last_end = run_match.end();
+    }
+
+    result.push_str(&xml[last_end..]);
+    result
+}
+
+/// Update the text content inside existing Lily SDT content controls.
+/// Finds each `<w:sdt>` with a `lily:` tag and replaces the `<w:t>` text
+/// inside its `<w:sdtContent>` with the new value (applying appropriate casing).
+fn update_sdt_values(xml: &str, values: &HashMap<String, String>) -> String {
+    if values.is_empty() {
+        return xml.to_string();
+    }
+
+    // Match entire SDT blocks: <w:sdt>...<w:tag w:val="lily:Name"/>...</w:sdt>
+    let sdt_re = Regex::new(r#"<w:sdt>(.*?)</w:sdt>"#).expect("invalid regex");
+    let tag_re = Regex::new(r#"<w:tag\s+w:val="lily:([^"]*)"\s*/>"#).expect("invalid regex");
+    let t_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
+
+    sdt_re
+        .replace_all(xml, |caps: &regex::Captures| {
+            let inner = &caps[1];
+
+            // Extract the variable display name from the tag
+            let Some(tag_caps) = tag_re.captures(inner) else {
+                return caps[0].to_string();
+            };
+            let display_name = &tag_caps[1];
+
+            // Look up the new value
+            let Some(value) = values.get(display_name) else {
+                return caps[0].to_string();
+            };
+
+            // Find the <w:t> inside sdtContent and get the original case from tag
+            // For SDTs we use the display_name for casing (title case = as-is)
+            let new_value = escape_xml_text(value);
+
+            // Replace the text content inside the <w:t> element within sdtContent
+            let new_inner = t_re
+                .replace(inner, |t_caps: &regex::Captures| {
+                    let full = t_caps[0].to_string();
+                    let tag_end = full.find('>').unwrap() + 1;
+                    format!("{}{}</w:t>", &full[..tag_end], new_value)
+                })
+                .to_string();
+
+            format!("<w:sdt>{}</w:sdt>", new_inner)
+        })
+        .to_string()
+}
+
 /// Convert Word XML to a simple HTML preview.
-/// Preserves paragraph structure, formatting, and highlights {Variable} placeholders.
-/// The `data-variable` attribute uses a lowercase canonical key so the frontend
-/// can match case-insensitively. The `data-original-case` attribute preserves
-/// the original casing for case-appropriate replacement in the live preview.
+/// Preserves paragraph structure, formatting, and highlights variables.
+///
+/// Handles two kinds of variables:
+/// 1. Fresh `{Placeholder}` text — wrapped in highlight spans with
+///    `data-variable` (lowercase canonical) and `data-original-case`.
+/// 2. Lily SDT content controls — the text inside `<w:sdtContent>` is wrapped
+///    in a highlight span using the `lily:` tag value as the variable name.
 fn xml_to_preview_html(xml: &str) -> String {
     let mut html = String::from("<div class=\"document-preview\">");
     let mut current_para = String::new();
@@ -587,6 +809,11 @@ fn xml_to_preview_html(xml: &str) -> String {
     let mut pending_bold = false;
     let mut pending_italic = false;
     let mut pending_underline = false;
+    // Track when we're inside a Lily SDT
+    let mut in_sdt = false;
+    let mut in_sdt_pr = false;
+    let mut sdt_var_name: Option<String> = None;
+    let mut in_sdt_content = false;
 
     let reader = xml::reader::EventReader::from_str(xml);
     for event in reader {
@@ -601,6 +828,26 @@ fn xml_to_preview_html(xml: &str) -> String {
                         in_italic = false;
                         in_underline = false;
                     }
+                    "sdt" => {
+                        in_sdt = true;
+                        sdt_var_name = None;
+                    }
+                    "sdtPr" if in_sdt => {
+                        in_sdt_pr = true;
+                    }
+                    "tag" if in_sdt_pr => {
+                        // Check for lily: prefix in w:val
+                        for attr in &attributes {
+                            if attr.name.local_name == "val"
+                                && attr.value.starts_with(SDT_TAG_PREFIX)
+                            {
+                                sdt_var_name = Some(attr.value[SDT_TAG_PREFIX.len()..].to_string());
+                            }
+                        }
+                    }
+                    "sdtContent" if in_sdt => {
+                        in_sdt_content = true;
+                    }
                     "rPr" => {
                         in_rpr = true;
                         pending_bold = false;
@@ -608,7 +855,6 @@ fn xml_to_preview_html(xml: &str) -> String {
                         pending_underline = false;
                     }
                     "b" if in_rpr => {
-                        // Check for w:val="false" or w:val="0"
                         let disabled = attributes.iter().any(|a| {
                             a.name.local_name == "val" && (a.value == "false" || a.value == "0")
                         });
@@ -636,6 +882,17 @@ fn xml_to_preview_html(xml: &str) -> String {
                 }
             }
             Ok(xml::reader::XmlEvent::EndElement { name, .. }) => match name.local_name.as_str() {
+                "sdt" => {
+                    in_sdt = false;
+                    in_sdt_content = false;
+                    sdt_var_name = None;
+                }
+                "sdtPr" => {
+                    in_sdt_pr = false;
+                }
+                "sdtContent" => {
+                    in_sdt_content = false;
+                }
                 "rPr" => {
                     in_rpr = false;
                     in_bold = pending_bold;
@@ -659,7 +916,21 @@ fn xml_to_preview_html(xml: &str) -> String {
             Ok(xml::reader::XmlEvent::Characters(text)) => {
                 if in_t {
                     let escaped = escape_html(&text);
-                    let highlighted = highlight_variables(&escaped);
+
+                    // If we're inside a Lily SDT content, wrap in a variable span
+                    let highlighted = if in_sdt_content {
+                        if let Some(ref var_name) = sdt_var_name {
+                            let canonical = var_name.to_lowercase();
+                            format!(
+                                "<span class=\"variable-highlight filled\" data-variable=\"{}\" data-original-case=\"{}\">{}</span>",
+                                canonical, var_name, escaped
+                            )
+                        } else {
+                            escaped
+                        }
+                    } else {
+                        highlight_variables(&escaped)
+                    };
 
                     let mut styled = highlighted;
                     if in_bold {
@@ -821,5 +1092,107 @@ mod tests {
         // And highlight_variables should produce a proper span
         let highlighted = highlight_variables("{Test Var}");
         assert!(highlighted.contains("data-variable=\"test var\""));
+    }
+
+    // ─── SDT round-trip tests ───────────────────────────────────────────
+
+    #[test]
+    fn test_replace_placeholders_with_sdt() {
+        let xml = r#"<w:r><w:rPr><w:b/></w:rPr><w:t>{Client Name}</w:t></w:r>"#;
+        let mut replacements = HashMap::new();
+        replacements.insert(
+            "Client Name".to_string(),
+            ("Client Name".to_string(), "Jane Doe".to_string()),
+        );
+        let result = replace_placeholders_with_sdt(xml, &replacements);
+        assert!(
+            result.contains("<w:sdt>"),
+            "Expected SDT wrapper, got: {}",
+            result
+        );
+        assert!(
+            result.contains("w:val=\"lily:Client Name\""),
+            "Expected lily tag, got: {}",
+            result
+        );
+        assert!(
+            result.contains("Jane Doe"),
+            "Expected value, got: {}",
+            result
+        );
+        // Formatting should be preserved inside the SDT run
+        assert!(
+            result.contains("<w:b/>"),
+            "Expected bold preserved, got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_find_sdt_variables() {
+        let xml = r#"<w:sdt><w:sdtPr><w:tag w:val="lily:Client Name"/></w:sdtPr><w:sdtContent><w:r><w:t>Jane Doe</w:t></w:r></w:sdtContent></w:sdt>"#;
+        let vars = find_sdt_variables(xml);
+        assert_eq!(vars, vec!["Client Name"]);
+    }
+
+    #[test]
+    fn test_find_sdt_variables_dedup() {
+        let xml = r#"<w:sdt><w:sdtPr><w:tag w:val="lily:Name"/></w:sdtPr><w:sdtContent><w:r><w:t>A</w:t></w:r></w:sdtContent></w:sdt><w:sdt><w:sdtPr><w:tag w:val="lily:Name"/></w:sdtPr><w:sdtContent><w:r><w:t>B</w:t></w:r></w:sdtContent></w:sdt>"#;
+        let vars = find_sdt_variables(xml);
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0], "Name");
+    }
+
+    #[test]
+    fn test_update_sdt_values() {
+        let xml = r#"<w:sdt><w:sdtPr><w:tag w:val="lily:Client Name"/></w:sdtPr><w:sdtContent><w:r><w:t>Old Value</w:t></w:r></w:sdtContent></w:sdt>"#;
+        let mut values = HashMap::new();
+        values.insert("Client Name".to_string(), "New Value".to_string());
+        let result = update_sdt_values(xml, &values);
+        assert!(
+            result.contains("New Value"),
+            "Expected updated value, got: {}",
+            result
+        );
+        assert!(
+            !result.contains("Old Value"),
+            "Old value should be gone, got: {}",
+            result
+        );
+        assert!(
+            result.contains("lily:Client Name"),
+            "Tag should be preserved, got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_sdt_roundtrip_extract() {
+        // After saving with SDTs, extract_variables should find them via SDT tags
+        let xml = r#"<w:sdt><w:sdtPr><w:tag w:val="lily:Phone Number"/><w:alias w:val="Phone Number"/></w:sdtPr><w:sdtContent><w:r><w:t>555-1234</w:t></w:r></w:sdtContent></w:sdt>"#;
+        let vars = find_sdt_variables(xml);
+        assert_eq!(vars, vec!["Phone Number"]);
+    }
+
+    #[test]
+    fn test_sdt_preview_html() {
+        // Use a namespace-declared root so xml-rs can parse w: prefixed elements
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:sdt><w:sdtPr><w:tag w:val="lily:Client Name"/></w:sdtPr><w:sdtContent><w:r><w:t>Jane Doe</w:t></w:r></w:sdtContent></w:sdt></w:p></w:body></w:document>"#;
+        let html = xml_to_preview_html(xml);
+        assert!(
+            html.contains("variable-highlight"),
+            "Expected highlight span, got: {}",
+            html
+        );
+        assert!(
+            html.contains("data-variable=\"client name\""),
+            "Expected canonical key, got: {}",
+            html
+        );
+        assert!(
+            html.contains("Jane Doe"),
+            "Expected value text, got: {}",
+            html
+        );
     }
 }
