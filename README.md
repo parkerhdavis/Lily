@@ -1,3 +1,4 @@
+![Lily Icon](./backend/icons/128x128.png)
 # Lily
 
 ---
@@ -24,7 +25,7 @@ Lily streamlines the process of filling out templated Word documents (.docx) for
 
 ```bash
 # Install dependencies
-bun install
+make setup
 
 # Run in development mode
 make dev

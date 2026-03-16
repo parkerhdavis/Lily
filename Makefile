@@ -38,7 +38,7 @@ ifeq ($(DETECTED_OS),windows)
     BUN := bun
     # Run the tauri CLI JS entry point directly with bun to avoid needing node on PATH.
     # Path is relative to backend/ since Tauri commands must run from there.
-    TAURI := bun ..\node_modules\@tauri-apps\cli\tauri.js
+    TAURI := bun ..\frontend\node_modules\@tauri-apps\cli\tauri.js
     MKDIR := New-Item -ItemType Directory -Force -Path
     RM := Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     NULL := $$null
@@ -47,7 +47,7 @@ else
     # Run the tauri CLI JS entry point directly with bun to avoid the #!/usr/bin/env node shim,
     # since node may not be on PATH (bun replaces it as our JS runtime).
     # Path is relative to backend/ since Tauri commands must run from there.
-    TAURI := bun ../node_modules/@tauri-apps/cli/tauri.js
+    TAURI := bun ../frontend/node_modules/@tauri-apps/cli/tauri.js
     MKDIR := mkdir -p
     RM := rm -rf
     NULL := /dev/null
@@ -102,7 +102,7 @@ dev:
 
 dev-frontend:
 	@echo "Starting Vite dev server only (rapid UI iteration)..."
-	$(BUN) run dev
+	cd frontend; $(BUN) run dev
 
 down:
 	@echo "Stopping dev server..."
@@ -118,7 +118,7 @@ dev:
 		sleep 1; \
 	fi
 	@echo "  -> Starting Vite dev server in background..."
-	@setsid $(BUN) run dev > $(NULL) 2>&1 & echo $$! > .vite.pid
+	@cd frontend && setsid $(BUN) run dev > $(NULL) 2>&1 & echo $$! > .vite.pid
 	@sleep 2
 	@echo "  -> Starting Tauri..."
 	@cd backend && $(TAURI) dev; \
@@ -153,7 +153,7 @@ down:
 
 dev-frontend:
 	@echo "Starting Vite dev server only (rapid UI iteration)..."
-	@$(BUN) run dev
+	@cd frontend && $(BUN) run dev
 endif
 
 # ==================================================================
@@ -168,7 +168,7 @@ ifeq ($(DETECTED_OS),windows)
 setup:
 	@echo "Installing all dependencies (Rust + Bun)..."
 	@echo "Please ensure Rust and Bun are installed."
-	$(BUN) install
+	cd frontend; $(BUN) install
 	@echo "Setup complete"
 
 install: setup
@@ -176,7 +176,7 @@ install: setup
 else
 setup:
 	@echo "Installing all dependencies (Rust + Bun)..."
-	@$(BUN) install
+	@cd frontend && $(BUN) install
 	@echo "Setup complete"
 
 install: setup
@@ -187,7 +187,7 @@ ifeq ($(DETECTED_OS),windows)
 build:
 	@echo "Building Windows installers (.msi, .exe)..."
 	@echo "  -> Building frontend..."
-	$(BUN) run build
+	cd frontend; $(BUN) run build
 	@echo "  -> Building Tauri app for Windows..."
 	$$env:PATH = "$$env:USERPROFILE\.cargo\bin;$$env:PATH"; cd backend; $(TAURI) build
 	@echo ""
@@ -213,7 +213,7 @@ build-linux:
 build-windows:
 	@echo "Building Windows installers (.msi, .exe)..."
 	@echo "  -> Building frontend..."
-	$(BUN) run build
+	cd frontend; $(BUN) run build
 	@echo "  -> Building Tauri app for Windows..."
 	$$env:PATH = "$$env:USERPROFILE\.cargo\bin;$$env:PATH"; cd backend; $(TAURI) build
 	@echo ""
@@ -230,7 +230,7 @@ else
 build-linux:
 	@echo "Building Linux installers (.deb, .rpm, AppImage)..."
 	@echo "  -> Building frontend..."
-	@$(BUN) run build
+	@cd frontend && $(BUN) run build
 	@echo "  -> Building Tauri app for Linux..."
 	@cd backend && $(TAURI) build
 	@echo ""
@@ -248,7 +248,7 @@ build-windows:
 build-macos:
 	@echo "Building macOS installers (.dmg, .app)..."
 	@echo "  -> Building frontend..."
-	@$(BUN) run build
+	@cd frontend && $(BUN) run build
 	@echo "  -> Building Tauri app for macOS..."
 	@cd backend && $(TAURI) build
 	@echo ""
@@ -278,26 +278,26 @@ endif
 ifeq ($(DETECTED_OS),windows)
 lint:
 	@echo "Linting frontend code..."
-	$(BUN)x biome check .
+	cd frontend; $(BUN)x biome check .
 	@echo "Linting Rust code..."
 	cd backend; cargo clippy -- -D warnings
 	@echo "Lint complete"
 
 lint-fix:
 	@echo "Fixing frontend lint issues..."
-	$(BUN)x biome check --write .
+	cd frontend; $(BUN)x biome check --write .
 	@echo "Lint fix complete"
 
 format:
 	@echo "Formatting frontend code..."
-	$(BUN)x biome format --write .
+	cd frontend; $(BUN)x biome format --write .
 	@echo "Formatting Rust code..."
 	cd backend; cargo fmt
 	@echo "Format complete"
 
 typecheck:
 	@echo "Running TypeScript type checking..."
-	$(BUN) run typecheck
+	cd frontend; $(BUN) run typecheck
 	@echo "Type check passed"
 
 test:
@@ -307,26 +307,26 @@ test:
 else
 lint:
 	@echo "Linting frontend code..."
-	@$(BUN)x biome check .
+	@cd frontend && $(BUN)x biome check .
 	@echo "Linting Rust code..."
 	@cd backend && cargo clippy -- -D warnings
 	@echo "Lint complete"
 
 lint-fix:
 	@echo "Fixing frontend lint issues..."
-	@$(BUN)x biome check --write .
+	@cd frontend && $(BUN)x biome check --write .
 	@echo "Lint fix complete"
 
 format:
 	@echo "Formatting frontend code..."
-	@$(BUN)x biome format --write .
+	@cd frontend && $(BUN)x biome format --write .
 	@echo "Formatting Rust code..."
 	@cd backend && cargo fmt
 	@echo "Format complete"
 
 typecheck:
 	@echo "Running TypeScript type checking..."
-	@$(BUN) run typecheck
+	@cd frontend && $(BUN) run typecheck
 	@echo "Type check passed"
 
 test:
@@ -342,15 +342,15 @@ endif
 ifeq ($(DETECTED_OS),windows)
 clean:
 	@echo "Cleaning build artifacts..."
-	if (Test-Path node_modules) { Remove-Item -Recurse -Force node_modules }
-	if (Test-Path dist) { Remove-Item -Recurse -Force dist }
+	if (Test-Path frontend\node_modules) { Remove-Item -Recurse -Force frontend\node_modules }
+	if (Test-Path frontend\dist) { Remove-Item -Recurse -Force frontend\dist }
 	if (Test-Path backend\target) { Remove-Item -Recurse -Force backend\target }
 	@echo "Cleanup complete"
 else
 clean:
 	@echo "Cleaning build artifacts..."
-	@$(RM) node_modules
-	@$(RM) dist
+	@$(RM) frontend/node_modules
+	@$(RM) frontend/dist
 	@$(RM) backend/target
 	@echo "Cleanup complete"
 endif
