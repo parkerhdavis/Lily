@@ -18,9 +18,14 @@ use crate::lily_file;
 #[derive(Debug, Serialize)]
 pub struct VariableInfo {
     /// Display name shown in the UI (the title-cased or first-seen variant).
+    /// For conditional variables, this is the label portion before the `??`.
     pub display_name: String,
     /// All distinct casings found in the document for this variable.
     pub variants: Vec<String>,
+    /// Whether this is a conditional (ternary) variable.
+    /// Conditional variables use the syntax `{Label ?? true_text :: false_text}`
+    /// and display as a checkbox in the UI.
+    pub is_conditional: bool,
 }
 
 // ─── Tauri commands ─────────────────────────────────────────────────────────
@@ -105,6 +110,8 @@ pub fn extract_variables(docx_path: String) -> Result<Vec<VariableInfo>, String>
 fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
     let mut keys_in_order: Vec<String> = Vec::new();
     let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+    // Track which keys are conditional variables (contain `??`).
+    let mut conditional_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     let mut in_t = false;
     let mut in_sdt = false;
@@ -167,13 +174,30 @@ fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
                             }
                             if found_close && !var_name.is_empty() && !var_name.contains('{') {
                                 let trimmed = var_name.trim().to_string();
-                                let key = trimmed.to_lowercase();
-                                if !groups.contains_key(&key) {
-                                    keys_in_order.push(key.clone());
-                                }
-                                let variants = groups.entry(key).or_default();
-                                if !variants.contains(&trimmed) {
-                                    variants.push(trimmed);
+                                // For conditional variables, use the label as the key
+                                if is_conditional_variable(&trimmed) {
+                                    if let Some((label, _, _)) =
+                                        parse_conditional_variable(&trimmed)
+                                    {
+                                        let key = label.to_lowercase();
+                                        conditional_keys.insert(key.clone());
+                                        if !groups.contains_key(&key) {
+                                            keys_in_order.push(key.clone());
+                                        }
+                                        let variants = groups.entry(key).or_default();
+                                        if !variants.contains(&trimmed) {
+                                            variants.push(trimmed);
+                                        }
+                                    }
+                                } else {
+                                    let key = trimmed.to_lowercase();
+                                    if !groups.contains_key(&key) {
+                                        keys_in_order.push(key.clone());
+                                    }
+                                    let variants = groups.entry(key).or_default();
+                                    if !variants.contains(&trimmed) {
+                                        variants.push(trimmed);
+                                    }
                                 }
                             }
                         }
@@ -188,10 +212,20 @@ fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
         .into_iter()
         .filter_map(|key| {
             groups.remove(&key).map(|variants| {
-                let display_name = pick_display_name(&variants);
+                let is_conditional = conditional_keys.contains(&key);
+                let display_name = if is_conditional {
+                    // For conditional variables, derive display name from the label part
+                    let raw = &variants[0];
+                    parse_conditional_variable(raw)
+                        .map(|(label, _, _)| label)
+                        .unwrap_or_else(|| pick_display_name(&variants))
+                } else {
+                    pick_display_name(&variants)
+                };
                 VariableInfo {
                     display_name,
                     variants,
+                    is_conditional,
                 }
             })
         })
@@ -226,22 +260,51 @@ pub fn replace_variables(
     let mut placeholder_map: HashMap<String, (String, String)> = HashMap::new();
     for info in &var_infos {
         if let Some(value) = variables.get(&info.display_name) {
-            if value.is_empty() {
-                continue;
-            }
-            for variant in &info.variants {
-                let cased_value = apply_casing(value, variant);
-                placeholder_map.insert(variant.clone(), (info.display_name.clone(), cased_value));
+            if info.is_conditional {
+                // For conditional variables, resolve the true/false text
+                // The stored value is "true" or "false"
+                let is_true = value == "true";
+                for variant in &info.variants {
+                    if let Some((label, true_text, false_text)) =
+                        parse_conditional_variable(variant)
+                    {
+                        let resolved = if is_true { true_text } else { false_text };
+                        // Use the label as the display_name for the SDT tag
+                        placeholder_map.insert(variant.clone(), (label, resolved));
+                    }
+                }
+            } else {
+                if value.is_empty() {
+                    continue;
+                }
+                for variant in &info.variants {
+                    let cased_value = apply_casing(value, variant);
+                    placeholder_map
+                        .insert(variant.clone(), (info.display_name.clone(), cased_value));
+                }
             }
         }
     }
 
-    // Build a map from display_name to value for SDT content updates
-    let sdt_value_map: HashMap<String, String> = variables
-        .iter()
-        .filter(|(_, v)| !v.is_empty())
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
+    // Build a map from display_name to value for SDT content updates.
+    // For conditional variables, resolve the true/false branch.
+    let mut sdt_value_map: HashMap<String, String> = HashMap::new();
+    for info in &var_infos {
+        if let Some(value) = variables.get(&info.display_name) {
+            if info.is_conditional {
+                let is_true = value == "true";
+                // Use first variant to get the true/false text
+                if let Some(variant) = info.variants.first() {
+                    if let Some((_, true_text, false_text)) = parse_conditional_variable(variant) {
+                        let resolved = if is_true { true_text } else { false_text };
+                        sdt_value_map.insert(info.display_name.clone(), resolved);
+                    }
+                }
+            } else if !value.is_empty() {
+                sdt_value_map.insert(info.display_name.clone(), value.clone());
+            }
+        }
+    }
 
     let file_bytes = fs::read(&docx_path).map_err(|e| format!("Failed to read docx: {}", e))?;
 
@@ -1121,6 +1184,7 @@ fn find_variables(text: &str) -> Vec<VariableInfo> {
     // Preserves insertion order: each entry is (lowercased key, distinct original casings)
     let mut keys_in_order: Vec<String> = Vec::new();
     let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+    let mut conditional_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut chars = text.chars().peekable();
 
     while let Some(c) = chars.next() {
@@ -1136,13 +1200,27 @@ fn find_variables(text: &str) -> Vec<VariableInfo> {
             }
             if found_close && !var_name.is_empty() && !var_name.contains('{') {
                 let trimmed = var_name.trim().to_string();
-                let key = trimmed.to_lowercase();
-                if !groups.contains_key(&key) {
-                    keys_in_order.push(key.clone());
-                }
-                let variants = groups.entry(key).or_default();
-                if !variants.contains(&trimmed) {
-                    variants.push(trimmed);
+                if is_conditional_variable(&trimmed) {
+                    if let Some((label, _, _)) = parse_conditional_variable(&trimmed) {
+                        let key = label.to_lowercase();
+                        conditional_keys.insert(key.clone());
+                        if !groups.contains_key(&key) {
+                            keys_in_order.push(key.clone());
+                        }
+                        let variants = groups.entry(key).or_default();
+                        if !variants.contains(&trimmed) {
+                            variants.push(trimmed);
+                        }
+                    }
+                } else {
+                    let key = trimmed.to_lowercase();
+                    if !groups.contains_key(&key) {
+                        keys_in_order.push(key.clone());
+                    }
+                    let variants = groups.entry(key).or_default();
+                    if !variants.contains(&trimmed) {
+                        variants.push(trimmed);
+                    }
                 }
             }
         }
@@ -1152,10 +1230,19 @@ fn find_variables(text: &str) -> Vec<VariableInfo> {
         .into_iter()
         .filter_map(|key| {
             groups.remove(&key).map(|variants| {
-                let display_name = pick_display_name(&variants);
+                let is_conditional = conditional_keys.contains(&key);
+                let display_name = if is_conditional {
+                    let raw = &variants[0];
+                    parse_conditional_variable(raw)
+                        .map(|(label, _, _)| label)
+                        .unwrap_or_else(|| pick_display_name(&variants))
+                } else {
+                    pick_display_name(&variants)
+                };
                 VariableInfo {
                     display_name,
                     variants,
+                    is_conditional,
                 }
             })
         })
@@ -1197,6 +1284,34 @@ fn is_title_case(s: &str) -> bool {
         }
     }
     true
+}
+
+/// Check whether a variable's raw content (between `{}`) is a conditional
+/// variable. Conditional variables contain `??` as the ternary operator.
+fn is_conditional_variable(raw_content: &str) -> bool {
+    raw_content.contains("??")
+}
+
+/// Parse a conditional variable's raw content into (label, true_text, false_text).
+/// Input: `"Client Is Single ?? single text :: couple text"`
+/// Returns: `Some(("Client Is Single", "single text", "couple text"))`
+///
+/// The `::` separator between true and false branches is required. If the
+/// format doesn't match, returns `None`.
+fn parse_conditional_variable(raw_content: &str) -> Option<(String, String, String)> {
+    let (label, rest) = raw_content.split_once("??")?;
+    let label = label.trim().to_string();
+    if label.is_empty() {
+        return None;
+    }
+    // Split on :: for true/false branches
+    let (true_text, false_text) = if let Some((t, f)) = rest.split_once("::") {
+        (t.trim().to_string(), f.trim().to_string())
+    } else {
+        // No :: means the entire rest is the true_text, false_text is empty
+        (rest.trim().to_string(), String::new())
+    };
+    Some((label, true_text, false_text))
 }
 
 /// Apply the casing pattern of `original_var_name` to `value`.
@@ -2162,6 +2277,10 @@ fn escape_html(text: &str) -> String {
 /// Wrap {Variable} placeholders in highlight spans.
 /// Uses lowercase `data-variable` for canonical matching and
 /// `data-original-case` for the original casing seen in the document.
+///
+/// Conditional variables (`{Label ?? true :: false}`) get extra
+/// `data-conditional`, `data-true-text`, and `data-false-text` attributes
+/// so the frontend can toggle between the two text branches.
 fn highlight_variables(text: &str) -> String {
     let mut result = String::new();
     let mut chars = text.chars().peekable();
@@ -2178,11 +2297,33 @@ fn highlight_variables(text: &str) -> String {
                 var_content.push(inner);
             }
             if found_close && !var_content.is_empty() {
-                let canonical = var_content.trim().to_lowercase();
-                result.push_str(&format!(
-                    "<span class=\"variable-highlight\" data-variable=\"{}\" data-original-case=\"{}\">{{{}}}</span>",
-                    canonical, var_content, var_content
-                ));
+                let trimmed = var_content.trim();
+                if is_conditional_variable(trimmed) {
+                    if let Some((label, true_text, false_text)) =
+                        parse_conditional_variable(trimmed)
+                    {
+                        let canonical = label.to_lowercase();
+                        result.push_str(&format!(
+                            "<span class=\"variable-highlight\" data-variable=\"{}\" data-original-case=\"{}\" data-conditional=\"true\" data-true-text=\"{}\" data-false-text=\"{}\">{{{}}}</span>",
+                            escape_html(&canonical),
+                            escape_html(&label),
+                            escape_html(&true_text),
+                            escape_html(&false_text),
+                            escape_html(&var_content)
+                        ));
+                    } else {
+                        // Malformed conditional — treat as plain text
+                        result.push('{');
+                        result.push_str(&var_content);
+                        result.push('}');
+                    }
+                } else {
+                    let canonical = trimmed.to_lowercase();
+                    result.push_str(&format!(
+                        "<span class=\"variable-highlight\" data-variable=\"{}\" data-original-case=\"{}\">{{{}}}</span>",
+                        canonical, var_content, var_content
+                    ));
+                }
             } else {
                 result.push('{');
                 result.push_str(&var_content);
@@ -2499,6 +2640,133 @@ mod tests {
             "Expected 18pt font size (36 half-pts), got: {}",
             html
         );
+    }
+
+    // ─── Conditional variable tests ─────────────────────────────────────
+
+    #[test]
+    fn test_is_conditional_variable() {
+        assert!(is_conditional_variable(
+            "Client Is Single ?? single text :: couple text"
+        ));
+        assert!(is_conditional_variable("Label ?? true :: false"));
+        assert!(is_conditional_variable("Label ?? only true text ::"));
+        assert!(!is_conditional_variable("Client Name"));
+        assert!(!is_conditional_variable("Date"));
+        // Single ? should NOT be treated as conditional
+        assert!(!is_conditional_variable("What is this?"));
+    }
+
+    #[test]
+    fn test_parse_conditional_variable() {
+        let result = parse_conditional_variable("Client Is Single ?? single text :: couple text");
+        assert_eq!(
+            result,
+            Some((
+                "Client Is Single".to_string(),
+                "single text".to_string(),
+                "couple text".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_conditional_variable_empty_true() {
+        let result = parse_conditional_variable("Client Is Single ?? :: couple text");
+        assert_eq!(
+            result,
+            Some((
+                "Client Is Single".to_string(),
+                String::new(),
+                "couple text".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_conditional_variable_empty_false() {
+        let result = parse_conditional_variable("Client Is Single ?? single text ::");
+        assert_eq!(
+            result,
+            Some((
+                "Client Is Single".to_string(),
+                "single text".to_string(),
+                String::new()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_conditional_variable_no_separator() {
+        // No :: means all of rest is true_text, false_text is empty
+        let result = parse_conditional_variable("Flag ?? only true text");
+        assert_eq!(
+            result,
+            Some((
+                "Flag".to_string(),
+                "only true text".to_string(),
+                String::new()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_conditional_variable_with_colons_in_text() {
+        // Text can contain single colons — only :: is the separator
+        let result =
+            parse_conditional_variable("Is Trust ?? Trust dated: Jan 1 :: No trust established");
+        assert_eq!(
+            result,
+            Some((
+                "Is Trust".to_string(),
+                "Trust dated: Jan 1".to_string(),
+                "No trust established".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_find_variables_conditional() {
+        let text = "Hello {Client Is Single ?? single text :: couple text} and {Client Name}";
+        let vars = find_variables(text);
+        assert_eq!(vars.len(), 2);
+        assert_eq!(vars[0].display_name, "Client Is Single");
+        assert!(vars[0].is_conditional);
+        assert_eq!(vars[1].display_name, "Client Name");
+        assert!(!vars[1].is_conditional);
+    }
+
+    #[test]
+    fn test_highlight_variables_conditional() {
+        let result = highlight_variables("{Client Is Single ?? single text :: couple text}");
+        assert!(
+            result.contains("data-conditional=\"true\""),
+            "Expected conditional attribute, got: {}",
+            result
+        );
+        assert!(
+            result.contains("data-variable=\"client is single\""),
+            "Expected canonical key from label, got: {}",
+            result
+        );
+        assert!(
+            result.contains("data-true-text=\"single text\""),
+            "Expected true text, got: {}",
+            result
+        );
+        assert!(
+            result.contains("data-false-text=\"couple text\""),
+            "Expected false text, got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_highlight_variables_conditional_empty_branch() {
+        let result = highlight_variables("{Client Is Single ?? :: couple text}");
+        assert!(result.contains("data-conditional=\"true\""));
+        assert!(result.contains("data-true-text=\"\""));
+        assert!(result.contains("data-false-text=\"couple text\""));
     }
 
     #[test]

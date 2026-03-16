@@ -128,7 +128,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			const savedVars = lilyFile?.variables ?? {};
 			const variableValues: Record<string, string> = {};
 			for (const v of variables) {
-				variableValues[v.display_name] = savedVars[v.display_name] ?? "";
+				const defaultVal = v.is_conditional ? "false" : "";
+				variableValues[v.display_name] =
+					savedVars[v.display_name] ?? defaultVal;
 			}
 
 			// Store the variable names in the .lily document metadata so they
@@ -137,6 +139,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				workingDir,
 				filename,
 				variableNames: variables.map((v) => v.display_name),
+				conditionalNames: variables
+					.filter((v) => v.is_conditional)
+					.map((v) => v.display_name),
 			});
 
 			// Reload .lily file to pick up the new document entry
@@ -192,6 +197,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 					variables = storedNames.map((name) => ({
 						display_name: name,
 						variants: [name],
+						is_conditional: false,
 					}));
 				}
 			}
@@ -205,7 +211,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			const savedVars = lilyFile?.variables ?? {};
 			const variableValues: Record<string, string> = {};
 			for (const v of variables) {
-				variableValues[v.display_name] = savedVars[v.display_name] ?? "";
+				const defaultVal = v.is_conditional ? "false" : "";
+				variableValues[v.display_name] =
+					savedVars[v.display_name] ?? defaultVal;
 			}
 
 			set({

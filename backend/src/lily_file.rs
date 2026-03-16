@@ -19,6 +19,10 @@ pub struct LilyFile {
     pub lily_version: u32,
     /// Client-level variable values shared across all documents.
     pub variables: HashMap<String, String>,
+    /// Display names of conditional (ternary) variables. These render as
+    /// checkboxes in the UI and store `"true"` / `"false"` as their value.
+    #[serde(default)]
+    pub conditional_variables: Vec<String>,
     /// Map from document filename to its metadata.
     pub documents: HashMap<String, DocumentMeta>,
 }
@@ -49,6 +53,7 @@ impl Default for LilyFile {
         Self {
             lily_version: 2,
             variables: HashMap::new(),
+            conditional_variables: Vec::new(),
             documents: HashMap::new(),
         }
     }
@@ -323,7 +328,8 @@ pub fn remove_client_variable(working_dir: String, variable_name: String) -> Res
     write_lily_file(&working_dir, &lily)
 }
 
-/// Store the list of variable names (display names) that a document uses.
+/// Store the list of variable names (display names) that a document uses,
+/// along with the list of conditional variable names.
 /// Called after extracting variables from a freshly created document so that
 /// the variable list survives across save cycles (where placeholders are
 /// replaced with real values in the docx).
@@ -332,12 +338,19 @@ pub fn set_document_variables(
     working_dir: String,
     filename: String,
     variable_names: Vec<String>,
+    conditional_names: Vec<String>,
 ) -> Result<(), String> {
     let mut lily = read_lily_file(&working_dir)?;
     if let Some(meta) = lily.documents.get_mut(&filename) {
         meta.variable_names = variable_names;
     } else {
         return Err(format!("Document '{}' not found in .lily file", filename));
+    }
+    // Merge any new conditional variable names into the project-level list
+    for name in conditional_names {
+        if !lily.conditional_variables.contains(&name) {
+            lily.conditional_variables.push(name);
+        }
     }
     write_lily_file(&working_dir, &lily)
 }
