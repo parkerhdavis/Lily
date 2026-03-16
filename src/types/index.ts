@@ -8,17 +8,19 @@ export type WorkflowStep =
 	| "select-template"
 	| "edit-variables";
 
-/** Metadata for a single document tracked in the sidecar file. */
+/** Metadata for a single document tracked in the .lily project file. */
 export interface DocumentMeta {
 	template_rel_path: string;
 	created_at: string;
 	modified_at: string;
-	variable_values: Record<string, string>;
 }
 
-/** The .lily.json sidecar file stored in each working directory. */
-export interface SidecarFile {
-	version: number;
+/** The .lily project file stored in each client/working directory. */
+export interface LilyFile {
+	lily_version: number;
+	/** Client-level variable values shared across all documents. */
+	variables: Record<string, string>;
+	/** Map from document filename to its metadata. */
 	documents: Record<string, DocumentMeta>;
 }
 

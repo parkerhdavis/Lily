@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import type { TemplateTreeNode, SidecarFile } from "@/types";
+import type { TemplateTreeNode, LilyFile } from "@/types";
 
 // ─── Tree building ──────────────────────────────────────────────────────────
 
@@ -51,25 +51,25 @@ function sortTree(nodes: TemplateTreeNode[]) {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** Check whether a template rel path has any existing documents in the sidecar. */
+/** Check whether a template rel path has any existing documents in the .lily file. */
 function hasExistingDocs(
 	templateRelPath: string,
-	sidecar: SidecarFile | null,
+	lilyFile: LilyFile | null,
 ): boolean {
-	if (!sidecar?.documents) return false;
-	return Object.values(sidecar.documents).some(
+	if (!lilyFile?.documents) return false;
+	return Object.values(lilyFile.documents).some(
 		(meta) => meta.template_rel_path === templateRelPath,
 	);
 }
 
-/** Collect existing documents for a template from the sidecar. */
+/** Collect existing documents for a template from the .lily file. */
 function getExistingDocs(
 	templateRelPath: string,
-	sidecar: SidecarFile | null,
+	lilyFile: LilyFile | null,
 ): { filename: string; modifiedAt: string }[] {
-	if (!sidecar?.documents) return [];
+	if (!lilyFile?.documents) return [];
 	const docs: { filename: string; modifiedAt: string }[] = [];
-	for (const [filename, meta] of Object.entries(sidecar.documents)) {
+	for (const [filename, meta] of Object.entries(lilyFile.documents)) {
 		if (meta.template_rel_path === templateRelPath) {
 			docs.push({ filename, modifiedAt: meta.modified_at });
 		}
@@ -156,11 +156,11 @@ function DocIcon() {
 
 function TemplateFolder({
 	node,
-	sidecar,
+	lilyFile,
 	onTemplateClick,
 }: {
 	node: TemplateTreeNode & { kind: "folder" };
-	sidecar: SidecarFile | null;
+	lilyFile: LilyFile | null;
 	onTemplateClick: (relPath: string) => void;
 }) {
 	const [expanded, setExpanded] = useState(false);
@@ -182,7 +182,7 @@ function TemplateFolder({
 						<TemplateTreeItem
 							key={child.kind === "file" ? child.relPath : child.name}
 							node={child}
-							sidecar={sidecar}
+							lilyFile={lilyFile}
 							onTemplateClick={onTemplateClick}
 						/>
 					))}
@@ -194,14 +194,14 @@ function TemplateFolder({
 
 function TemplateFile({
 	node,
-	sidecar,
+	lilyFile,
 	onTemplateClick,
 }: {
 	node: TemplateTreeNode & { kind: "file" };
-	sidecar: SidecarFile | null;
+	lilyFile: LilyFile | null;
 	onTemplateClick: (relPath: string) => void;
 }) {
-	const hasDocs = hasExistingDocs(node.relPath, sidecar);
+	const hasDocs = hasExistingDocs(node.relPath, lilyFile);
 
 	return (
 		<button
@@ -224,18 +224,18 @@ function TemplateFile({
 
 function TemplateTreeItem({
 	node,
-	sidecar,
+	lilyFile,
 	onTemplateClick,
 }: {
 	node: TemplateTreeNode;
-	sidecar: SidecarFile | null;
+	lilyFile: LilyFile | null;
 	onTemplateClick: (relPath: string) => void;
 }) {
 	if (node.kind === "folder") {
 		return (
 			<TemplateFolder
 				node={node}
-				sidecar={sidecar}
+				lilyFile={lilyFile}
 				onTemplateClick={onTemplateClick}
 			/>
 		);
@@ -243,7 +243,7 @@ function TemplateTreeItem({
 	return (
 		<TemplateFile
 			node={node}
-			sidecar={sidecar}
+			lilyFile={lilyFile}
 			onTemplateClick={onTemplateClick}
 		/>
 	);
@@ -254,7 +254,7 @@ function TemplateTreeItem({
 export default function TemplatePicker() {
 	const {
 		templates,
-		sidecar,
+		lilyFile,
 		loading,
 		error,
 		selectTemplate,
@@ -267,10 +267,10 @@ export default function TemplatePicker() {
 	// Build tree from flat paths
 	const tree = useMemo(() => buildTree(templates), [templates]);
 
-	// Build client documents list from sidecar
+	// Build client documents list from .lily file
 	const clientDocs = useMemo(() => {
-		if (!sidecar?.documents) return [];
-		return Object.entries(sidecar.documents)
+		if (!lilyFile?.documents) return [];
+		return Object.entries(lilyFile.documents)
 			.map(([filename, meta]) => ({
 				filename,
 				templateRelPath: meta.template_rel_path,
@@ -281,7 +281,7 @@ export default function TemplatePicker() {
 					new Date(b.modifiedAt).getTime() -
 					new Date(a.modifiedAt).getTime(),
 			);
-	}, [sidecar]);
+	}, [lilyFile]);
 
 	// Conflict dialog state
 	const [conflictDocs, setConflictDocs] = useState<
@@ -303,7 +303,7 @@ export default function TemplatePicker() {
 	};
 
 	const handleTemplateClick = (templateRelPath: string) => {
-		const existing = getExistingDocs(templateRelPath, sidecar);
+		const existing = getExistingDocs(templateRelPath, lilyFile);
 
 		if (existing.length > 0) {
 			setConflictDocs(existing);
@@ -416,7 +416,7 @@ export default function TemplatePicker() {
 								<TemplateTreeItem
 									key={node.kind === "file" ? node.relPath : node.name}
 									node={node}
-									sidecar={sidecar}
+									lilyFile={lilyFile}
 									onTemplateClick={handleTemplateClick}
 								/>
 							))}
