@@ -311,3 +311,85 @@ pub fn remove_client_variable(working_dir: String, variable_name: String) -> Res
     lily.variables.remove(&variable_name);
     write_lily_file(&working_dir, &lily)
 }
+
+/// Delete a document file from disk and remove its entry from the .lily file.
+#[tauri::command]
+pub fn delete_document(working_dir: String, filename: String) -> Result<(), String> {
+    let file_path = Path::new(&working_dir).join(&filename);
+
+    // Remove the file from disk
+    if file_path.exists() {
+        fs::remove_file(&file_path)
+            .map_err(|e| format!("Failed to delete file '{}': {}", filename, e))?;
+    }
+
+    // Remove the entry from the .lily file
+    let mut lily = read_lily_file(&working_dir)?;
+    lily.documents.remove(&filename);
+    write_lily_file(&working_dir, &lily)
+}
+
+/// Create a new versioned copy of an existing document.
+/// The new filename is `{basename}-{YYYYMMDD}.docx`. If that already exists,
+/// appends a numeric suffix like `-{YYYYMMDD}-2.docx`.
+/// Returns the filename of the new version.
+#[tauri::command]
+pub fn new_version_document(working_dir: String, filename: String) -> Result<String, String> {
+    let src_path = Path::new(&working_dir).join(&filename);
+    if !src_path.exists() {
+        return Err(format!("Document '{}' not found", filename));
+    }
+
+    let lily = read_lily_file(&working_dir)?;
+    let meta = lily
+        .documents
+        .get(&filename)
+        .ok_or_else(|| format!("Document '{}' not found in .lily file", filename))?;
+
+    // Build the new filename with today's date
+    let basename = filename.trim_end_matches(".docx").trim_end_matches(".DOCX");
+    let date_str = Utc::now().format("%Y%m%d").to_string();
+    let mut new_filename = format!("{}-{}.docx", basename, date_str);
+
+    // Handle collision: append a numeric suffix
+    let mut counter = 2u32;
+    while Path::new(&working_dir).join(&new_filename).exists() {
+        new_filename = format!("{}-{}-{}.docx", basename, date_str, counter);
+        counter += 1;
+    }
+
+    // Copy the file
+    let dest_path = Path::new(&working_dir).join(&new_filename);
+    fs::copy(&src_path, &dest_path).map_err(|e| format!("Failed to copy document: {}", e))?;
+
+    // Record the new document in the .lily file, sharing the same template origin
+    record_document(&working_dir, &new_filename, &meta.template_rel_path)?;
+
+    Ok(new_filename)
+}
+
+/// Open a file using the OS default application (e.g., open a .docx template
+/// in Word). Uses `xdg-open` on Linux, `open` on macOS, `start` on Windows.
+#[tauri::command]
+pub fn open_file_in_os(file_path: String) -> Result<(), String> {
+    let path = Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("File not found: {}", file_path));
+    }
+
+    #[cfg(target_os = "linux")]
+    let result = std::process::Command::new("xdg-open")
+        .arg(&file_path)
+        .spawn();
+
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg(&file_path).spawn();
+
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("cmd")
+        .args(["/C", "start", "", &file_path])
+        .spawn();
+
+    result.map_err(|e| format!("Failed to open file: {}", e))?;
+    Ok(())
+}
