@@ -30,6 +30,27 @@ function getFolderName(dirPath: string): string {
 	return segments[segments.length - 1] || dirPath;
 }
 
+/**
+ * Fuzzy-filter a list of [name, value] variable entries by a search query.
+ * The query is split into whitespace-separated tokens. A variable matches
+ * if every token appears (case-insensitive) in either the variable name
+ * or its current value.
+ */
+function fuzzyFilterEntries(
+	entries: [string, string][],
+	query: string,
+): [string, string][] {
+	const trimmed = query.trim().toLowerCase();
+	if (!trimmed) return entries;
+
+	const tokens = trimmed.split(/\s+/);
+	return entries.filter(([name, value]) => {
+		const lName = name.toLowerCase();
+		const lValue = value.toLowerCase();
+		return tokens.every((t) => lName.includes(t) || lValue.includes(t));
+	});
+}
+
 interface ClientDoc {
 	filename: string;
 	templateRelPath: string;
@@ -58,6 +79,7 @@ export default function ClientHub() {
 
 	const [newVarName, setNewVarName] = useState("");
 	const [addingVar, setAddingVar] = useState(false);
+	const [varSearch, setVarSearch] = useState("");
 	const newVarInputRef = useRef<HTMLInputElement>(null);
 
 	// Build client documents list from .lily file, sorted by modification date
@@ -99,6 +121,12 @@ export default function ClientHub() {
 			a.localeCompare(b),
 		);
 	}, [lilyFile]);
+
+	// Apply fuzzy search filter
+	const filteredVariables = useMemo(
+		() => fuzzyFilterEntries(sortedVariables, varSearch),
+		[sortedVariables, varSearch],
+	);
 
 	const handleVariableBlur = (name: string, value: string) => {
 		const currentValue = lilyFile?.variables[name] ?? "";
@@ -208,13 +236,11 @@ export default function ClientHub() {
 						</div>
 					) : (
 						<div className="flex flex-col gap-1">
-							{/* Client Questionnaire section */}
+							{/* Info Documents section (questionnaire) */}
 							{questionnaireDocs.length > 0 && (
 								<>
-									<div className="mb-1">
-										<span className="text-xs font-semibold uppercase tracking-wider text-base-content/40">
-											Client Questionnaire
-										</span>
+									<div className="divider my-2 text-xs text-base-content/30">
+										Info Documents
 									</div>
 									{questionnaireDocs.map((doc) => (
 										<DocumentRow
@@ -227,12 +253,14 @@ export default function ClientHub() {
 											onReload={reloadLilyFile}
 										/>
 									))}
-									{otherDocs.length > 0 && (
-										<div className="divider my-2 text-xs text-base-content/30">
-											Documents
-										</div>
-									)}
 								</>
+							)}
+
+							{/* Legal Documents section */}
+							{otherDocs.length > 0 && (
+								<div className="divider my-2 text-xs text-base-content/30">
+									Legal Documents
+								</div>
 							)}
 
 							{/* Other documents */}
@@ -253,7 +281,7 @@ export default function ClientHub() {
 
 				{/* Right sidebar: Client Variables */}
 				<div className="w-80 shrink-0 overflow-y-auto p-4 bg-base-100">
-					<div className="flex items-center justify-between mb-4">
+					<div className="flex items-center justify-between mb-3">
 						<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50">
 							Client Variables
 						</h3>
@@ -266,6 +294,16 @@ export default function ClientHub() {
 						</button>
 					</div>
 
+					{sortedVariables.length > 0 && (
+						<input
+							type="text"
+							className="input input-bordered input-sm w-full mb-3"
+							placeholder="Search variables..."
+							value={varSearch}
+							onChange={(e) => setVarSearch(e.target.value)}
+						/>
+					)}
+
 					{sortedVariables.length === 0 && !addingVar ? (
 						<div className="text-sm text-base-content/50 space-y-2">
 							<p>No variables defined yet.</p>
@@ -274,9 +312,13 @@ export default function ClientHub() {
 								variables, or add them manually.
 							</p>
 						</div>
+					) : filteredVariables.length === 0 && varSearch ? (
+						<p className="text-sm text-base-content/50">
+							No variables match your search.
+						</p>
 					) : (
 						<div className="flex flex-col gap-3">
-							{sortedVariables.map(([name, value]) => (
+							{filteredVariables.map(([name, value]) => (
 								<VariableField
 									key={name}
 									name={name}
