@@ -30,15 +30,15 @@ echo "Generating icons from $SOURCE..."
 
 # Generate standard icon sizes for Tauri
 # 32x32 - Small icon (Windows taskbar, Linux panel)
-convert "$SOURCE" -resize 32x32 32x32.png
+convert "$SOURCE" -resize 32x32 PNG32:32x32.png
 echo "  Generated 32x32.png"
 
 # 128x128 - Medium icon (Windows start menu, macOS)
-convert "$SOURCE" -resize 128x128 128x128.png
+convert "$SOURCE" -resize 128x128 PNG32:128x128.png
 echo "  Generated 128x128.png"
 
 # 128x128@2x - Retina icon (256x256 actual pixels)
-convert "$SOURCE" -resize 256x256 128x128@2x.png
+convert "$SOURCE" -resize 256x256 PNG32:128x128@2x.png
 echo "  Generated 128x128@2x.png (256x256)"
 
 # Generate .ico for Windows (multi-size)
