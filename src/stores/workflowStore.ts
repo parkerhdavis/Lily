@@ -1,13 +1,15 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type { WorkflowStep, SidecarFile } from "@/types";
+import type { WorkflowStep, SidecarFile, VariableInfo } from "@/types";
 
 interface WorkflowState {
 	step: WorkflowStep;
 	workingDir: string | null;
 	documentPath: string | null;
 	documentHtml: string;
-	variables: string[];
+	/** Variable info with display names and case variants. */
+	variables: VariableInfo[];
+	/** Variable values keyed by display_name. */
 	variableValues: Record<string, string>;
 	templates: string[];
 	/** The relative path of the selected template within the templates dir. */
@@ -91,7 +93,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			});
 
 			// Extract variables from the copied document
-			const variables = await invoke<string[]>("extract_variables", {
+			const variables = await invoke<VariableInfo[]>("extract_variables", {
 				docxPath: docPath,
 			});
 
@@ -100,10 +102,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				docxPath: docPath,
 			});
 
-			// Initialize variable values
+			// Initialize variable values keyed by display_name
 			const variableValues: Record<string, string> = {};
 			for (const v of variables) {
-				variableValues[v] = "";
+				variableValues[v.display_name] = "";
 			}
 
 			// Reload sidecar to pick up the new document entry
@@ -144,7 +146,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			const docPath = `${workingDir}/${filename}`;
 
 			// Extract variables from the existing document
-			const variables = await invoke<string[]>("extract_variables", {
+			const variables = await invoke<VariableInfo[]>("extract_variables", {
 				docxPath: docPath,
 			});
 
@@ -158,7 +160,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				sidecar?.documents[filename]?.variable_values ?? {};
 			const variableValues: Record<string, string> = {};
 			for (const v of variables) {
-				variableValues[v] = savedValues[v] ?? "";
+				variableValues[v.display_name] = savedValues[v.display_name] ?? "";
 			}
 
 			set({

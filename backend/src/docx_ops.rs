@@ -1,4 +1,5 @@
-use std::collections::BTreeSet;
+use serde::Serialize;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
@@ -7,6 +8,21 @@ use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 use crate::sidecar;
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+/// Info about a single logical variable extracted from the document.
+/// Variables that differ only in case (e.g., "CLIENT NAME" vs "Client Name")
+/// are grouped into one VariableInfo.
+#[derive(Debug, Serialize)]
+pub struct VariableInfo {
+    /// Display name shown in the UI (the title-cased or first-seen variant).
+    pub display_name: String,
+    /// All distinct casings found in the document for this variable.
+    pub variants: Vec<String>,
+}
+
+// ─── Tauri commands ─────────────────────────────────────────────────────────
 
 /// Copy a template .docx file to the working directory.
 /// Records the template provenance in the directory's sidecar file.
@@ -71,23 +87,43 @@ pub fn rename_document(docx_path: String, new_filename: String) -> Result<String
 }
 
 /// Extract all unique {Variable} placeholders from a .docx file.
-/// Returns them sorted alphabetically.
+/// Variables that differ only in case are grouped into one entry.
+/// Returns a list of VariableInfo sorted by display name.
 #[tauri::command]
-pub fn extract_variables(docx_path: String) -> Result<Vec<String>, String> {
+pub fn extract_variables(docx_path: String) -> Result<Vec<VariableInfo>, String> {
     let xml_content = read_document_xml(&docx_path)?;
     let text = extract_text_from_xml(&xml_content);
-    let variables = find_variables(&text);
-    Ok(variables.into_iter().collect())
+    Ok(find_variables(&text))
 }
 
 /// Replace variables in a .docx file with the provided values.
-/// Takes a JSON object mapping variable names to their values.
-/// Saves the modified document back to the same path.
+/// The `variables` map is keyed by display_name (canonical form).
+/// Each occurrence in the document is replaced with a case-matched version
+/// of the value: ALL CAPS → uppercased, all lower → lowercased, otherwise as-is.
 #[tauri::command]
 pub fn replace_variables(
     docx_path: String,
-    variables: std::collections::HashMap<String, String>,
+    variables: HashMap<String, String>,
 ) -> Result<(), String> {
+    // First, extract the variable info so we know all case variants
+    let xml_content = read_document_xml(&docx_path)?;
+    let text = extract_text_from_xml(&xml_content);
+    let var_infos = find_variables(&text);
+
+    // Build a map from each original-cased variant to the appropriately-cased value
+    let mut replacement_map: HashMap<String, String> = HashMap::new();
+    for info in &var_infos {
+        if let Some(value) = variables.get(&info.display_name) {
+            if value.is_empty() {
+                continue;
+            }
+            for variant in &info.variants {
+                let cased_value = apply_casing(value, variant);
+                replacement_map.insert(variant.clone(), cased_value);
+            }
+        }
+    }
+
     let file_bytes = fs::read(&docx_path).map_err(|e| format!("Failed to read docx: {}", e))?;
 
     let cursor = Cursor::new(&file_bytes);
@@ -125,7 +161,7 @@ pub fn replace_variables(
                 || name.starts_with("word/footer")
             {
                 let xml_str = String::from_utf8_lossy(content);
-                let replaced = replace_in_xml(&xml_str, &variables);
+                let replaced = replace_in_xml(&xml_str, &replacement_map);
                 writer
                     .write_all(replaced.as_bytes())
                     .map_err(|e| format!("Failed to write entry: {}", e))?;
@@ -168,7 +204,7 @@ pub fn get_document_html(docx_path: String) -> Result<String, String> {
     Ok(html)
 }
 
-// --- Internal helpers ---
+// ─── Internal helpers ───────────────────────────────────────────────────────
 
 fn read_document_xml(docx_path: &str) -> Result<String, String> {
     let file_bytes = fs::read(docx_path).map_err(|e| format!("Failed to read docx: {}", e))?;
@@ -223,9 +259,11 @@ fn extract_text_from_xml(xml: &str) -> String {
     result
 }
 
-/// Find all unique {Variable Name} patterns in text.
-fn find_variables(text: &str) -> BTreeSet<String> {
-    let mut variables = BTreeSet::new();
+/// Find all {Variable Name} patterns in text, grouping by case-insensitive key.
+/// Returns a sorted list of VariableInfo with display_name and all case variants.
+fn find_variables(text: &str) -> Vec<VariableInfo> {
+    // Key: lowercased trimmed name, Value: ordered list of distinct original casings
+    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut chars = text.chars().peekable();
 
     while let Some(c) = chars.next() {
@@ -240,37 +278,108 @@ fn find_variables(text: &str) -> BTreeSet<String> {
                 var_name.push(inner);
             }
             if found_close && !var_name.is_empty() && !var_name.contains('{') {
-                variables.insert(var_name.trim().to_string());
+                let trimmed = var_name.trim().to_string();
+                let key = trimmed.to_lowercase();
+                let variants = groups.entry(key).or_default();
+                if !variants.contains(&trimmed) {
+                    variants.push(trimmed);
+                }
             }
         }
     }
 
-    variables
+    groups
+        .into_values()
+        .map(|variants| {
+            // Pick the best display name: prefer Title Case, else first seen
+            let display_name = pick_display_name(&variants);
+            VariableInfo {
+                display_name,
+                variants,
+            }
+        })
+        .collect()
+}
+
+/// Choose the best display name from a set of case variants.
+/// Prefers Title Case (e.g., "Client Full Name") over ALL CAPS or all lower.
+/// Falls back to the first variant if no title-case variant is found.
+fn pick_display_name(variants: &[String]) -> String {
+    // Check for a "title case" variant (first letter of each word capitalized, rest lower)
+    for v in variants {
+        if is_title_case(v) {
+            return v.clone();
+        }
+    }
+    // Check for a "mixed case" variant (not all upper, not all lower)
+    for v in variants {
+        let has_upper = v.chars().any(|c| c.is_uppercase());
+        let has_lower = v.chars().any(|c| c.is_lowercase());
+        if has_upper && has_lower {
+            return v.clone();
+        }
+    }
+    // Fall back to first variant
+    variants[0].clone()
+}
+
+fn is_title_case(s: &str) -> bool {
+    for word in s.split_whitespace() {
+        let mut chars = word.chars();
+        if let Some(first) = chars.next() {
+            if !first.is_uppercase() {
+                return false;
+            }
+            if chars.any(|c| c.is_uppercase()) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Apply the casing pattern of `original_var_name` to `value`.
+/// - ALL CAPS → uppercase the value
+/// - all lower → lowercase the value
+/// - Otherwise (title case, mixed) → leave value as-is
+fn apply_casing(value: &str, original_var_name: &str) -> String {
+    let alpha_chars: Vec<char> = original_var_name
+        .chars()
+        .filter(|c| c.is_alphabetic())
+        .collect();
+    if alpha_chars.is_empty() {
+        return value.to_string();
+    }
+
+    let all_upper = alpha_chars.iter().all(|c| c.is_uppercase());
+    let all_lower = alpha_chars.iter().all(|c| c.is_lowercase());
+
+    if all_upper {
+        value.to_uppercase()
+    } else if all_lower {
+        value.to_lowercase()
+    } else {
+        value.to_string()
+    }
 }
 
 /// Replace {Variable} placeholders in raw XML content.
-/// Word splits runs across XML elements, so a variable like {Client Name}
-/// might appear as: <w:t>{Client</w:t></w:r><w:r><w:t> Name}</w:t>
-/// We handle this by doing a text-level replacement on the raw XML,
-/// being careful to only replace within <w:t> text content.
-fn replace_in_xml(xml: &str, variables: &std::collections::HashMap<String, String>) -> String {
-    // First pass: concatenate all text to find variable boundaries
-    // Second pass: replace in the raw XML
-    // For simplicity and reliability, we do direct string replacement
-    // on the XML. This works because we're replacing the exact text
-    // that appears in the document.
+/// The `replacements` map goes from original-cased variable name to
+/// the appropriately-cased replacement value.
+fn replace_in_xml(xml: &str, replacements: &HashMap<String, String>) -> String {
     let mut result = xml.to_string();
-    for (var_name, value) in variables {
-        if !value.is_empty() {
-            let pattern = format!("{{{}}}", var_name);
-            result = result.replace(&pattern, value);
-        }
+    for (var_name, value) in replacements {
+        let pattern = format!("{{{}}}", var_name);
+        result = result.replace(&pattern, value);
     }
     result
 }
 
 /// Convert Word XML to a simple HTML preview.
-/// Preserves paragraph structure and highlights {Variable} placeholders.
+/// Preserves paragraph structure, formatting, and highlights {Variable} placeholders.
+/// The `data-variable` attribute uses a lowercase canonical key so the frontend
+/// can match case-insensitively. The `data-original-case` attribute preserves
+/// the original casing for case-appropriate replacement in the live preview.
 fn xml_to_preview_html(xml: &str) -> String {
     let mut html = String::from("<div class=\"document-preview\">");
     let mut current_para = String::new();
@@ -385,6 +494,9 @@ fn escape_html(text: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// Wrap {Variable} placeholders in highlight spans.
+/// Uses lowercase `data-variable` for canonical matching and
+/// `data-original-case` for the original casing seen in the document.
 fn highlight_variables(text: &str) -> String {
     let mut result = String::new();
     let mut chars = text.chars().peekable();
@@ -401,9 +513,10 @@ fn highlight_variables(text: &str) -> String {
                 var_content.push(inner);
             }
             if found_close && !var_content.is_empty() {
+                let canonical = var_content.trim().to_lowercase();
                 result.push_str(&format!(
-                    "<span class=\"variable-highlight\" data-variable=\"{}\">{{{}}}</span>",
-                    var_content, var_content
+                    "<span class=\"variable-highlight\" data-variable=\"{}\" data-original-case=\"{}\">{{{}}}</span>",
+                    canonical, var_content, var_content
                 ));
             } else {
                 result.push('{');
@@ -415,4 +528,48 @@ fn highlight_variables(text: &str) -> String {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_variables_case_grouping() {
+        let text = "Hello {Client Name} and {CLIENT NAME} and {client name}";
+        let vars = find_variables(text);
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].display_name, "Client Name");
+        assert_eq!(vars[0].variants.len(), 3);
+    }
+
+    #[test]
+    fn test_find_variables_display_name_prefers_title_case() {
+        let text = "{CLIENT FULL NAME} and {Client Full Name}";
+        let vars = find_variables(text);
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].display_name, "Client Full Name");
+    }
+
+    #[test]
+    fn test_apply_casing_all_upper() {
+        assert_eq!(apply_casing("John Doe", "CLIENT NAME"), "JOHN DOE");
+    }
+
+    #[test]
+    fn test_apply_casing_all_lower() {
+        assert_eq!(apply_casing("John Doe", "client name"), "john doe");
+    }
+
+    #[test]
+    fn test_apply_casing_title_case_passthrough() {
+        assert_eq!(apply_casing("John Doe", "Client Name"), "John Doe");
+    }
+
+    #[test]
+    fn test_highlight_variables_canonical_key() {
+        let result = highlight_variables("{CLIENT NAME}");
+        assert!(result.contains("data-variable=\"client name\""));
+        assert!(result.contains("data-original-case=\"CLIENT NAME\""));
+    }
 }

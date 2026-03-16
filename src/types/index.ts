@@ -22,6 +22,14 @@ export interface SidecarFile {
 	documents: Record<string, DocumentMeta>;
 }
 
+/** Info about a single logical variable, with case-variant grouping. */
+export interface VariableInfo {
+	/** Display name shown in the UI (title-case preferred). */
+	display_name: string;
+	/** All distinct casings found in the document for this variable. */
+	variants: string[];
+}
+
 /** A node in the template folder tree. */
 export type TemplateTreeNode =
 	| { kind: "folder"; name: string; children: TemplateTreeNode[] }
