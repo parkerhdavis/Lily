@@ -11,7 +11,7 @@
   font-weight: 600;
 }
 
-.variable-highlight.filled {
+.variable-highlight.selected {
   background-color: oklch(0.88 0.12 145);
 }
 

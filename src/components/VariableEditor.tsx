@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 
 export default function VariableEditor() {
@@ -14,44 +14,30 @@ export default function VariableEditor() {
 		setStep,
 	} = useWorkflowStore();
 
-	const previewRef = useRef<HTMLDivElement>(null);
-	const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
+	const [selectedVariable, setSelectedVariable] = useState<string | null>(
+		null,
+	);
 
-	// Build a live preview by replacing variables in the HTML
+	// Build a live preview by replacing variable placeholders in the HTML.
+	// Unfilled variables stay yellow; filled entries for the selected variable are green.
 	const getLivePreviewHtml = useCallback(() => {
 		let html = documentHtml;
 		for (const [name, value] of Object.entries(variableValues)) {
+			const pattern = `<span class="variable-highlight" data-variable="${name}">{${name}}</span>`;
 			if (value) {
-				const pattern = `<span class="variable-highlight">{${name}}</span>`;
-				const replacement = `<span class="variable-highlight filled">${value}</span>`;
+				const isSelected = name === selectedVariable;
+				const cls = isSelected
+					? "variable-highlight selected"
+					: "variable-highlight";
+				const replacement = `<span class="${cls}" data-variable="${name}">${value}</span>`;
 				html = html.replaceAll(pattern, replacement);
 			}
 		}
 		return html;
-	}, [documentHtml, variableValues]);
-
-	// Debounced auto-save: save after 1.5s of inactivity
-	const debouncedSave = useCallback(() => {
-		if (saveTimeoutRef.current) {
-			clearTimeout(saveTimeoutRef.current);
-		}
-		saveTimeoutRef.current = setTimeout(() => {
-			saveDocument();
-		}, 1500);
-	}, [saveDocument]);
-
-	// Cleanup timeout on unmount
-	useEffect(() => {
-		return () => {
-			if (saveTimeoutRef.current) {
-				clearTimeout(saveTimeoutRef.current);
-			}
-		};
-	}, []);
+	}, [documentHtml, variableValues, selectedVariable]);
 
 	const handleVariableChange = (name: string, value: string) => {
 		updateVariable(name, value);
-		debouncedSave();
 	};
 
 	const filledCount = Object.values(variableValues).filter(
@@ -126,6 +112,8 @@ export default function VariableEditor() {
 										onChange={(e) =>
 											handleVariableChange(variable, e.target.value)
 										}
+										onFocus={() => setSelectedVariable(variable)}
+										onBlur={() => setSelectedVariable(null)}
 									/>
 								</label>
 							))}
@@ -136,7 +124,6 @@ export default function VariableEditor() {
 				{/* Document preview */}
 				<div className="flex-1 overflow-y-auto p-8 bg-base-200">
 					<div
-						ref={previewRef}
 						className="bg-white rounded-lg shadow-md p-8 max-w-4xl mx-auto prose prose-sm"
 						// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
 						dangerouslySetInnerHTML={{
