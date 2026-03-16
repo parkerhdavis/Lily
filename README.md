@@ -1,8 +1,6 @@
 ![Lily Icon](./backend/icons/128x128.png)
 # Lily
 
----
-
 Custom document-drafting toolset for Carelaw Colorado, an estate planning law firm.
 
 Lily streamlines the process of filling out templated Word documents (.docx) for client engagements. Users select a working directory (typically a client folder), choose a template, and fill in variables—Lily handles copying, previewing, and saving the completed document.
