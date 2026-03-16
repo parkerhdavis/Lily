@@ -88,34 +88,114 @@ pub fn rename_document(docx_path: String, new_filename: String) -> Result<String
 }
 
 /// Extract all unique variable references from a .docx file.
-/// Looks for both `{Variable}` placeholders in text AND Lily SDT content
-/// controls (`<w:sdt>` with `lily:` tag prefix) from previous saves.
+/// Performs a single pass through the XML, finding both `{Variable}`
+/// placeholders in text AND Lily SDT content controls (`<w:sdt>` with
+/// `lily:` tag prefix) from previous saves, in document order.
 /// Variables that differ only in case are grouped into one entry.
 #[tauri::command]
 pub fn extract_variables(docx_path: String) -> Result<Vec<VariableInfo>, String> {
     let raw_xml = read_document_xml(&docx_path)?;
     let xml_content = normalize_split_variables(&raw_xml);
+    Ok(find_all_variables(&xml_content))
+}
 
-    // First, find variables from {Placeholder} syntax in text
-    let text = extract_text_from_xml(&xml_content);
-    let mut vars = find_variables(&text);
+/// Single-pass extraction of all variables from Word XML, in document order.
+/// Finds both `{Placeholder}` patterns in `<w:t>` text and Lily SDT tags
+/// (`<w:tag w:val="lily:..."/>`), interleaved in the order they appear.
+fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
+    let mut keys_in_order: Vec<String> = Vec::new();
+    let mut groups: HashMap<String, Vec<String>> = HashMap::new();
 
-    // Also scan for Lily SDT content controls (from previously saved documents)
-    let sdt_vars = find_sdt_variables(&xml_content);
-    for sdt_var in sdt_vars {
-        // Only add if not already found via placeholder syntax
-        let already_exists = vars
-            .iter()
-            .any(|v| v.display_name.to_lowercase() == sdt_var.to_lowercase());
-        if !already_exists {
-            vars.push(VariableInfo {
-                display_name: sdt_var.clone(),
-                variants: vec![sdt_var],
-            });
+    let mut in_t = false;
+    let mut in_sdt = false;
+    let mut in_sdt_pr = false;
+
+    let reader = xml::reader::EventReader::from_str(xml);
+    for event in reader {
+        match event {
+            Ok(xml::reader::XmlEvent::StartElement {
+                name, attributes, ..
+            }) => {
+                match name.local_name.as_str() {
+                    "t" => in_t = true,
+                    "sdt" => in_sdt = true,
+                    "sdtPr" if in_sdt => in_sdt_pr = true,
+                    "tag" if in_sdt_pr => {
+                        // Check for lily: prefix
+                        for attr in &attributes {
+                            if attr.name.local_name == "val"
+                                && attr.value.starts_with(SDT_TAG_PREFIX)
+                            {
+                                let display_name = attr.value[SDT_TAG_PREFIX.len()..].to_string();
+                                let key = display_name.to_lowercase();
+                                if !groups.contains_key(&key) {
+                                    keys_in_order.push(key.clone());
+                                }
+                                let variants = groups.entry(key).or_default();
+                                if !variants.contains(&display_name) {
+                                    variants.push(display_name);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(xml::reader::XmlEvent::EndElement { name, .. }) => match name.local_name.as_str() {
+                "t" => in_t = false,
+                "sdt" => {
+                    in_sdt = false;
+                    in_sdt_pr = false;
+                }
+                "sdtPr" => in_sdt_pr = false,
+                _ => {}
+            },
+            Ok(xml::reader::XmlEvent::Characters(text)) => {
+                if in_t {
+                    // Scan for {Variable} patterns in text content
+                    let mut chars = text.chars().peekable();
+                    while let Some(c) = chars.next() {
+                        if c == '{' {
+                            let mut var_name = String::new();
+                            let mut found_close = false;
+                            for inner in chars.by_ref() {
+                                if inner == '}' {
+                                    found_close = true;
+                                    break;
+                                }
+                                var_name.push(inner);
+                            }
+                            if found_close && !var_name.is_empty() && !var_name.contains('{') {
+                                let trimmed = var_name.trim().to_string();
+                                let key = trimmed.to_lowercase();
+                                if !groups.contains_key(&key) {
+                                    keys_in_order.push(key.clone());
+                                }
+                                let variants = groups.entry(key).or_default();
+                                if !variants.contains(&trimmed) {
+                                    variants.push(trimmed);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
-    Ok(vars)
+    keys_in_order
+        .into_iter()
+        .filter_map(|key| {
+            groups.remove(&key).map(|variants| {
+                let display_name = pick_display_name(&variants);
+                VariableInfo {
+                    display_name,
+                    variants,
+                }
+            })
+        })
+        .collect()
 }
 
 /// Replace variables in a .docx file with the provided values.
@@ -603,6 +683,7 @@ const SDT_TAG_PREFIX: &str = "lily:";
 /// Find variable names from Lily SDT content controls in the XML.
 /// Scans for `<w:tag w:val="lily:Variable Name"/>` inside `<w:sdtPr>` elements.
 /// Returns a deduplicated list of display names in order of appearance.
+#[cfg(test)]
 fn find_sdt_variables(xml: &str) -> Vec<String> {
     let tag_re = Regex::new(r#"<w:tag\s+w:val="lily:([^"]*)"\s*/>"#).expect("invalid regex");
     let mut seen = std::collections::HashSet::new();
