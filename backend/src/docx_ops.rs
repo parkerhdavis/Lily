@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
@@ -91,7 +92,8 @@ pub fn rename_document(docx_path: String, new_filename: String) -> Result<String
 /// Returns a list of VariableInfo sorted by display name.
 #[tauri::command]
 pub fn extract_variables(docx_path: String) -> Result<Vec<VariableInfo>, String> {
-    let xml_content = read_document_xml(&docx_path)?;
+    let raw_xml = read_document_xml(&docx_path)?;
+    let xml_content = normalize_split_variables(&raw_xml);
     let text = extract_text_from_xml(&xml_content);
     Ok(find_variables(&text))
 }
@@ -106,7 +108,8 @@ pub fn replace_variables(
     variables: HashMap<String, String>,
 ) -> Result<(), String> {
     // First, extract the variable info so we know all case variants
-    let xml_content = read_document_xml(&docx_path)?;
+    let raw_xml = read_document_xml(&docx_path)?;
+    let xml_content = normalize_split_variables(&raw_xml);
     let text = extract_text_from_xml(&xml_content);
     let var_infos = find_variables(&text);
 
@@ -161,7 +164,8 @@ pub fn replace_variables(
                 || name.starts_with("word/footer")
             {
                 let xml_str = String::from_utf8_lossy(content);
-                let replaced = replace_in_xml(&xml_str, &replacement_map);
+                let normalized = normalize_split_variables(&xml_str);
+                let replaced = replace_in_xml(&normalized, &replacement_map);
                 writer
                     .write_all(replaced.as_bytes())
                     .map_err(|e| format!("Failed to write entry: {}", e))?;
@@ -199,12 +203,199 @@ pub fn replace_variables(
 /// variable placeholders for highlighting in the frontend.
 #[tauri::command]
 pub fn get_document_html(docx_path: String) -> Result<String, String> {
-    let xml_content = read_document_xml(&docx_path)?;
+    let raw_xml = read_document_xml(&docx_path)?;
+    let xml_content = normalize_split_variables(&raw_xml);
     let html = xml_to_preview_html(&xml_content);
     Ok(html)
 }
 
 // ─── Internal helpers ───────────────────────────────────────────────────────
+
+/// Pre-process Word XML to merge variable placeholders that are split across
+/// multiple `<w:r>` runs. Word often breaks `{Variable Name}` into separate
+/// runs like `<w:t>{</w:t>...<w:t>Variable </w:t>...<w:t>Name}</w:t>`.
+/// This function detects such splits and consolidates the text into a single
+/// run so that downstream processing (highlight, replace) can see the full
+/// `{Variable Name}` string in one `<w:t>` element.
+///
+/// The approach: find `<w:t ...>...{` where the `{` doesn't have a matching `}`
+/// within the same `<w:t>`. Then scan forward to find the `}` in a subsequent
+/// `<w:t>`, and merge all intermediate text into the first `<w:t>`.
+fn normalize_split_variables(xml: &str) -> String {
+    // This regex matches a <w:t> element that contains an unmatched opening brace.
+    // We use a loop-based approach: find each `<w:t` element, extract text,
+    // check for split variables, and merge if needed.
+
+    // First, collect all <w:r>...</w:r> runs to work with structured data
+    // Actually, let's use a simpler direct string approach:
+    // Find each occurrence of `{` inside <w:t> text that doesn't have a matching `}`
+    // in the same text node, then merge forward.
+
+    let t_open_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
+
+    let mut result = xml.to_string();
+    let mut search_from = 0;
+
+    loop {
+        // Find the next <w:t> element from our search position
+        let remaining = &result[search_from..];
+        let Some(t_match) = t_open_re.find(remaining) else {
+            break;
+        };
+
+        let abs_start = search_from + t_match.start();
+        let abs_end = search_from + t_match.end();
+        let full_tag = &result[abs_start..abs_end];
+
+        // Extract the text content between <w:t...> and </w:t>
+        let text_content = &t_open_re.captures(remaining).unwrap()[1];
+
+        // Check if this text has an unmatched `{`
+        let open_count = text_content.chars().filter(|&c| c == '{').count();
+        let close_count = text_content.chars().filter(|&c| c == '}').count();
+
+        if open_count <= close_count || !text_content.contains('{') {
+            // No unmatched `{`, move on
+            search_from = abs_end;
+            continue;
+        }
+
+        // We have an unmatched `{`. Find the position of the last unmatched `{`
+        // and collect text from subsequent <w:t> elements until we find the `}`
+        let mut merged_text = text_content.to_string();
+        let mut scan_pos = abs_end;
+        let mut last_consumed_end = abs_end;
+        let mut found_close = false;
+
+        // We need to scan forward through subsequent runs to find `}`
+        while scan_pos < result.len() {
+            let scan_remaining = &result[scan_pos..];
+            let Some(next_t) = t_open_re.find(scan_remaining) else {
+                break;
+            };
+
+            let next_abs_start = scan_pos + next_t.start();
+            let next_abs_end = scan_pos + next_t.end();
+
+            // Check if there's a </w:r> and <w:r> between current and next <w:t>
+            // (we only merge within the same paragraph — if we hit </w:p> stop)
+            let between = &result[last_consumed_end..next_abs_start];
+            if between.contains("</w:p>") {
+                break;
+            }
+
+            let next_text = &t_open_re.captures(scan_remaining).unwrap()[1];
+            merged_text.push_str(next_text);
+            last_consumed_end = next_abs_end;
+
+            if next_text.contains('}') {
+                found_close = true;
+                break;
+            }
+
+            scan_pos = next_abs_end;
+        }
+
+        if !found_close {
+            // Couldn't find the closing `}`, skip this `{`
+            search_from = abs_end;
+            continue;
+        }
+
+        // Verify the merged text actually contains a valid {Variable} pattern
+        let has_valid_var = {
+            let mut found = false;
+            let mut chars = merged_text.chars().peekable();
+            while let Some(c) = chars.next() {
+                if c == '{' {
+                    let mut name = String::new();
+                    let mut closed = false;
+                    for inner in chars.by_ref() {
+                        if inner == '}' {
+                            closed = true;
+                            break;
+                        }
+                        name.push(inner);
+                    }
+                    if closed && !name.is_empty() && !name.contains('{') {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            found
+        };
+
+        if !has_valid_var {
+            search_from = abs_end;
+            continue;
+        }
+
+        // Build the replacement: keep the first <w:t>'s opening tag but with
+        // the merged text, and remove the consumed subsequent <w:t> elements
+        // by replacing the entire range from the first <w:t> to the last
+        // consumed </w:t> end.
+
+        // Extract the opening tag of the first <w:t> element (e.g., `<w:t xml:space="preserve">`)
+        let opening_tag_end = full_tag.find('>').unwrap() + 1;
+        let opening_tag = &full_tag[..opening_tag_end];
+
+        // Build new element with merged text and xml:space="preserve"
+        let new_opening = if opening_tag.contains("xml:space") {
+            opening_tag.to_string()
+        } else {
+            opening_tag.replace("<w:t>", "<w:t xml:space=\"preserve\">")
+        };
+
+        // We need to replace the range from the start of the first <w:t> element
+        // through the end of the last consumed element. But we can't just cut
+        // the intermediate XML — we need to keep the <w:r> wrapper around our
+        // merged text. The simplest correct approach: replace the text in the
+        // first <w:t>, and blank out the text in subsequent consumed <w:t> elements.
+
+        // Strategy: replace the entire span [abs_start..last_consumed_end] with:
+        // 1. The first run's <w:r>...<w:t>MERGED_TEXT</w:t>...</w:r>
+        // 2. The intermediate runs with their text emptied
+
+        // Actually, the cleanest approach: just replace the text content in the
+        // first <w:t> with the full merged text, and empty the intermediate <w:t> elements.
+
+        let escaped_merged = escape_xml_text(&merged_text);
+        let new_first_t = format!("{}{}</w:t>", new_opening, escaped_merged);
+
+        // Replace the first <w:t>...</w:t>
+        let mut new_xml = String::new();
+        new_xml.push_str(&result[..abs_start]);
+        new_xml.push_str(&new_first_t);
+
+        // Now blank out all intermediate <w:t> elements between abs_end and last_consumed_end
+        let mut intermediate = result[abs_end..last_consumed_end].to_string();
+        intermediate = t_open_re
+            .replace_all(&intermediate, |caps: &regex::Captures| {
+                // Keep the tag but empty the text
+                let full = caps.get(0).unwrap().as_str();
+                let tag_end = full.find('>').unwrap() + 1;
+                format!("{}</w:t>", &full[..tag_end])
+            })
+            .to_string();
+        new_xml.push_str(&intermediate);
+
+        new_xml.push_str(&result[last_consumed_end..]);
+
+        let next_search = abs_start + new_first_t.len();
+        result = new_xml;
+        search_from = next_search;
+    }
+
+    result
+}
+
+/// Escape text for use in XML text content.
+fn escape_xml_text(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
 
 fn read_document_xml(docx_path: &str) -> Result<String, String> {
     let file_bytes = fs::read(docx_path).map_err(|e| format!("Failed to read docx: {}", e))?;
@@ -586,5 +777,49 @@ mod tests {
         assert_eq!(vars[0].display_name, "Date");
         assert_eq!(vars[1].display_name, "Client Name");
         assert_eq!(vars[2].display_name, "Attorney Name");
+    }
+
+    #[test]
+    fn test_normalize_split_variables_brace_in_separate_run() {
+        // { and } are in separate runs from the variable name
+        let xml = r#"<w:r><w:rPr><w:b/></w:rPr><w:t>{</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>Agent #1 Full Name</w:t></w:r><w:r><w:rPr></w:rPr><w:t>}</w:t></w:r>"#;
+        let normalized = normalize_split_variables(xml);
+        assert!(
+            normalized.contains("{Agent #1 Full Name}"),
+            "Expected merged variable, got: {}",
+            normalized
+        );
+    }
+
+    #[test]
+    fn test_normalize_split_variables_multi_split() {
+        // Variable split across 3+ runs: { | Client | First Name }
+        let xml = r#"<w:r><w:t>{</w:t></w:r><w:r><w:t>Client </w:t></w:r><w:r><w:t>First Name}</w:t></w:r>"#;
+        let normalized = normalize_split_variables(xml);
+        assert!(
+            normalized.contains("{Client First Name}"),
+            "Expected merged variable, got: {}",
+            normalized
+        );
+    }
+
+    #[test]
+    fn test_normalize_preserves_non_split_variables() {
+        // Variable already in a single run should be untouched
+        let xml = r#"<w:r><w:t>{Client Name}</w:t></w:r>"#;
+        let normalized = normalize_split_variables(xml);
+        assert!(normalized.contains("{Client Name}"));
+    }
+
+    #[test]
+    fn test_normalize_then_highlight() {
+        // After normalization, highlight_variables should wrap the merged variable
+        let xml = r#"<w:r><w:t>{</w:t></w:r><w:r><w:t>Test Var}</w:t></w:r>"#;
+        let normalized = normalize_split_variables(xml);
+        // The merged text should now contain the complete {Test Var}
+        assert!(normalized.contains("{Test Var}"));
+        // And highlight_variables should produce a proper span
+        let highlighted = highlight_variables("{Test Var}");
+        assert!(highlighted.contains("data-variable=\"test var\""));
     }
 }
