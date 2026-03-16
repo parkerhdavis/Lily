@@ -345,8 +345,8 @@ fn highlight_variables(text: &str) -> String {
             }
             if found_close && !var_content.is_empty() {
                 result.push_str(&format!(
-                    "<span class=\"variable-highlight\">{{{}}}</span>",
-                    var_content
+                    "<span class=\"variable-highlight\" data-variable=\"{}\">{{{}}}</span>",
+                    var_content, var_content
                 ));
             } else {
                 result.push('{');
