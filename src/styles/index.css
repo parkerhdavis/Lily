@@ -19,6 +19,52 @@
   background-color: oklch(0.88 0.12 145);  /* soft green — filled */
 }
 
+/* ─── Document preview structural elements ────────────────────────────── */
+
+/* Override prose defaults so Word-sourced margins take precedence */
+.document-preview p,
+.document-preview h1,
+.document-preview h2,
+.document-preview h3,
+.document-preview h4,
+.document-preview h5,
+.document-preview h6 {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* Tab stops — approximate a tab as a fixed-width space */
+.preview-tab {
+  display: inline-block;
+  width: 36pt;  /* ~0.5 inch */
+}
+
+/* Page break indicator */
+.preview-page-break {
+  display: block;
+  border-bottom: 1px dashed oklch(0.7 0 0);
+  margin: 12pt 0;
+}
+
+/* List label (bullet or number) */
+.preview-list-label {
+  display: inline;
+  font-weight: normal;
+}
+
+/* Table rendering */
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8pt 0;
+}
+
+.preview-table td {
+  border: 1px solid oklch(0.8 0 0);
+  padding: 4pt 6pt;
+  vertical-align: top;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
