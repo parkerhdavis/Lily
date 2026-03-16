@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type { WorkflowStep, SidecarFile, VariableInfo } from "@/types";
+import type { WorkflowStep, LilyFile, VariableInfo } from "@/types";
+
+const QUESTIONNAIRE_FILENAME = "ClientQuestionnaire.docx";
 
 interface WorkflowState {
 	step: WorkflowStep;
@@ -14,8 +16,8 @@ interface WorkflowState {
 	templates: string[];
 	/** The relative path of the selected template within the templates dir. */
 	templateRelPath: string | null;
-	/** Sidecar data for the current working directory. */
-	sidecar: SidecarFile | null;
+	/** .lily project file data for the current working directory. */
+	lilyFile: LilyFile | null;
 	/** Whether the document has unsaved changes. */
 	dirty: boolean;
 	loading: boolean;
@@ -29,11 +31,29 @@ interface WorkflowState {
 		templatesDir: string,
 	) => Promise<void>;
 	updateVariable: (name: string, value: string) => void;
-	/** Open an existing document from the working directory (e.g. from sidecar). */
+	/** Open an existing document from the working directory. */
 	openDocument: (filename: string, templateRelPath: string) => Promise<void>;
 	renameDocument: (newFilename: string) => Promise<void>;
 	saveDocument: () => Promise<void>;
 	refreshPreview: () => Promise<void>;
+	/** Save a single client variable (auto-save on blur from the Client Hub). */
+	saveClientVariable: (name: string, value: string) => Promise<void>;
+	/** Add a new variable to the client-level pool. */
+	addClientVariable: (name: string) => Promise<void>;
+	/** Remove a variable from the client-level pool. */
+	removeClientVariable: (name: string) => Promise<void>;
+	/** Delete a document from disk and the .lily file. */
+	deleteDocument: (filename: string) => Promise<void>;
+	/** Create a new versioned copy of an existing document. */
+	newVersionDocument: (filename: string) => Promise<void>;
+	/** Open a template file in the OS default application. */
+	openTemplateFile: (templateRelPath: string) => Promise<void>;
+	/** Reload the .lily file from disk into the store. */
+	reloadLilyFile: () => Promise<void>;
+	/** Navigate to Add New Document (template selection). */
+	startAddDocument: () => void;
+	/** Return to the Client Hub, clearing document-specific state. */
+	returnToHub: () => void;
 	reset: () => void;
 }
 
@@ -46,7 +66,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 	variableValues: {},
 	templates: [],
 	templateRelPath: null,
-	sidecar: null,
+	lilyFile: null,
 	dirty: false,
 	loading: false,
 	error: null,
@@ -54,12 +74,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 	setStep: (step) => set({ step }),
 
 	setWorkingDir: (dir) => {
-		// Load sidecar data for the selected working directory
-		invoke<SidecarFile>("load_sidecar", { workingDir: dir })
-			.then((sidecar) => set({ sidecar }))
-			.catch((err) => console.error("Failed to load sidecar:", err));
+		set({ workingDir: dir, step: "client-hub" });
 
-		set({ workingDir: dir, step: "select-template" });
+		// Load .lily file data for the selected working directory
+		invoke<LilyFile>("load_lily_file_cmd", { workingDir: dir })
+			.then((lilyFile) => set({ lilyFile }))
+			.catch((err) =>
+				console.error("Failed to load .lily file:", err),
+			);
 	},
 
 	loadTemplates: async (templatesDir) => {
@@ -75,7 +97,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 	},
 
 	selectTemplate: async (templateRelPath, templatesDir) => {
-		const { workingDir } = get();
+		const { workingDir, lilyFile } = get();
 		if (!workingDir) return;
 
 		set({ loading: true, error: null });
@@ -102,16 +124,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				docxPath: docPath,
 			});
 
-			// Initialize variable values keyed by display_name
+			// Initialize variable values from the client-level .lily file pool
+			const savedVars = lilyFile?.variables ?? {};
 			const variableValues: Record<string, string> = {};
 			for (const v of variables) {
-				variableValues[v.display_name] = "";
+				variableValues[v.display_name] = savedVars[v.display_name] ?? "";
 			}
 
-			// Reload sidecar to pick up the new document entry
-			const sidecar = await invoke<SidecarFile>("load_sidecar", {
-				workingDir,
-			});
+			// Reload .lily file to pick up the new document entry
+			const updatedLilyFile = await invoke<LilyFile>(
+				"load_lily_file_cmd",
+				{ workingDir },
+			);
 
 			set({
 				documentPath: docPath,
@@ -119,7 +143,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				variables,
 				variableValues,
 				documentHtml,
-				sidecar,
+				lilyFile: updatedLilyFile,
 				dirty: false,
 				step: "edit-variables",
 				loading: false,
@@ -138,7 +162,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 	},
 
 	openDocument: async (filename, templateRelPath) => {
-		const { workingDir, sidecar } = get();
+		const { workingDir, lilyFile } = get();
 		if (!workingDir) return;
 
 		set({ loading: true, error: null });
@@ -155,12 +179,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				docxPath: docPath,
 			});
 
-			// Restore saved variable values from sidecar, defaulting to empty
-			const savedValues =
-				sidecar?.documents[filename]?.variable_values ?? {};
+			// Restore variable values from the client-level .lily file pool
+			const savedVars = lilyFile?.variables ?? {};
 			const variableValues: Record<string, string> = {};
 			for (const v of variables) {
-				variableValues[v.display_name] = savedValues[v.display_name] ?? "";
+				variableValues[v.display_name] = savedVars[v.display_name] ?? "";
 			}
 
 			set({
@@ -205,12 +228,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				variables: variableValues,
 			});
 
-			// Reload sidecar to reflect updated variable values and timestamp
+			// Reload .lily file to reflect updated variable values and timestamp
 			if (workingDir) {
-				const sidecar = await invoke<SidecarFile>("load_sidecar", {
+				const lilyFile = await invoke<LilyFile>("load_lily_file_cmd", {
 					workingDir,
 				});
-				set({ sidecar });
+				set({ lilyFile });
 			}
 
 			// Don't refresh documentHtml — the live preview depends on the
@@ -236,6 +259,154 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		}
 	},
 
+	saveClientVariable: async (name, value) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		try {
+			await invoke("save_client_variables", {
+				workingDir,
+				variableValues: { [name]: value },
+			});
+			// Update the local lilyFile state to reflect the change
+			const { lilyFile } = get();
+			if (lilyFile) {
+				set({
+					lilyFile: {
+						...lilyFile,
+						variables: { ...lilyFile.variables, [name]: value },
+					},
+				});
+			}
+		} catch (err) {
+			console.error("Failed to save client variable:", err);
+		}
+	},
+
+	addClientVariable: async (name) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		try {
+			await invoke("add_client_variable", {
+				workingDir,
+				variableName: name,
+			});
+			// Update local state
+			const { lilyFile } = get();
+			if (lilyFile) {
+				set({
+					lilyFile: {
+						...lilyFile,
+						variables: { ...lilyFile.variables, [name]: "" },
+					},
+				});
+			}
+		} catch (err) {
+			throw err;
+		}
+	},
+
+	removeClientVariable: async (name) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		try {
+			await invoke("remove_client_variable", {
+				workingDir,
+				variableName: name,
+			});
+			// Update local state
+			const { lilyFile } = get();
+			if (lilyFile) {
+				const { [name]: _, ...rest } = lilyFile.variables;
+				set({
+					lilyFile: {
+						...lilyFile,
+						variables: rest,
+					},
+				});
+			}
+		} catch (err) {
+			console.error("Failed to remove client variable:", err);
+		}
+	},
+
+	deleteDocument: async (filename) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		try {
+			await invoke("delete_document", { workingDir, filename });
+			await get().reloadLilyFile();
+		} catch (err) {
+			console.error("Failed to delete document:", err);
+		}
+	},
+
+	newVersionDocument: async (filename) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		try {
+			await invoke<string>("new_version_document", {
+				workingDir,
+				filename,
+			});
+			await get().reloadLilyFile();
+		} catch (err) {
+			console.error("Failed to create new version:", err);
+		}
+	},
+
+	openTemplateFile: async (templateRelPath) => {
+		const settings = (await invoke("load_settings")) as {
+			templates_dir: string | null;
+		};
+		if (!settings.templates_dir) return;
+
+		const fullPath = `${settings.templates_dir}/${templateRelPath}`;
+		try {
+			await invoke("open_file_in_os", { filePath: fullPath });
+		} catch (err) {
+			console.error("Failed to open template file:", err);
+		}
+	},
+
+	reloadLilyFile: async () => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		try {
+			const lilyFile = await invoke<LilyFile>("load_lily_file_cmd", {
+				workingDir,
+			});
+			set({ lilyFile });
+		} catch (err) {
+			console.error("Failed to reload .lily file:", err);
+		}
+	},
+
+	startAddDocument: () => {
+		set({ step: "select-template" });
+	},
+
+	returnToHub: () => {
+		// Clear document-specific state but keep workingDir, lilyFile, templates
+		set({
+			step: "client-hub",
+			documentPath: null,
+			documentHtml: "",
+			variables: [],
+			variableValues: {},
+			templateRelPath: null,
+			dirty: false,
+			error: null,
+		});
+		// Reload .lily file to pick up any changes made while editing
+		get().reloadLilyFile();
+	},
+
 	reset: () =>
 		set({
 			step: "select-directory",
@@ -246,7 +417,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			variableValues: {},
 			templates: [],
 			templateRelPath: null,
-			sidecar: null,
+			lilyFile: null,
 			dirty: false,
 			error: null,
 		}),

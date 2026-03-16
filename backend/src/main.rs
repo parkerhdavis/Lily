@@ -2,14 +2,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod docx_ops;
+mod lily_file;
 mod settings;
-mod sidecar;
 
 use docx_ops::{
     copy_template, extract_variables, get_document_html, rename_document, replace_variables,
 };
+use lily_file::{
+    add_client_variable, delete_document, load_lily_file_cmd, new_version_document,
+    open_file_in_os, remove_client_variable, save_client_variables, save_variables,
+};
 use settings::{load_settings, save_settings};
-use sidecar::{load_sidecar, save_document_meta};
 
 fn main() {
     tauri::Builder::default()
@@ -24,8 +27,14 @@ fn main() {
             load_settings,
             save_settings,
             list_templates,
-            load_sidecar,
-            save_document_meta,
+            load_lily_file_cmd,
+            save_variables,
+            save_client_variables,
+            add_client_variable,
+            remove_client_variable,
+            delete_document,
+            new_version_document,
+            open_file_in_os,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
