@@ -27,6 +27,8 @@ interface WorkflowState {
 		templatesDir: string,
 	) => Promise<void>;
 	updateVariable: (name: string, value: string) => void;
+	/** Open an existing document from the working directory (e.g. from sidecar). */
+	openDocument: (filename: string, templateRelPath: string) => Promise<void>;
 	renameDocument: (newFilename: string) => Promise<void>;
 	saveDocument: () => Promise<void>;
 	refreshPreview: () => Promise<void>;
@@ -131,6 +133,47 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			variableValues: { ...variableValues, [name]: value },
 			dirty: true,
 		});
+	},
+
+	openDocument: async (filename, templateRelPath) => {
+		const { workingDir, sidecar } = get();
+		if (!workingDir) return;
+
+		set({ loading: true, error: null });
+		try {
+			const docPath = `${workingDir}/${filename}`;
+
+			// Extract variables from the existing document
+			const variables = await invoke<string[]>("extract_variables", {
+				docxPath: docPath,
+			});
+
+			// Get HTML preview
+			const documentHtml = await invoke<string>("get_document_html", {
+				docxPath: docPath,
+			});
+
+			// Restore saved variable values from sidecar, defaulting to empty
+			const savedValues =
+				sidecar?.documents[filename]?.variable_values ?? {};
+			const variableValues: Record<string, string> = {};
+			for (const v of variables) {
+				variableValues[v] = savedValues[v] ?? "";
+			}
+
+			set({
+				documentPath: docPath,
+				templateRelPath,
+				variables,
+				variableValues,
+				documentHtml,
+				dirty: false,
+				step: "edit-variables",
+				loading: false,
+			});
+		} catch (err) {
+			set({ error: String(err), loading: false });
+		}
 	},
 
 	renameDocument: async (newFilename) => {
