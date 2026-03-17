@@ -11,6 +11,7 @@ interface SettingsState {
 	save: (settings: Partial<AppSettings>) => Promise<void>;
 	addRecentDirectory: (dir: string) => Promise<void>;
 	removeRecentDirectory: (dir: string) => Promise<void>;
+	toggleTheme: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -20,12 +21,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 		recent_directories: [],
 		window_width: null,
 		window_height: null,
+		theme: null,
 	},
 	loaded: false,
 
 	load: async () => {
 		try {
 			const settings = await invoke<AppSettings>("load_settings");
+			applyTheme(settings.theme);
 			set({ settings, loaded: true });
 		} catch (err) {
 			console.error("Failed to load settings:", err);
@@ -56,4 +59,19 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 		const filtered = current.recent_directories.filter((d) => d !== dir);
 		await get().save({ recent_directories: filtered });
 	},
+
+	toggleTheme: async () => {
+		const current = get().settings;
+		const next = current.theme === "dark" ? "light" : "dark";
+		applyTheme(next);
+		await get().save({ theme: next });
+	},
 }));
+
+/** Set the daisyUI data-theme attribute on the root <html> element. */
+function applyTheme(theme: string | null) {
+	document.documentElement.setAttribute(
+		"data-theme",
+		theme === "dark" ? "dark" : "light",
+	);
+}

@@ -5,6 +5,7 @@ import DirectoryPicker from "@/components/DirectoryPicker";
 import ClientHub from "@/components/ClientHub";
 import TemplatePicker from "@/components/TemplatePicker";
 import VariableEditor from "@/components/VariableEditor";
+import ThemeToggle from "@/components/ThemeToggle";
 
 export default function App() {
 	const { loaded, load } = useSettingsStore();
@@ -22,14 +23,23 @@ export default function App() {
 		);
 	}
 
-	switch (step) {
-		case "select-directory":
-			return <DirectoryPicker />;
-		case "client-hub":
-			return <ClientHub />;
-		case "select-template":
-			return <TemplatePicker />;
-		case "edit-variables":
-			return <VariableEditor />;
-	}
+	const page = (() => {
+		switch (step) {
+			case "select-directory":
+				return <DirectoryPicker />;
+			case "client-hub":
+				return <ClientHub />;
+			case "select-template":
+				return <TemplatePicker />;
+			case "edit-variables":
+				return <VariableEditor />;
+		}
+	})();
+
+	return (
+		<>
+			{page}
+			<ThemeToggle />
+		</>
+	);
 }

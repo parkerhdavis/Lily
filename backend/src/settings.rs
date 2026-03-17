@@ -17,6 +17,9 @@ pub struct AppSettings {
     /// Remembered window height from last session.
     #[serde(default)]
     pub window_height: Option<u32>,
+    /// UI theme: "light" or "dark".
+    #[serde(default)]
+    pub theme: Option<String>,
 }
 
 fn settings_path() -> Result<PathBuf, String> {
