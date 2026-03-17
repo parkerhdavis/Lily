@@ -554,7 +554,7 @@ export default function VariableEditor() {
 				{/* Variable sidebar */}
 				<div
 					ref={sidebarRef}
-					className="w-80 shrink-0 border-r border-base-300 overflow-y-auto p-4 bg-base-100"
+					className="w-80 shrink-0 border-r border-base-300 overflow-y-auto p-4 bg-base-100 shadow-2xl"
 				>
 					<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50 mb-3">
 						Variables
@@ -760,7 +760,7 @@ export default function VariableEditor() {
 				>
 					<div
 						ref={previewRef}
-						className="bg-white rounded-lg shadow-md p-8 max-w-4xl mx-auto prose prose-sm"
+						className="bg-base-100 rounded-lg shadow-2xl border border-base-300 p-8 max-w-4xl mx-auto prose prose-sm"
 						// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
 						dangerouslySetInnerHTML={{
 							__html: getLivePreviewHtml(),

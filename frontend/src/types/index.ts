@@ -4,6 +4,7 @@ export interface AppSettings {
 	recent_directories: string[];
 	window_width: number | null;
 	window_height: number | null;
+	theme: string | null;
 }
 
 export type WorkflowStep =

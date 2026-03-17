@@ -20,6 +20,19 @@
   background-color: oklch(0.88 0.12 145);  /* soft green — filled */
 }
 
+/* Dark-mode: deeper highlights so light text stays readable */
+[data-theme="dark"] .variable-highlight {
+  background-color: oklch(0.35 0.12 25);   /* deep red — unfilled */
+}
+
+[data-theme="dark"] .variable-highlight.selected {
+  background-color: oklch(0.40 0.12 85);   /* deep yellow — selected */
+}
+
+[data-theme="dark"] .variable-highlight.filled {
+  background-color: oklch(0.35 0.10 145);  /* deep green — filled */
+}
+
 /* Zero-width bookmark anchor for empty conditional variables */
 .variable-bookmark {
   display: inline;
