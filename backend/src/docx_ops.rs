@@ -1392,16 +1392,31 @@ fn is_conditional_variable(raw_content: &str) -> bool {
     raw_content.contains("??")
 }
 
+/// Normalize smart / curly quotes to plain ASCII double quotes.
+///
+/// Word's "AutoFormat as you type" automatically converts straight quotes
+/// (`"`) to left/right curly quotes (\u{201C} / \u{201D}).  This helper
+/// ensures the conditional parser accepts both forms.
+fn normalize_quotes(s: &str) -> String {
+    s.replace('\u{201C}', "\"")
+        .replace('\u{201D}', "\"")
+        .replace('\u{2018}', "'")
+        .replace('\u{2019}', "'")
+}
+
 /// Parse a conditional variable's raw content into (label, true_text, false_text).
 ///
 /// Expected syntax:
 ///   `Client Is Single ?? "single text" :: "couple text"`
 ///   → `("Client Is Single", "single text", "couple text")`
 ///
-/// Both branch texts must be wrapped in double quotes. Content inside the
-/// quotes is preserved exactly (including whitespace). The `::` separator
-/// between true and false branches is required.
+/// Both branch texts must be wrapped in double quotes (straight or smart).
+/// Content inside the quotes is preserved exactly (including whitespace).
+/// The `::` separator between true and false branches is required.
 fn parse_conditional_variable(raw_content: &str) -> Option<(String, String, String)> {
+    // Normalize curly/smart quotes to straight quotes so the parser works
+    // regardless of whether the user typed in Word (which auto-converts).
+    let raw_content = normalize_quotes(raw_content);
     let (label, rest) = raw_content.split_once("??")?;
     let label = label.trim().to_string();
     if label.is_empty() {
@@ -3080,6 +3095,38 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_conditional_variable_smart_quotes() {
+        // Word's "AutoFormat as you type" converts straight quotes to curly
+        // quotes (\u{201C}/\u{201D}).  The parser must accept them.
+        let result = parse_conditional_variable(
+            "Label ?? \u{201C}true text\u{201D} :: \u{201C}false text\u{201D}",
+        );
+        assert_eq!(
+            result,
+            Some((
+                "Label".to_string(),
+                "true text".to_string(),
+                "false text".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_conditional_variable_smart_quotes_with_nested() {
+        let result = parse_conditional_variable(
+            "Has HPOA #2 ?? \u{201C}If {HPOA #1 Full Name} is unable\u{201D} :: \u{201C}\u{201D}",
+        );
+        assert_eq!(
+            result,
+            Some((
+                "Has HPOA #2".to_string(),
+                "If {HPOA #1 Full Name} is unable".to_string(),
+                String::new()
+            ))
+        );
+    }
+
+    #[test]
     fn test_find_variables_conditional() {
         let text =
             r#"Hello {Client Is Single ?? "single text" :: "couple text"} and {Client Name}"#;
@@ -3230,6 +3277,187 @@ mod tests {
         let mut chars = text.chars().peekable();
         let content = scan_brace_content(&mut chars);
         assert_eq!(content, None);
+    }
+
+    #[test]
+    fn test_hpoa_snippet_full() {
+        // Exact snippet from user's HPOA template
+        let text = r#"If I am unable to make my own health care decisions, I designate {HPOA #1 Full Name}, who can be reached at {HPOA #1 Phone}, to serve as my Healthcare Representative. {Has HPOA #2 ?? "If {HPOA #1 Full Name} is unable or unwilling to serve, I appoint {HPOA #2 Full Name}, who can be reached at {HPOA #2 Phone}, to serve as my Healthcare Representative. " :: ""}{Has HPOA #3 ?? "If {HPOA #2 Full Name} is unable or unwilling to serve, I appoint {HPOA #3 Full Name}, who can be reached at {HPOA #3 Phone}, to serve as my Healthcare Representative." :: ""}"#;
+        let vars = find_variables(text);
+        let var_names: Vec<&str> = vars.iter().map(|v| v.display_name.as_str()).collect();
+
+        // Should find: HPOA #1 Full Name, HPOA #1 Phone, Has HPOA #2,
+        // HPOA #2 Full Name, HPOA #2 Phone, Has HPOA #3, HPOA #3 Full Name, HPOA #3 Phone
+        assert!(
+            var_names.contains(&"HPOA #1 Full Name"),
+            "Missing HPOA #1 Full Name"
+        );
+        assert!(
+            var_names.contains(&"HPOA #1 Phone"),
+            "Missing HPOA #1 Phone"
+        );
+        assert!(var_names.contains(&"Has HPOA #2"), "Missing Has HPOA #2");
+        assert!(
+            var_names.contains(&"HPOA #2 Full Name"),
+            "Missing HPOA #2 Full Name"
+        );
+        assert!(
+            var_names.contains(&"HPOA #2 Phone"),
+            "Missing HPOA #2 Phone"
+        );
+        assert!(var_names.contains(&"Has HPOA #3"), "Missing Has HPOA #3");
+        assert!(
+            var_names.contains(&"HPOA #3 Full Name"),
+            "Missing HPOA #3 Full Name"
+        );
+        assert!(
+            var_names.contains(&"HPOA #3 Phone"),
+            "Missing HPOA #3 Phone"
+        );
+    }
+
+    #[test]
+    fn test_hpoa_snippet_resolve() {
+        let mut vars = HashMap::new();
+        vars.insert("HPOA #1 Full Name".to_string(), "John Smith".to_string());
+        vars.insert("HPOA #2 Full Name".to_string(), "Jane Doe".to_string());
+        vars.insert("HPOA #2 Phone".to_string(), "555-1234".to_string());
+        vars.insert("HPOA #3 Full Name".to_string(), "Bob Jones".to_string());
+        vars.insert("HPOA #3 Phone".to_string(), "555-5678".to_string());
+
+        let true_text_2 = "If {HPOA #1 Full Name} is unable or unwilling to serve, I appoint {HPOA #2 Full Name}, who can be reached at {HPOA #2 Phone}, to serve as my Healthcare Representative. ";
+        let resolved_2 = resolve_nested_variables(true_text_2, &vars);
+        assert_eq!(resolved_2, "If John Smith is unable or unwilling to serve, I appoint Jane Doe, who can be reached at 555-1234, to serve as my Healthcare Representative. ");
+
+        let true_text_3 = "If {HPOA #2 Full Name} is unable or unwilling to serve, I appoint {HPOA #3 Full Name}, who can be reached at {HPOA #3 Phone}, to serve as my Healthcare Representative.";
+        let resolved_3 = resolve_nested_variables(true_text_3, &vars);
+        assert_eq!(resolved_3, "If Jane Doe is unable or unwilling to serve, I appoint Bob Jones, who can be reached at 555-5678, to serve as my Healthcare Representative.");
+    }
+
+    #[test]
+    fn test_hpoa_highlight() {
+        let text = r#"{Has HPOA #2 ?? "If {HPOA #1 Full Name} is unable, I appoint {HPOA #2 Full Name}, reachable at {HPOA #2 Phone}. " :: ""}"#;
+        let result = highlight_variables(text);
+        assert!(
+            result.contains("data-conditional=\"true\""),
+            "Expected conditional, got: {}",
+            result
+        );
+        assert!(
+            result.contains("data-variable=\"has hpoa #2\""),
+            "Expected canonical key, got: {}",
+            result
+        );
+        assert!(
+            result.contains("{HPOA #1 Full Name}"),
+            "Expected nested var in true-text, got: {}",
+            result
+        );
+        assert!(
+            result.contains("{HPOA #2 Full Name}"),
+            "Expected nested var in true-text, got: {}",
+            result
+        );
+        assert!(
+            result.contains("{HPOA #2 Phone}"),
+            "Expected nested var in true-text, got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_hpoa_actual_docx() {
+        // Test against the actual HPOA Template.docx file which contains
+        // smart/curly quotes (Word's "AutoFormat as you type" converts
+        // straight " to \u{201C}/\u{201D}).
+        let path = std::path::Path::new("../resources/templates/test/HPOA Template.docx");
+        if !path.exists() {
+            eprintln!("HPOA Template.docx not found at {:?}, skipping", path);
+            return;
+        }
+        let docx_path = path.to_string_lossy().to_string();
+        let vars = extract_variables(docx_path).expect("Failed to extract variables");
+        let var_names: Vec<&str> = vars.iter().map(|v| v.display_name.as_str()).collect();
+
+        assert!(
+            var_names.contains(&"HPOA #1 Full Name"),
+            "Missing HPOA #1 Full Name, found: {:?}",
+            var_names
+        );
+        assert!(
+            var_names.contains(&"HPOA #1 Phone"),
+            "Missing HPOA #1 Phone, found: {:?}",
+            var_names
+        );
+        assert!(
+            var_names.contains(&"Has HPOA #2"),
+            "Missing Has HPOA #2, found: {:?}",
+            var_names
+        );
+        assert!(
+            var_names.contains(&"HPOA #2 Full Name"),
+            "Missing HPOA #2 Full Name, found: {:?}",
+            var_names
+        );
+        assert!(
+            var_names.contains(&"HPOA #2 Phone"),
+            "Missing HPOA #2 Phone, found: {:?}",
+            var_names
+        );
+        assert!(
+            var_names.contains(&"Has HPOA #3"),
+            "Missing Has HPOA #3, found: {:?}",
+            var_names
+        );
+        assert!(
+            var_names.contains(&"HPOA #3 Full Name"),
+            "Missing HPOA #3 Full Name, found: {:?}",
+            var_names
+        );
+        assert!(
+            var_names.contains(&"HPOA #3 Phone"),
+            "Missing HPOA #3 Phone, found: {:?}",
+            var_names
+        );
+    }
+
+    #[test]
+    fn test_hpoa_real_xml_split_runs() {
+        // Real Word XML from the HPOA template — Word splits the conditional
+        // variable text across multiple runs due to bold formatting on nested
+        // variable names.
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t xml:space="preserve">If I am unable to make my own health care decisions, I designate </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">{HPOA #1 Full Name}</w:t></w:r><w:r><w:t xml:space="preserve">, who can be reached at {HPOA #1 Phone}</w:t></w:r><w:r><w:t xml:space="preserve">, to serve as my Healthcare Representative. {Has HPOA #2 ?? "If </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">{HPOA #1 Full Name}</w:t></w:r><w:r><w:t xml:space="preserve"> is unable or unwilling to serve, I appoint </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">{HPOA #2 Full Name}</w:t></w:r><w:r><w:t xml:space="preserve">, who can be reached at </w:t></w:r><w:r><w:t xml:space="preserve">{HPOA #2 Phone}</w:t></w:r><w:r><w:t xml:space="preserve">, to serve as my Healthcare Representative. " :: ""}{Has HPOA #3 ?? "If </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">{HPOA #2 Full Name}</w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve"> </w:t></w:r><w:r><w:t xml:space="preserve">i</w:t></w:r><w:r><w:t xml:space="preserve">s unable or unwilling to serve, I appoint </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">{HPOA #3 Full Name}</w:t></w:r><w:r><w:t xml:space="preserve">, who can be reached at </w:t></w:r><w:r><w:t xml:space="preserve">{HPOA #3 Phone}</w:t></w:r><w:r><w:t xml:space="preserve">, to serve as my Healthcare Representative." :: ""}</w:t></w:r></w:p></w:body></w:document>"#;
+
+        let normalized = normalize_split_variables(xml);
+        let vars = find_all_variables(&normalized);
+        let var_names: Vec<&str> = vars.iter().map(|v| v.display_name.as_str()).collect();
+
+        assert!(
+            var_names.contains(&"HPOA #1 Full Name"),
+            "Missing HPOA #1 Full Name"
+        );
+        assert!(
+            var_names.contains(&"HPOA #1 Phone"),
+            "Missing HPOA #1 Phone"
+        );
+        assert!(var_names.contains(&"Has HPOA #2"), "Missing Has HPOA #2");
+        assert!(
+            var_names.contains(&"HPOA #2 Full Name"),
+            "Missing HPOA #2 Full Name"
+        );
+        assert!(
+            var_names.contains(&"HPOA #2 Phone"),
+            "Missing HPOA #2 Phone"
+        );
+        assert!(var_names.contains(&"Has HPOA #3"), "Missing Has HPOA #3");
+        assert!(
+            var_names.contains(&"HPOA #3 Full Name"),
+            "Missing HPOA #3 Full Name"
+        );
+        assert!(
+            var_names.contains(&"HPOA #3 Phone"),
+            "Missing HPOA #3 Phone"
+        );
     }
 
     #[test]

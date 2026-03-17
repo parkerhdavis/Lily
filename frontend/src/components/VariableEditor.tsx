@@ -81,16 +81,32 @@ const BOOKMARK_SPAN_RE =
 	/<span class="variable-bookmark" data-variable="([^"]*)" data-original-case="([^"]*)"><\/span>/g;
 
 /**
+ * Normalize smart / curly quotes to plain ASCII double quotes.
+ *
+ * Word's "AutoFormat as you type" automatically converts straight quotes
+ * (`"`) to left/right curly quotes (\u201C / \u201D).  This helper
+ * ensures the conditional parser accepts both forms.
+ */
+function normalizeQuotes(s: string): string {
+	return s
+		.replace(/\u201C/g, '"')
+		.replace(/\u201D/g, '"')
+		.replace(/\u2018/g, "'")
+		.replace(/\u2019/g, "'");
+}
+
+/**
  * Parse a conditional definition string into its true/false branch text.
  * Expected syntax: `Label ?? "true text" :: "false text"`
- * Both branch texts must be wrapped in double quotes.
+ * Both branch texts must be wrapped in double quotes (straight or smart).
  */
 function parseConditionalDef(
 	def: string,
 ): { trueText: string; falseText: string } | null {
-	const qqIdx = def.indexOf(" ?? ");
+	const normalized = normalizeQuotes(def);
+	const qqIdx = normalized.indexOf(" ?? ");
 	if (qqIdx < 0) return null;
-	const rest = def.substring(qqIdx + 4).trim();
+	const rest = normalized.substring(qqIdx + 4).trim();
 
 	if (!rest.startsWith('"')) return null;
 	const closeIdx = rest.indexOf('"', 1);
