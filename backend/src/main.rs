@@ -71,7 +71,7 @@ fn main() {
         .expect("error while running tauri application");
 }
 
-/// List all .docx files in a given directory, recursively.
+/// List all .docx and .dotx template files in a given directory, recursively.
 #[tauri::command]
 fn list_templates(templates_dir: String) -> Result<Vec<String>, String> {
     let path = std::path::Path::new(&templates_dir);
@@ -82,12 +82,12 @@ fn list_templates(templates_dir: String) -> Result<Vec<String>, String> {
         ));
     }
     let mut results = Vec::new();
-    collect_docx_files(path, path, &mut results)?;
+    collect_template_files(path, path, &mut results)?;
     results.sort();
     Ok(results)
 }
 
-fn collect_docx_files(
+fn collect_template_files(
     base: &std::path::Path,
     dir: &std::path::Path,
     results: &mut Vec<String>,
@@ -97,9 +97,9 @@ fn collect_docx_files(
         let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
         let path = entry.path();
         if path.is_dir() {
-            collect_docx_files(base, &path, results)?;
+            collect_template_files(base, &path, results)?;
         } else if let Some(ext) = path.extension() {
-            if ext.eq_ignore_ascii_case("docx") {
+            if ext.eq_ignore_ascii_case("docx") || ext.eq_ignore_ascii_case("dotx") {
                 // Store the path relative to the templates base directory
                 if let Ok(relative) = path.strip_prefix(base) {
                     results.push(relative.to_string_lossy().to_string());
