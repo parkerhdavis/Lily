@@ -104,8 +104,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		try {
 			const fullTemplatePath = `${templatesDir}/${templateRelPath}`;
 
-			// Use the relative path's filename as the destination filename
-			const filename = templateRelPath.split("/").pop() || templateRelPath;
+			// Use the relative path's filename as the destination filename,
+			// normalising .dotx templates to .docx since we produce documents.
+			let filename = templateRelPath.split("/").pop() || templateRelPath;
+			if (filename.toLowerCase().endsWith(".dotx")) {
+				filename = filename.slice(0, -5) + ".docx";
+			}
 
 			const docPath = await invoke<string>("copy_template", {
 				templatePath: fullTemplatePath,

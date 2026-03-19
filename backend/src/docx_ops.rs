@@ -357,6 +357,14 @@ pub fn replace_variables(
         entries.push((name, buf));
     }
 
+    // If the output file is .docx, ensure [Content_Types].xml declares the
+    // main document part with the document (not template) content type.
+    // Templates (.dotx) use "...template.main+xml" while documents (.docx)
+    // must use "...document.main+xml".  When a template is copied and saved
+    // as a .docx, the original template content type would cause Word to
+    // reject the file as corrupt.
+    let is_docx = docx_path.to_lowercase().ends_with(".docx");
+
     // Process and rewrite
     let mut output = Cursor::new(Vec::new());
     {
@@ -364,9 +372,9 @@ pub fn replace_variables(
         let options =
             SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
-        // Find the max bookmark ID across all XML parts so we can generate
-        // unique IDs for any new lily bookmarks.
-        let mut next_bookmark_id: u64 = entries
+        // Find the max ID used by bookmarks and SDTs across all XML parts
+        // so we can generate unique IDs for any new lily bookmarks and SDTs.
+        let mut next_id: u64 = entries
             .iter()
             .filter(|(name, _)| {
                 name == "word/document.xml"
@@ -375,7 +383,7 @@ pub fn replace_variables(
             })
             .map(|(_, content)| {
                 let xml_str = String::from_utf8_lossy(content);
-                find_max_bookmark_id(&xml_str)
+                find_max_id(&xml_str)
             })
             .max()
             .unwrap_or(0)
@@ -398,16 +406,27 @@ pub fn replace_variables(
                     &sdt_value_map,
                     &all_variables,
                     &conditional_definitions,
-                    &mut next_bookmark_id,
+                    &mut next_id,
                 );
                 // Then replace any remaining fresh {Placeholder} text with SDT-wrapped values
                 let replaced = replace_placeholders_with_sdt(
                     &with_markers_updated,
                     &placeholder_map,
-                    &mut next_bookmark_id,
+                    &mut next_id,
                 );
                 writer
                     .write_all(replaced.as_bytes())
+                    .map_err(|e| format!("Failed to write entry: {}", e))?;
+            } else if name == "[Content_Types].xml" && is_docx {
+                // Patch the content type so Word recognises the file as a
+                // document rather than a template.
+                let ct_xml = String::from_utf8_lossy(content);
+                let patched = ct_xml.replace(
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+                );
+                writer
+                    .write_all(patched.as_bytes())
                     .map_err(|e| format!("Failed to write entry: {}", e))?;
             } else {
                 writer
@@ -1557,14 +1576,23 @@ fn apply_casing(value: &str, original_var_name: &str) -> String {
 const SDT_TAG_PREFIX: &str = "lily:";
 const BOOKMARK_PREFIX: &str = "lily:";
 
-/// Find the maximum bookmark ID used in an XML string.
-/// Returns 0 if no bookmarks exist.
-fn find_max_bookmark_id(xml: &str) -> u64 {
-    let re = Regex::new(r#"<w:bookmarkStart\s+w:id="(\d+)""#).expect("invalid regex");
-    re.captures_iter(xml)
+/// Find the maximum ID used by bookmarks and SDT content controls in an XML string.
+/// Scans both `<w:bookmarkStart w:id="N".../>` and `<w:id w:val="N"/>` (inside `<w:sdtPr>`).
+/// Returns 0 if no IDs exist.
+fn find_max_id(xml: &str) -> u64 {
+    let bookmark_re = Regex::new(r#"<w:bookmarkStart\s+w:id="(\d+)""#).expect("invalid regex");
+    let sdt_id_re = Regex::new(r#"<w:id\s+w:val="(\d+)""#).expect("invalid regex");
+    let max_bookmark = bookmark_re
+        .captures_iter(xml)
         .filter_map(|c| c[1].parse::<u64>().ok())
         .max()
-        .unwrap_or(0)
+        .unwrap_or(0);
+    let max_sdt = sdt_id_re
+        .captures_iter(xml)
+        .filter_map(|c| c[1].parse::<u64>().ok())
+        .max()
+        .unwrap_or(0);
+    max_bookmark.max(max_sdt)
 }
 
 /// Find variable names from Lily SDT content controls in the XML.
@@ -1592,7 +1620,11 @@ fn find_sdt_variables(xml: &str) -> Vec<String> {
 ///
 /// ```xml
 /// <w:sdt>
-///   <w:sdtPr><w:tag w:val="lily:Display Name"/><w:alias w:val="Display Name"/></w:sdtPr>
+///   <w:sdtPr>
+///     <w:id w:val="N"/>
+///     <w:tag w:val="lily:Display Name"/>
+///     <w:alias w:val="Display Name"/>
+///   </w:sdtPr>
 ///   <w:sdtContent><w:r>...<w:t>value</w:t></w:r></w:sdtContent>
 /// </w:sdt>
 /// ```
@@ -1602,7 +1634,7 @@ fn find_sdt_variables(xml: &str) -> Vec<String> {
 fn replace_placeholders_with_sdt(
     xml: &str,
     replacements: &HashMap<String, (String, String)>,
-    next_bookmark_id: &mut u64,
+    next_id: &mut u64,
 ) -> String {
     if replacements.is_empty() {
         return xml.to_string();
@@ -1676,16 +1708,18 @@ fn replace_placeholders_with_sdt(
                         let escaped_val = escape_xml_text(value);
                         let escaped_display = escape_xml_text(display_name);
                         if value.is_empty() {
-                            let bid = *next_bookmark_id;
-                            *next_bookmark_id += 1;
+                            let bid = *next_id;
+                            *next_id += 1;
                             output_parts.push(format!(
                                 "<w:bookmarkStart w:id=\"{}\" w:name=\"{}{}\"/><w:bookmarkEnd w:id=\"{}\"/>",
                                 bid, BOOKMARK_PREFIX, escaped_display, bid
                             ));
                         } else {
+                            let sdt_id = *next_id;
+                            *next_id += 1;
                             output_parts.push(format!(
-                                "<w:sdt><w:sdtPr><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
-                                SDT_TAG_PREFIX, escaped_display, escaped_display, rpr, escaped_val
+                                "<w:sdt><w:sdtPr><w:id w:val=\"{}\"/><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
+                                sdt_id, SDT_TAG_PREFIX, escaped_display, escaped_display, rpr, escaped_val
                             ));
                         }
 
@@ -1740,7 +1774,7 @@ fn update_sdt_and_bookmark_values(
     values: &HashMap<String, String>,
     all_variables: &HashMap<String, String>,
     conditional_definitions: &HashMap<String, Vec<String>>,
-    next_bookmark_id: &mut u64,
+    next_id: &mut u64,
 ) -> String {
     if values.is_empty() {
         return xml.to_string();
@@ -1807,8 +1841,8 @@ fn update_sdt_and_bookmark_values(
             let escaped_label = escape_xml_text(label);
 
             if resolved.is_empty() {
-                let bid = *next_bookmark_id;
-                *next_bookmark_id += 1;
+                let bid = *next_id;
+                *next_id += 1;
                 result.push_str(&format!(
                     "<w:bookmarkStart w:id=\"{}\" w:name=\"{}{}\"/><w:bookmarkEnd w:id=\"{}\"/>",
                     bid, BOOKMARK_PREFIX, escaped_label, bid
@@ -1817,9 +1851,11 @@ fn update_sdt_and_bookmark_values(
                 let new_value = escape_xml_text(&resolved);
 
                 if !t_re.is_match(inner) {
+                    let sdt_id = *next_id;
+                    *next_id += 1;
                     result.push_str(&format!(
-                        "<w:sdt><w:sdtPr><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
-                        SDT_TAG_PREFIX, escaped_label, escaped_label, new_value
+                        "<w:sdt><w:sdtPr><w:id w:val=\"{}\"/><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
+                        sdt_id, SDT_TAG_PREFIX, escaped_label, escaped_label, new_value
                     ));
                 } else {
                     let new_inner = t_re
@@ -1849,8 +1885,8 @@ fn update_sdt_and_bookmark_values(
             let escaped_label = escape_xml_text(label);
 
             if resolved.is_empty() {
-                let bid = *next_bookmark_id;
-                *next_bookmark_id += 1;
+                let bid = *next_id;
+                *next_id += 1;
                 result.push_str(&format!(
                     "<w:bookmarkStart w:id=\"{}\" w:name=\"{}{}\"/><w:bookmarkEnd w:id=\"{}\"/>",
                     bid, BOOKMARK_PREFIX, escaped_label, bid
@@ -1866,9 +1902,11 @@ fn update_sdt_and_bookmark_values(
                     .unwrap_or_default();
 
                 let escaped_value = escape_xml_text(&resolved);
+                let sdt_id = *next_id;
+                *next_id += 1;
                 result.push_str(&format!(
-                    "<w:sdt><w:sdtPr><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
-                    SDT_TAG_PREFIX, escaped_label, escaped_label, rpr, escaped_value
+                    "<w:sdt><w:sdtPr><w:id w:val=\"{}\"/><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
+                    sdt_id, SDT_TAG_PREFIX, escaped_label, escaped_label, rpr, escaped_value
                 ));
             }
         }
@@ -2831,6 +2869,14 @@ mod tests {
             "Expected bold preserved, got: {}",
             result
         );
+        // SDT must include a unique ID for Word compatibility
+        assert!(
+            result.contains("<w:id w:val=\"1\"/>"),
+            "Expected SDT ID, got: {}",
+            result
+        );
+        // The next_id counter should have been incremented
+        assert_eq!(next_bid, 2);
     }
 
     #[test]
@@ -2873,6 +2919,30 @@ mod tests {
             "Tag should be preserved, got: {}",
             result
         );
+    }
+
+    #[test]
+    fn test_bookmark_to_sdt_includes_id() {
+        // When a bookmark gets a value, it should become an SDT with a <w:id>
+        let xml = r#"<w:r><w:rPr><w:b/></w:rPr><w:t>before </w:t></w:r><w:bookmarkStart w:id="5" w:name="lily:Client Name"/><w:bookmarkEnd w:id="5"/><w:r><w:t> after</w:t></w:r>"#;
+        let mut values = HashMap::new();
+        values.insert("Client Name".to_string(), "Jane Doe".to_string());
+        let mut next_id = 10u64;
+        let all_vars = HashMap::new();
+        let cond_defs = HashMap::new();
+        let result =
+            update_sdt_and_bookmark_values(xml, &values, &all_vars, &cond_defs, &mut next_id);
+        assert!(
+            result.contains("<w:id w:val=\"10\"/>"),
+            "Expected SDT ID in bookmark-to-SDT conversion, got: {}",
+            result
+        );
+        assert!(
+            result.contains("Jane Doe"),
+            "Expected value, got: {}",
+            result
+        );
+        assert_eq!(next_id, 11, "next_id should have been incremented");
     }
 
     #[test]
