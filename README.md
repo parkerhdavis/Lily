@@ -5,11 +5,13 @@ Custom document-drafting toolset for Carelaw Colorado, an estate planning law fi
 
 Lily streamlines the process of filling out templated Word documents (.docx) for client engagements. Users select a working directory (typically a client folder), choose a template, and fill in variables—Lily handles copying, previewing, and saving the completed document.
 
+
 ## Stack
 - **Runtime / Package Manager:** Bun
 - **Desktop Framework:** Tauri 2 (Rust backend)
 - **Frontend:** React + TypeScript
 - **Styling:** Tailwind CSS + daisyUI
+
 
 ## Workflow
 1. Select a working directory (client folder)
@@ -18,6 +20,7 @@ Lily streamlines the process of filling out templated Word documents (.docx) for
 4. Fill in template variables (e.g. `{Client First Name}`) via the sidebar form
 5. Preview updates live as variables are filled in
 6. Save and close—the completed .docx is ready for further editing in any word processor
+
 
 ## Development
 
@@ -31,3 +34,21 @@ make dev
 # Build for production
 make build
 ```
+
+
+## License
+
+Covered under the GPL License, see [LICENSE](./LICENSE.md)
+
+Beyond that, I only have one rule: **First, do no harm. Then, help where you can.**
+
+
+## Financial Support
+
+If you have some cash to spare and are inspired to share, that's very kind. Rather than sharing that kindness with me, I encourage you to share it with your charity of choice. 
+
+Mine is the [GiveWell top charities fund](https://www.givewell.org/top-charities-fund) , which does excellent research to figure out which causes can save the most human lives for the money, and put their funds there.
+
+Their grant to the [Against Malaria Foundation](https://www.againstmalaria.com) was shown to deliver outcomes at a cost of just $1,700 per life saved.
+
+![GiveWell Logo](.github/assets/givewell_logo.png)
