@@ -118,28 +118,23 @@ dev:
 		sleep 1; \
 	fi
 	@echo "  -> Starting Vite dev server in background..."
-	@cd frontend && setsid $(BUN) run dev > $(NULL) 2>&1 & echo $$! > .vite.pid
+	@cd frontend && $(BUN) run dev > $(NULL) 2>&1 & echo $$! > .vite.pid
 	@sleep 2
 	@echo "  -> Starting Tauri..."
 	@cd backend && $(TAURI) dev; \
 	VITE_PID=$$(cat ../.vite.pid 2>/dev/null); \
 	if [ -n "$$VITE_PID" ]; then \
-		kill -- -$$VITE_PID 2>/dev/null || kill $$VITE_PID 2>/dev/null || true; \
+		kill $$VITE_PID 2>/dev/null || true; \
 	fi; \
 	rm -f ../.vite.pid
-	@VITE_PID=$$(cat .vite.pid 2>/dev/null); \
-	if [ -n "$$VITE_PID" ]; then \
-		kill -- -$$VITE_PID 2>/dev/null || kill $$VITE_PID 2>/dev/null || true; \
-	fi
-	@rm -f .vite.pid
 
 down:
 	@echo "Stopping Lily dev server..."
 	@VITE_PID=$$(cat .vite.pid 2>/dev/null); \
 	if [ -n "$$VITE_PID" ]; then \
-		kill -- -$$VITE_PID 2>/dev/null || kill $$VITE_PID 2>/dev/null || true; \
+		kill $$VITE_PID 2>/dev/null || true; \
 		rm -f .vite.pid; \
-		echo "  -> Killed Vite process group (pid $$VITE_PID)"; \
+		echo "  -> Killed Vite dev server (pid $$VITE_PID)"; \
 	else \
 		echo "  -> No .vite.pid found, checking port 5173..."; \
 		PORT_PID=$$(lsof -ti :5173 2>/dev/null); \
@@ -172,7 +167,7 @@ setup:
 	@echo "Setup complete"
 
 install: setup
-	@echo "Dependencies installed"
+
 else
 setup:
 	@echo "Installing all dependencies (Rust + Bun)..."
@@ -180,7 +175,7 @@ setup:
 	@echo "Setup complete"
 
 install: setup
-	@echo "Dependencies installed"
+
 endif
 
 ifeq ($(DETECTED_OS),windows)
@@ -193,9 +188,9 @@ build:
 	@echo ""
 	@echo "Windows build complete!"
 	@echo ""
-	@echo "Build outputs in target/release/bundle/:"
-	@echo "  - MSI Installer:  target/release/bundle/msi/"
-	@echo "  - NSIS Installer: target/release/bundle/nsis/"
+	@echo "Build outputs in ./target/release/bundle/:"
+	@echo "  - MSI Installer:  ./target/release/bundle/msi/"
+	@echo "  - NSIS Installer: ./target/release/bundle/nsis/"
 else
 build:
 ifeq ($(DETECTED_OS),linux)
@@ -219,9 +214,9 @@ build-windows:
 	@echo ""
 	@echo "Windows build complete!"
 	@echo ""
-	@echo "Build outputs in target/release/bundle/:"
-	@echo "  - MSI Installer:  target/release/bundle/msi/"
-	@echo "  - NSIS Installer: target/release/bundle/nsis/"
+	@echo "Build outputs in ./target/release/bundle/:"
+	@echo "  - MSI Installer:  ./target/release/bundle/msi/"
+	@echo "  - NSIS Installer: ./target/release/bundle/nsis/"
 
 build-macos:
 	@echo "ERROR: macOS builds must be run on macOS"
@@ -236,10 +231,10 @@ build-linux:
 	@echo ""
 	@echo "Linux build complete!"
 	@echo ""
-	@echo "Build outputs in target/release/bundle/:"
-	@echo "  - AppImage: target/release/bundle/appimage/"
-	@echo "  - Debian:   target/release/bundle/deb/"
-	@echo "  - RPM:      target/release/bundle/rpm/"
+	@echo "Build outputs in ./target/release/bundle/:"
+	@echo "  - AppImage: ./target/release/bundle/appimage/"
+	@echo "  - Debian:   ./target/release/bundle/deb/"
+	@echo "  - RPM:      ./target/release/bundle/rpm/"
 
 build-windows:
 	@echo "ERROR: Windows builds must be run on Windows"
@@ -254,9 +249,9 @@ build-macos:
 	@echo ""
 	@echo "macOS build complete!"
 	@echo ""
-	@echo "Build outputs in target/release/bundle/:"
-	@echo "  - DMG:  target/release/bundle/dmg/"
-	@echo "  - App:  target/release/bundle/macos/"
+	@echo "Build outputs in ./target/release/bundle/:"
+	@echo "  - DMG:  ./target/release/bundle/dmg/"
+	@echo "  - App:  ./target/release/bundle/macos/"
 endif
 
 ifeq ($(DETECTED_OS),windows)
