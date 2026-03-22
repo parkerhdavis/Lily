@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type { WorkflowStep, LilyFile, VariableInfo } from "@/types";
+import type {
+	WorkflowStep,
+	LilyFile,
+	VariableInfo,
+	Contact,
+	ContactBinding,
+} from "@/types";
 
 interface WorkflowState {
 	step: WorkflowStep;
@@ -48,6 +54,19 @@ interface WorkflowState {
 	openTemplateFile: (templateRelPath: string) => Promise<void>;
 	/** Reload the .lily file from disk into the store. */
 	reloadLilyFile: () => Promise<void>;
+	/** Add a new contact to the client's .lily file. */
+	addContact: (contact: Omit<Contact, "id">) => Promise<Contact>;
+	/** Update an existing contact. */
+	updateContact: (contact: Contact) => Promise<void>;
+	/** Delete a contact by ID. */
+	deleteContact: (contactId: string) => Promise<void>;
+	/** Set or clear a contact binding for a role. */
+	setContactBinding: (
+		role: string,
+		binding: ContactBinding,
+	) => Promise<void>;
+	/** Resolve all contact bindings into the variable pool. */
+	resolveContactBindings: () => Promise<void>;
 	/** Navigate to the interactive questionnaire view. */
 	openQuestionnaire: () => void;
 	/** Navigate to Add New Document (template selection). */
@@ -446,6 +465,57 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		} catch (err) {
 			console.error("Failed to reload .lily file:", err);
 		}
+	},
+
+	addContact: async (contact) => {
+		const { workingDir } = get();
+		if (!workingDir) throw new Error("No working directory");
+
+		const created = await invoke<Contact>("add_contact", {
+			workingDir,
+			contact: { id: "", ...contact },
+		});
+		await get().reloadLilyFile();
+		return created;
+	},
+
+	updateContact: async (contact) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		await invoke("update_contact", { workingDir, contact });
+		await get().reloadLilyFile();
+	},
+
+	deleteContact: async (contactId) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		await invoke("delete_contact", { workingDir, contactId });
+		await get().reloadLilyFile();
+	},
+
+	setContactBinding: async (role, binding) => {
+		const { workingDir, lilyFile } = get();
+		if (!workingDir) return;
+
+		const bindings = { ...(lilyFile?.contact_bindings ?? {}) };
+		bindings[role] = binding;
+		await invoke("save_contact_bindings", {
+			workingDir,
+			contactBindings: bindings,
+		});
+		// Resolve the binding into the variables pool
+		await invoke("resolve_contact_variables", { workingDir });
+		await get().reloadLilyFile();
+	},
+
+	resolveContactBindings: async () => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		await invoke("resolve_contact_variables", { workingDir });
+		await get().reloadLilyFile();
 	},
 
 	openQuestionnaire: () => {
