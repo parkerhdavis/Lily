@@ -508,10 +508,7 @@ function InlineContactList({
 					<ContactEditForm
 						key={c.id}
 						contactId={c.id}
-						onSave={async (contact) => {
-							await onUpdate(contact);
-							setEditingId(null);
-						}}
+						onSave={onUpdate}
 						onCancel={() => setEditingId(null)}
 					/>
 				) : (
