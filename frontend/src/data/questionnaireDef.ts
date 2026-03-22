@@ -1,15 +1,15 @@
 import type { QuestionnaireDef } from "@/types/questionnaire";
 
 /**
- * Placeholder questionnaire definition.
+ * Questionnaire definition.
  *
  * Each section contains questions that map to client-level variables in the
- * .lily file. Text questions produce replacement variables; conditional
- * questions produce boolean toggles; contact-role questions (Phase 4) will
- * allow selecting a contact to auto-fill multiple variables at once.
+ * .lily file. The "Client Contacts" section uses `kind: "contacts"` to render
+ * an inline contact management list. All other sections are standard question
+ * lists with text inputs, conditional toggles, and contact-role pickers.
  *
- * Replace / expand these sections with the real questionnaire content once
- * the form structure is finalized.
+ * Each section automatically gets Client Notes and Internal Notes text areas
+ * appended by the Questionnaire component — those are not defined here.
  */
 export const questionnaireDef: QuestionnaireDef = [
 	{
@@ -64,75 +64,27 @@ export const questionnaireDef: QuestionnaireDef = [
 				variable: "Client Zip",
 				label: "ZIP Code",
 			},
-		],
-	},
-	{
-		title: "Spouse / Partner",
-		description:
-			"If the client has a spouse or partner, fill in their details here.",
-		questions: [
-			{
-				kind: "conditional",
-				variable: "Client Is Married",
-				label: "Is the client married or partnered?",
-				trueLabel: "Yes",
-				falseLabel: "No",
-			},
-			{
-				kind: "text",
-				variable: "Spouse Full Name",
-				label: "Spouse Full Legal Name",
-			},
-			{
-				kind: "text",
-				variable: "Spouse First Name",
-				label: "Spouse First Name",
-			},
-			{
-				kind: "text",
-				variable: "Spouse Last Name",
-				label: "Spouse Last Name",
-			},
-			{
-				kind: "text",
-				variable: "Spouse Phone",
-				label: "Spouse Phone Number",
-			},
-			{
-				kind: "text",
-				variable: "Spouse Email",
-				label: "Spouse Email Address",
-			},
-		],
-	},
-	{
-		title: "Estate Planning Basics",
-		description: "General estate planning preferences.",
-		questions: [
 			{
 				kind: "text",
 				variable: "County",
 				label: "County of Residence",
 				placeholder: "e.g. Denver County",
 			},
-			{
-				kind: "conditional",
-				variable: "Has Children",
-				label: "Does the client have children?",
-				trueLabel: "Yes",
-				falseLabel: "No",
-			},
-			{
-				kind: "text",
-				variable: "Number of Children",
-				label: "Number of Children",
-			},
 		],
+	},
+	{
+		title: "Client Contacts",
+		kind: "contacts",
+		description:
+			"Add family members, agents, and other contacts associated with the client. " +
+			"These contacts can then be selected for roles in the sections below.",
+		questions: [],
 	},
 	{
 		title: "Healthcare Power of Attorney",
 		description:
-			"Designate agents to make healthcare decisions on behalf of the client.",
+			"Designate agents to make healthcare decisions on behalf of the client. " +
+			"Used for HPOA and HIPAA documents.",
 		questions: [
 			{
 				kind: "contact-role",
@@ -165,7 +117,8 @@ export const questionnaireDef: QuestionnaireDef = [
 	{
 		title: "Financial Power of Attorney",
 		description:
-			"Designate agents to manage financial matters on behalf of the client.",
+			"Designate agents to manage financial matters on behalf of the client. " +
+			"Used for General POA (GPOA) documents.",
 		questions: [
 			{
 				kind: "contact-role",
@@ -191,6 +144,63 @@ export const questionnaireDef: QuestionnaireDef = [
 					"Financial POA Alternate City": "city",
 					"Financial POA Alternate State": "state",
 					"Financial POA Alternate Zip": "zip",
+				},
+			},
+		],
+	},
+	{
+		title: "Personal Representatives",
+		description:
+			"Designate personal representatives for the client's will.",
+		questions: [
+			{
+				kind: "contact-role",
+				role: "Personal Representative",
+				label: "Primary Personal Representative",
+				variableMappings: {
+					"Personal Representative Full Name": "full_name",
+					"Personal Representative Phone": "phone",
+					"Personal Representative Address": "address",
+					"Personal Representative City": "city",
+					"Personal Representative State": "state",
+					"Personal Representative Zip": "zip",
+				},
+			},
+			{
+				kind: "contact-role",
+				role: "Alternate Personal Representative",
+				label: "Alternate Personal Representative",
+				variableMappings: {
+					"Alternate Personal Representative Full Name": "full_name",
+					"Alternate Personal Representative Phone": "phone",
+					"Alternate Personal Representative Address": "address",
+					"Alternate Personal Representative City": "city",
+					"Alternate Personal Representative State": "state",
+					"Alternate Personal Representative Zip": "zip",
+				},
+			},
+		],
+	},
+	{
+		title: "Beneficiaries",
+		description: "Designate beneficiaries for the client's will.",
+		questions: [
+			{
+				kind: "contact-role",
+				role: "Primary Beneficiary",
+				label: "Primary Beneficiary",
+				variableMappings: {
+					"Primary Beneficiary Full Name": "full_name",
+					"Primary Beneficiary Relationship": "relationship",
+				},
+			},
+			{
+				kind: "contact-role",
+				role: "Alternate Beneficiary",
+				label: "Alternate Beneficiary",
+				variableMappings: {
+					"Alternate Beneficiary Full Name": "full_name",
+					"Alternate Beneficiary Relationship": "relationship",
 				},
 			},
 		],

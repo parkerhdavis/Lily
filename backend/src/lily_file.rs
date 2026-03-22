@@ -39,6 +39,17 @@ pub struct ContactBinding {
     pub variable_mappings: HashMap<String, String>,
 }
 
+/// Notes attached to a questionnaire section (client-facing and internal).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SectionNotes {
+    /// Notes from/for the client (visible in client-facing tools).
+    #[serde(default)]
+    pub client: String,
+    /// Internal notes for the legal team (not visible to clients).
+    #[serde(default)]
+    pub internal: String,
+}
+
 /// Top-level `.lily` project file that lives in each client/working directory.
 /// Acts as both a configuration file and (via OS file-type association) a
 /// project launcher — analogous to Unreal Engine's `.uproject` files.
@@ -70,6 +81,9 @@ pub struct LilyFile {
     /// Contact-to-role bindings, keyed by role name.
     #[serde(default)]
     pub contact_bindings: HashMap<String, ContactBinding>,
+    /// Questionnaire notes keyed by section title.
+    #[serde(default)]
+    pub questionnaire_notes: HashMap<String, SectionNotes>,
 }
 
 /// Metadata for a single document in the working directory.
@@ -103,6 +117,7 @@ impl Default for LilyFile {
             documents: HashMap::new(),
             contacts: Vec::new(),
             contact_bindings: HashMap::new(),
+            questionnaire_notes: HashMap::new(),
         }
     }
 }
@@ -604,6 +619,27 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
                 lily.variables.insert(var_name.clone(), value);
             }
         }
+    }
+    write_lily_file(&working_dir, &lily)
+}
+
+/// Save a questionnaire note (client or internal) for a specific section.
+#[tauri::command]
+pub fn save_questionnaire_note(
+    working_dir: String,
+    section: String,
+    note_kind: String,
+    value: String,
+) -> Result<(), String> {
+    let mut lily = read_lily_file(&working_dir)?;
+    let notes = lily
+        .questionnaire_notes
+        .entry(section)
+        .or_default();
+    match note_kind.as_str() {
+        "client" => notes.client = value,
+        "internal" => notes.internal = value,
+        _ => return Err(format!("Invalid note kind: {}", note_kind)),
     }
     write_lily_file(&working_dir, &lily)
 }
