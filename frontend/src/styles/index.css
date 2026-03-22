@@ -1,45 +1,125 @@
 @import "tailwindcss";
-@plugin "daisyui" {
-  themes: light --default, dark;
+@plugin "daisyui";
+
+/* ─── Custom Lily Themes ─────────────────────────────────────────────── */
+
+@plugin "daisyui/theme" {
+	name: "light";
+	default: true;
+	color-scheme: light;
+	--color-base-100: oklch(0.985 0.003 90);
+	--color-base-200: oklch(0.955 0.006 85);
+	--color-base-300: oklch(0.900 0.010 85);
+	--color-base-content: oklch(0.240 0.015 260);
+	--color-primary: oklch(0.865 0.170 88);
+	--color-primary-content: oklch(0.260 0.045 65);
+	--color-secondary: oklch(0.550 0.040 260);
+	--color-secondary-content: oklch(0.980 0 0);
+	--color-accent: oklch(0.720 0.130 55);
+	--color-accent-content: oklch(0.220 0.035 55);
+	--color-neutral: oklch(0.240 0.020 260);
+	--color-neutral-content: oklch(0.930 0.005 90);
+	--color-info: oklch(0.680 0.120 240);
+	--color-info-content: oklch(0.980 0 0);
+	--color-success: oklch(0.700 0.160 155);
+	--color-success-content: oklch(0.980 0 0);
+	--color-warning: oklch(0.820 0.160 80);
+	--color-warning-content: oklch(0.260 0.045 65);
+	--color-error: oklch(0.630 0.190 25);
+	--color-error-content: oklch(0.980 0 0);
+	--radius-selector: 0.5rem;
+	--radius-field: 0.375rem;
+	--radius-box: 0.75rem;
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 1;
+	--noise: 0;
 }
 
-/* Variable highlights in document preview */
+@plugin "daisyui/theme" {
+	name: "dark";
+	color-scheme: dark;
+	--color-base-100: oklch(0.220 0.015 260);
+	--color-base-200: oklch(0.185 0.015 260);
+	--color-base-300: oklch(0.300 0.015 260);
+	--color-base-content: oklch(0.880 0.005 90);
+	--color-primary: oklch(0.830 0.150 88);
+	--color-primary-content: oklch(0.220 0.040 65);
+	--color-secondary: oklch(0.520 0.035 260);
+	--color-secondary-content: oklch(0.950 0 0);
+	--color-accent: oklch(0.670 0.110 55);
+	--color-accent-content: oklch(0.950 0 0);
+	--color-neutral: oklch(0.160 0.015 260);
+	--color-neutral-content: oklch(0.850 0.005 90);
+	--color-info: oklch(0.650 0.110 240);
+	--color-info-content: oklch(0.950 0 0);
+	--color-success: oklch(0.670 0.140 155);
+	--color-success-content: oklch(0.950 0 0);
+	--color-warning: oklch(0.780 0.140 80);
+	--color-warning-content: oklch(0.220 0.040 65);
+	--color-error: oklch(0.600 0.170 25);
+	--color-error-content: oklch(0.950 0 0);
+	--radius-selector: 0.5rem;
+	--radius-field: 0.375rem;
+	--radius-box: 0.75rem;
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 1;
+	--noise: 0;
+}
+
+/* ─── Loading splash animation ───────────────────────────────────────── */
+
+@keyframes lily-spin {
+	0% { transform: rotate(0deg) scale(0.95); opacity: 0.5; }
+	50% { transform: rotate(180deg) scale(1); opacity: 1; }
+	100% { transform: rotate(360deg) scale(0.95); opacity: 0.5; }
+}
+
+.animate-lily-spin {
+	animation: lily-spin 1.8s ease-in-out infinite;
+}
+
+/* ─── Variable highlights in document preview ────────────────────────── */
+
 .variable-highlight {
-  background-color: oklch(0.82 0.12 25);   /* soft red — unfilled */
-  border-radius: 2px;
-  padding: 0 2px;
-  font-weight: 600;
-  cursor: pointer;
+	background-color: oklch(0.82 0.12 25);   /* soft red — unfilled */
+	border-radius: 3px;
+	padding: 0 2px;
+	font-weight: 600;
+	cursor: pointer;
 }
 
 .variable-highlight.selected {
-  background-color: oklch(0.88 0.15 85);   /* warm yellow — selected */
+	background-color: oklch(0.88 0.17 88);   /* brand yellow — selected */
 }
 
 .variable-highlight.filled {
-  background-color: oklch(0.88 0.12 145);  /* soft green — filled */
+	background-color: oklch(0.88 0.12 145);  /* soft green — filled */
 }
 
 /* Dark-mode: deeper highlights so light text stays readable */
 [data-theme="dark"] .variable-highlight {
-  background-color: oklch(0.35 0.12 25);   /* deep red — unfilled */
+	background-color: oklch(0.35 0.12 25);   /* deep red — unfilled */
 }
 
 [data-theme="dark"] .variable-highlight.selected {
-  background-color: oklch(0.40 0.12 85);   /* deep yellow — selected */
+	background-color: oklch(0.40 0.14 88);   /* deep brand yellow — selected */
 }
 
 [data-theme="dark"] .variable-highlight.filled {
-  background-color: oklch(0.35 0.10 145);  /* deep green — filled */
+	background-color: oklch(0.35 0.10 145);  /* deep green — filled */
 }
 
 /* Zero-width bookmark anchor for empty conditional variables */
 .variable-bookmark {
-  display: inline;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  font-size: 0;
+	display: inline;
+	width: 0;
+	height: 0;
+	overflow: hidden;
+	font-size: 0;
 }
 
 /* ─── Document preview structural elements ────────────────────────────── */
@@ -52,57 +132,58 @@
 .document-preview h4,
 .document-preview h5,
 .document-preview h6 {
-  margin-top: 0;
-  margin-bottom: 0;
+	margin-top: 0;
+	margin-bottom: 0;
 }
 
 /* Tab stops — approximate a tab as a fixed-width space */
 .preview-tab {
-  display: inline-block;
-  width: 36pt;  /* ~0.5 inch */
+	display: inline-block;
+	width: 36pt;  /* ~0.5 inch */
 }
 
 /* Page break indicator */
 .preview-page-break {
-  display: block;
-  border-bottom: 1px dashed oklch(0.7 0 0);
-  margin: 12pt 0;
+	display: block;
+	border-bottom: 1px dashed oklch(0.7 0 0);
+	margin: 12pt 0;
 }
 
 /* List label (bullet or number) */
 .preview-list-label {
-  display: inline;
-  font-weight: normal;
+	display: inline;
+	font-weight: normal;
 }
 
 /* Table rendering */
 .preview-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 8pt 0;
+	width: 100%;
+	border-collapse: collapse;
+	margin: 8pt 0;
 }
 
 .preview-table td {
-  border: 1px solid oklch(0.8 0 0);
-  padding: 4pt 6pt;
-  vertical-align: top;
+	border: 1px solid oklch(0.8 0 0);
+	padding: 4pt 6pt;
+	vertical-align: top;
 }
 
-/* Scrollbar styling */
+/* ─── Scrollbar styling ──────────────────────────────────────────────── */
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+	width: 6px;
+	height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+	background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.7 0 0);
-  border-radius: 4px;
+	background: oklch(0.75 0 0);
+	border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.5 0 0);
+	background: oklch(0.55 0 0);
 }

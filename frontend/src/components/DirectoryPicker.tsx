@@ -1,6 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import SectionHeading from "@/components/ui/SectionHeading";
 
 export default function DirectoryPicker() {
 	const { settings, save, addRecentDirectory, removeRecentDirectory } =
@@ -48,15 +49,26 @@ export default function DirectoryPicker() {
 
 	return (
 		<div className="flex flex-col items-center justify-center min-h-screen gap-8 p-8">
-			<h1 className="text-3xl font-bold">Lily</h1>
-			<p className="text-base-content/70 text-center max-w-md">
-				Select a working directory to get started. This is typically a client
-				folder where your completed documents will be saved.
-			</p>
+			{/* Branding */}
+			<div className="flex flex-col items-center gap-3">
+				<img
+					src="/lily-icon-trans.png"
+					alt="Lily"
+					className="size-16 drop-shadow-sm"
+				/>
+				<div className="text-center">
+					<h1 className="text-3xl font-bold tracking-tight">
+						Lily
+					</h1>
+					<p className="text-sm text-base-content/40 mt-1">
+						Document preparation for Carelaw Colorado
+					</p>
+				</div>
+			</div>
 
 			<button
 				type="button"
-				className="btn btn-primary btn-lg"
+				className="btn btn-primary btn-lg shadow-sm"
 				onClick={pickWorkingDir}
 			>
 				Select Working Directory
@@ -64,61 +76,71 @@ export default function DirectoryPicker() {
 
 			{settings.recent_directories.length > 0 && (
 				<div className="w-full max-w-md">
-					<h2 className="text-sm font-semibold text-base-content/50 mb-2">
-						Recent Directories
-					</h2>
-					<ul className="menu menu-sm bg-base-200 rounded-box gap-1">
+					<SectionHeading className="mb-2">Recent</SectionHeading>
+					<div className="rounded-xl border border-base-300 overflow-hidden divide-y divide-base-200">
 						{settings.recent_directories.map((dir) => (
-							<li key={dir}>
-								<div
-									className="flex items-center justify-between gap-2 cursor-pointer"
-									onClick={() => selectDirectory(dir)}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" || e.key === " ")
-											selectDirectory(dir);
-									}}
-								>
-									<div className="flex flex-col min-w-0">
-										<span className="font-medium truncate">
-											{dirName(dir)}
-										</span>
-										<span className="text-xs text-base-content/40 truncate">
-											{dir}
-										</span>
-									</div>
-									<button
-										type="button"
-										className="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
-										onClick={(e) => {
-											e.stopPropagation();
-											removeRecentDirectory(dir);
-										}}
-										title="Remove from recent"
-									>
-										✕
-									</button>
+							<div
+								key={dir}
+								className="flex items-center justify-between gap-2 px-4 py-2.5 cursor-pointer hover:bg-base-200/60 transition-colors"
+								onClick={() => selectDirectory(dir)}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" || e.key === " ")
+										selectDirectory(dir);
+								}}
+								role="button"
+								tabIndex={0}
+							>
+								<div className="flex flex-col min-w-0">
+									<span className="font-medium text-sm truncate">
+										{dirName(dir)}
+									</span>
+									<span className="text-xs text-base-content/35 truncate">
+										{dir}
+									</span>
 								</div>
-							</li>
+								<button
+									type="button"
+									className="btn btn-ghost btn-xs opacity-30 hover:opacity-100 text-base-content/50"
+									onClick={(e) => {
+										e.stopPropagation();
+										removeRecentDirectory(dir);
+									}}
+									title="Remove from recent"
+								>
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										viewBox="0 0 20 20"
+										fill="currentColor"
+										className="size-3.5"
+									>
+										<title>Remove</title>
+										<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+									</svg>
+								</button>
+							</div>
 						))}
-					</ul>
+					</div>
 				</div>
 			)}
 
-			<div className="divider w-64">Settings</div>
+			<div className="divider w-64 text-base-content/30 text-xs">
+				Settings
+			</div>
 
 			<div className="text-center">
-				<p className="text-sm text-base-content/50 mb-2">
+				<p className="text-xs text-base-content/40 mb-1.5">
 					Templates folder:{" "}
-					<span className="font-mono text-xs">
+					<span className="font-mono">
 						{settings.templates_dir ?? "Not configured"}
 					</span>
 				</p>
 				<button
 					type="button"
-					className="btn btn-ghost btn-sm"
+					className="btn btn-ghost btn-sm text-base-content/50"
 					onClick={pickTemplatesDir}
 				>
-					{settings.templates_dir ? "Change" : "Set"} Templates Folder
+					{settings.templates_dir ? "Change" : "Set"} Templates
+					Folder
 				</button>
 			</div>
 		</div>

@@ -3,6 +3,9 @@ import { useWorkflowStore } from "@/stores/workflowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { questionnaireDef } from "@/data/questionnaireDef";
 import ContactManager from "@/components/ContactManager";
+import PageHeader from "@/components/ui/PageHeader";
+import SectionHeading from "@/components/ui/SectionHeading";
+import StatusDot from "@/components/ui/StatusDot";
 
 /** Format an ISO date string to a readable local format. */
 function formatDate(iso: string): string {
@@ -186,32 +189,23 @@ export default function ClientHub() {
 
 	if (loading) {
 		return (
-			<div className="flex items-center justify-center min-h-screen">
-				<span className="loading loading-spinner loading-lg" />
+			<div className="flex flex-col items-center justify-center min-h-screen gap-3">
+				<img
+					src="/lily-icon-trans.png"
+					alt="Loading..."
+					className="size-12 animate-lily-spin"
+				/>
 			</div>
 		);
 	}
 
 	return (
 		<div className="flex flex-col h-screen">
-			{/* Header */}
-			<div className="flex items-center gap-4 p-4 border-b border-base-300 bg-base-200">
-				<button
-					type="button"
-					className="btn btn-ghost btn-sm"
-					onClick={reset}
-				>
-					&larr; Back
-				</button>
-				<div className="flex-1 min-w-0">
-					<h2 className="text-xl font-bold truncate">{folderName}</h2>
-					{workingDir && (
-						<p className="text-xs text-base-content/40 truncate">
-							{workingDir}
-						</p>
-					)}
-				</div>
-			</div>
+			<PageHeader
+				title={folderName}
+				subtitle={workingDir ?? undefined}
+				onBack={reset}
+			/>
 
 			{error && (
 				<div className="alert alert-error m-2">
@@ -222,11 +216,9 @@ export default function ClientHub() {
 			{/* Two-panel layout: documents (main) + variables (sidebar) */}
 			<div className="flex flex-1 overflow-hidden">
 				{/* Main panel: Documents */}
-				<div className="flex-1 overflow-y-auto p-4 border-r border-base-300">
+				<div className="flex-1 overflow-y-auto p-5 border-r border-base-300">
 					<div className="flex items-center justify-between mb-4">
-						<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50">
-							Documents
-						</h3>
+						<SectionHeading>Documents</SectionHeading>
 						<button
 							type="button"
 							className="btn btn-primary btn-xs"
@@ -243,9 +235,13 @@ export default function ClientHub() {
 						onClick={openQuestionnaire}
 					>
 						<div className="flex items-center gap-3">
-							<div className="text-2xl">&#128203;</div>
+							<img
+								src="/lily-icon-trans.png"
+								alt=""
+								className="size-7 opacity-60"
+							/>
 							<div className="flex-1 min-w-0">
-								<div className="font-semibold">
+								<div className="font-semibold text-sm">
 									Client Questionnaire
 								</div>
 								<div className="text-xs text-base-content/50 mt-0.5">
@@ -331,9 +327,9 @@ export default function ClientHub() {
 							</button>
 
 							<div className="flex items-center justify-between mb-3">
-								<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50">
+								<SectionHeading>
 									Client Variables
-								</h3>
+								</SectionHeading>
 								<button
 									type="button"
 									className="btn btn-ghost btn-xs"
@@ -370,7 +366,7 @@ export default function ClientHub() {
 									No variables match your search.
 								</p>
 							) : (
-								<div className="flex flex-col divide-y divide-base-200">
+								<div className="flex flex-col">
 									{filteredVariables.map(([name, value]) => (
 										<VariableField
 											key={name}
@@ -517,12 +513,12 @@ function DocumentRow({
 		<>
 			<button
 				type="button"
-				className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal"
+				className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2.5 px-3 font-normal"
 				onClick={() => onOpen(doc.filename, doc.templateRelPath)}
 				onContextMenu={handleContextMenu}
 			>
 				<div className="flex flex-col items-start gap-0.5 min-w-0">
-					<span className="font-medium truncate w-full">
+					<span className="font-medium truncate w-full text-sm">
 						{stripDocx(doc.filename)}
 					</span>
 					<span className="text-xs text-base-content/40 truncate w-full">
@@ -636,7 +632,7 @@ function VariableField({
 	if (isConditional) {
 		const isTrue = localValue === "true";
 		return (
-			<div className="py-3 w-full group">
+			<div className="py-3 px-1 w-full group border-b border-base-200 last:border-b-0">
 				<div className="flex items-center justify-between mb-1.5">
 					<span className="label-text text-sm font-medium">
 						{name}
@@ -685,12 +681,10 @@ function VariableField({
 	}
 
 	return (
-		<div className="py-3 w-full group">
+		<div className="py-3 px-1 w-full group border-b border-base-200 last:border-b-0">
 			<div className="flex items-center justify-between mb-1">
 				<span className="label-text text-sm font-medium flex items-center gap-1.5">
-					<span
-						className={`inline-block size-2 shrink-0 rounded-full ${localValue ? "bg-success" : "bg-base-300"}`}
-					/>
+					<StatusDot filled={Boolean(localValue)} />
 					{name}
 				</span>
 				<button

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import PageHeader from "@/components/ui/PageHeader";
+import SectionHeading from "@/components/ui/SectionHeading";
+import StatusDot from "@/components/ui/StatusDot";
 import type { VariableInfo, Contact } from "@/types";
 
 /**
@@ -609,13 +612,26 @@ export default function VariableEditor() {
 	return (
 		<div className="flex flex-col h-screen">
 			{/* Header */}
-			<div className="flex items-center gap-4 p-4 border-b border-base-300 bg-base-200">
+			<header className="flex items-center gap-4 px-5 py-3 border-b border-base-300 bg-base-200/80">
 				<button
 					type="button"
-					className="btn btn-ghost btn-sm"
+					className="btn btn-ghost btn-sm gap-1.5 text-base-content/70 hover:text-base-content"
 					onClick={returnToHub}
 				>
-					&larr; Back
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						viewBox="0 0 20 20"
+						fill="currentColor"
+						className="size-4"
+					>
+						<title>Back</title>
+						<path
+							fillRule="evenodd"
+							d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z"
+							clipRule="evenodd"
+						/>
+					</svg>
+					Back
 				</button>
 				<div className="flex-1 min-w-0">
 					{editingTitle ? (
@@ -663,7 +679,7 @@ export default function VariableEditor() {
 						)}
 					</button>
 				</div>
-			</div>
+			</header>
 
 			{error && (
 				<div className="alert alert-error m-2">
@@ -678,9 +694,9 @@ export default function VariableEditor() {
 					ref={sidebarRef}
 					className="w-80 shrink-0 border-r border-base-300 overflow-y-auto p-4 bg-base-100 shadow-2xl"
 				>
-					<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50 mb-3">
+					<SectionHeading className="mb-3">
 						Variables
-					</h3>
+					</SectionHeading>
 				{variables.length > 0 && (
 					<div className="pb-3 mb-3 border-b border-base-300">
 						<input
@@ -893,9 +909,7 @@ export default function VariableEditor() {
 							>
 								<div className="flex items-center justify-between mb-1">
 									<span className="label-text text-sm font-medium flex items-center gap-1.5">
-										<span
-											className={`inline-block size-2 shrink-0 rounded-full ${isFilled ? "bg-success" : "bg-error"}`}
-										/>
+										<StatusDot filled={isFilled} />
 										{name}
 									</span>
 									<div className="join">
@@ -1055,9 +1069,7 @@ function ContactRoleField({
 			{/* Role header */}
 			<div className="flex items-center justify-between mb-1.5">
 				<span className="label-text text-sm font-medium flex items-center gap-1.5">
-					<span
-						className={`inline-block size-2 shrink-0 rounded-full ${allFilled ? "bg-success" : "bg-error"}`}
-					/>
+					<StatusDot filled={allFilled} />
 					{group.role}
 				</span>
 				<div className="join">

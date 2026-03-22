@@ -18,8 +18,12 @@ export default function App() {
 
 	if (!loaded) {
 		return (
-			<div className="flex items-center justify-center min-h-screen">
-				<span className="loading loading-spinner loading-lg" />
+			<div className="flex flex-col items-center justify-center min-h-screen gap-3">
+				<img
+					src="/lily-icon-trans.png"
+					alt="Loading Lily..."
+					className="size-14 animate-lily-spin"
+				/>
 			</div>
 		);
 	}
