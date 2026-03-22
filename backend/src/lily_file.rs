@@ -86,6 +86,16 @@ pub struct LilyFile {
     pub questionnaire_notes: HashMap<String, SectionNotes>,
 }
 
+/// A per-document override for a contact role, allowing a document to use
+/// a different contact (or custom values) than what the questionnaire set.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoleOverride {
+    /// The contact ID for this override, or `None` for custom manual values.
+    pub contact_id: Option<String>,
+    /// The specific variable values for this override.
+    pub values: HashMap<String, String>,
+}
+
 /// Metadata for a single document in the working directory.
 /// Variable values are stored at the top-level `LilyFile.variables`, not here.
 /// However, the *names* of variables this document uses are stored here so that
@@ -105,6 +115,10 @@ pub struct DocumentMeta {
     /// placeholders have been replaced with real values.
     #[serde(default)]
     pub variable_names: Vec<String>,
+    /// Per-document role overrides. When a role is present here, the document
+    /// uses the override's values instead of the questionnaire's binding.
+    #[serde(default)]
+    pub role_overrides: HashMap<String, RoleOverride>,
 }
 
 impl Default for LilyFile {
@@ -257,6 +271,7 @@ fn migrate_legacy_sidecar(working_dir: &str) -> Result<LilyFile, String> {
                 created_at: meta.created_at,
                 modified_at: meta.modified_at,
                 variable_names,
+                role_overrides: HashMap::new(),
             },
         );
     }
@@ -293,6 +308,7 @@ pub fn record_document(
             created_at: now,
             modified_at: now,
             variable_names: Vec::new(),
+            role_overrides: HashMap::new(),
         },
     );
     write_lily_file(working_dir, &lily)
@@ -502,6 +518,7 @@ pub fn new_version_document(working_dir: String, filename: String) -> Result<Str
             created_at: now,
             modified_at: now,
             variable_names,
+            role_overrides: HashMap::new(),
         },
     );
     write_lily_file(&working_dir, &lily)?;
@@ -635,6 +652,32 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
                 lily.variables
                     .insert(has_key, if any_filled { "true" } else { "false" }.to_string());
             }
+        }
+    }
+    write_lily_file(&working_dir, &lily)
+}
+
+/// Set or remove a per-document role override.
+/// If `override_data` is `Some`, the role is overridden for this document.
+/// If `None`, the override is removed (re-linking to the questionnaire).
+#[tauri::command]
+pub fn set_role_override(
+    working_dir: String,
+    filename: String,
+    role: String,
+    override_data: Option<RoleOverride>,
+) -> Result<(), String> {
+    let mut lily = read_lily_file(&working_dir)?;
+    let meta = lily
+        .documents
+        .get_mut(&filename)
+        .ok_or_else(|| format!("Document '{}' not found in .lily file", filename))?;
+    match override_data {
+        Some(data) => {
+            meta.role_overrides.insert(role, data);
+        }
+        None => {
+            meta.role_overrides.remove(&role);
         }
     }
     write_lily_file(&working_dir, &lily)
