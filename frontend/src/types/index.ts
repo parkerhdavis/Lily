@@ -5,14 +5,18 @@ export interface AppSettings {
 	window_width: number | null;
 	window_height: number | null;
 	theme: string | null;
+	zoom: number | null;
+	footer_size: string | null;
 }
 
 export type WorkflowStep =
-	| "select-directory"
+	| "hub"
 	| "client-hub"
 	| "questionnaire"
 	| "select-template"
-	| "edit-variables";
+	| "edit-variables"
+	| "app-settings"
+	| "pipeline";
 
 /** A per-document override for a contact role. */
 export interface RoleOverride {

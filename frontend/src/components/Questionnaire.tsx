@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { questionnaireDef, questionnaireTabs } from "@/data/questionnaireDef";
 import ContactPicker from "@/components/ContactPicker";
+import PageHeader from "@/components/ui/PageHeader";
+import StatusDot from "@/components/ui/StatusDot";
 import type { QuestionDef } from "@/types/questionnaire";
 
 /** Extract just the folder name from a full directory path. */
@@ -246,24 +248,14 @@ export default function Questionnaire() {
 	);
 
 	return (
-		<div className="flex flex-col h-screen">
-			{/* Header */}
-			<div className="flex items-center gap-4 p-4 border-b border-base-300 bg-base-200">
-				<button
-					type="button"
-					className="btn btn-ghost btn-sm"
-					onClick={returnToHub}
-				>
-					&larr; Back
-				</button>
-				<div className="flex-1 min-w-0">
-					<h2 className="text-xl font-bold truncate">
-						{folderName} &mdash; Questionnaire
-					</h2>
-				</div>
-				<div className="text-sm text-base-content/60">
+		<div className="flex flex-col h-full">
+			<PageHeader
+				title={`${folderName} \u2014 Questionnaire`}
+				onBack={returnToHub}
+			>
+				<span className="text-sm text-base-content/60">
 					{stats.filled} / {stats.total} fields filled
-				</div>
+				</span>
 				<div className="text-xs w-28 text-right">
 					{saveStatus === "saving" && (
 						<span className="text-warning flex items-center justify-end gap-1">
@@ -277,10 +269,10 @@ export default function Questionnaire() {
 						</span>
 					)}
 				</div>
-			</div>
+			</PageHeader>
 
 			{/* Tab bar — sticky below header */}
-			<div className="sticky top-0 z-10 bg-base-100 border-b border-base-300">
+			<div className="sticky top-0 z-10 bg-base-200 border-b border-base-300">
 				<div className="flex">
 					{questionnaireTabs.map((tab) => (
 						<button
@@ -300,7 +292,7 @@ export default function Questionnaire() {
 			</div>
 
 			{/* Controls bar */}
-			<div className="flex items-center gap-2 px-6 py-2 bg-base-100 border-b border-base-200">
+			<div className="flex items-center gap-2 px-6 py-2 bg-base-200 border-b border-base-300">
 				<input
 					ref={searchRef}
 					type="text"
@@ -836,9 +828,7 @@ function TextQuestion({
 		<div className="form-control w-full">
 			<label className="label pb-1">
 				<span className="label-text text-sm font-medium flex items-center gap-1.5">
-					<span
-						className={`inline-block size-2 shrink-0 rounded-full ${localValue.trim() ? "bg-success" : "bg-base-300"}`}
-					/>
+					<StatusDot filled={Boolean(localValue.trim())} />
 					{question.label}
 				</span>
 			</label>

@@ -3,6 +3,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { TemplateTreeNode, LilyFile } from "@/types";
+import PageHeader from "@/components/ui/PageHeader";
+import SectionHeading from "@/components/ui/SectionHeading";
 
 // ─── Tree building ──────────────────────────────────────────────────────────
 
@@ -326,15 +328,19 @@ export default function TemplatePicker() {
 
 	if (loading) {
 		return (
-			<div className="flex items-center justify-center min-h-screen">
-				<span className="loading loading-spinner loading-lg" />
+			<div className="flex flex-col items-center justify-center h-full gap-3">
+				<img
+					src="/lily-icon-trans.png"
+					alt="Loading..."
+					className="size-12 animate-lily-spin"
+				/>
 			</div>
 		);
 	}
 
 	if (!settings.templates_dir) {
 		return (
-			<div className="flex flex-col items-center justify-center min-h-screen gap-6 p-8">
+			<div className="flex flex-col items-center justify-center h-full gap-6 p-8">
 				<h2 className="text-2xl font-bold">Set Templates Folder</h2>
 				<p className="text-base-content/70 text-center max-w-md">
 					Before selecting a template, you need to choose the folder where
@@ -359,18 +365,8 @@ export default function TemplatePicker() {
 	}
 
 	return (
-		<div className="flex flex-col h-screen">
-			{/* Header */}
-			<div className="flex items-center gap-4 p-4 border-b border-base-300 bg-base-200">
-				<button
-					type="button"
-					className="btn btn-ghost btn-sm"
-					onClick={returnToHub}
-				>
-					&larr; Back
-				</button>
-				<h2 className="text-xl font-bold">Add New Document</h2>
-			</div>
+		<div className="flex flex-col h-full">
+			<PageHeader title="Add New Document" onBack={returnToHub} />
 
 			{error && (
 				<div className="alert alert-error m-2">
@@ -379,10 +375,10 @@ export default function TemplatePicker() {
 			)}
 
 			{/* Template library */}
-			<div className="flex-1 overflow-y-auto p-4">
-				<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50 mb-3">
+			<div className="flex-1 overflow-y-auto p-5">
+				<SectionHeading className="mb-3">
 					Template Library
-				</h3>
+				</SectionHeading>
 				{tree.length === 0 ? (
 					<p className="text-sm text-base-content/50">
 						No .docx templates found in the configured folder.

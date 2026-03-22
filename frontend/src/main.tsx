@@ -3,7 +3,10 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./styles/index.css";
 
-createRoot(document.getElementById("root")!).render(
+const root = document.getElementById("root")!;
+root.className = "bg-base-200 min-h-screen";
+
+createRoot(root).render(
 	<StrictMode>
 		<App />
 	</StrictMode>,

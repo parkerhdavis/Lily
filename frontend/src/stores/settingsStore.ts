@@ -12,6 +12,9 @@ interface SettingsState {
 	addRecentDirectory: (dir: string) => Promise<void>;
 	removeRecentDirectory: (dir: string) => Promise<void>;
 	toggleTheme: () => Promise<void>;
+	zoomIn: () => Promise<void>;
+	zoomOut: () => Promise<void>;
+	zoomReset: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -22,6 +25,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 		window_width: null,
 		window_height: null,
 		theme: null,
+		zoom: null,
+		footer_size: null,
 	},
 	loaded: false,
 
@@ -29,6 +34,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 		try {
 			const settings = await invoke<AppSettings>("load_settings");
 			applyTheme(settings.theme);
+			applyZoom(settings.zoom);
 			set({ settings, loaded: true });
 		} catch (err) {
 			console.error("Failed to load settings:", err);
@@ -66,6 +72,25 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 		applyTheme(next);
 		await get().save({ theme: next });
 	},
+
+	zoomIn: async () => {
+		const current = get().settings.zoom ?? 100;
+		const next = Math.min(current + 5, 200);
+		applyZoom(next);
+		await get().save({ zoom: next });
+	},
+
+	zoomOut: async () => {
+		const current = get().settings.zoom ?? 100;
+		const next = Math.max(current - 5, 50);
+		applyZoom(next);
+		await get().save({ zoom: next });
+	},
+
+	zoomReset: async () => {
+		applyZoom(100);
+		await get().save({ zoom: 100 });
+	},
 }));
 
 /** Set the daisyUI data-theme attribute on the root <html> element. */
@@ -74,4 +99,13 @@ function applyTheme(theme: string | null) {
 		"data-theme",
 		theme === "dark" ? "dark" : "light",
 	);
+}
+
+/**
+ * Apply zoom level. The actual CSS zoom is applied via React inline style
+ * on the page content wrapper (not here), so the status bar stays unaffected.
+ * This function clears any stale zoom on the root element from older versions.
+ */
+function applyZoom(_zoom: number | null) {
+	document.documentElement.style.zoom = "";
 }
