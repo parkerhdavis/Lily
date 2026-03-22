@@ -272,7 +272,7 @@ export default function Questionnaire() {
 			</PageHeader>
 
 			{/* Tab bar — sticky below header */}
-			<div className="sticky top-0 z-10 bg-base-100 border-b border-base-300">
+			<div className="sticky top-0 z-10 bg-base-200 border-b border-base-300">
 				<div className="flex">
 					{questionnaireTabs.map((tab) => (
 						<button
@@ -292,7 +292,7 @@ export default function Questionnaire() {
 			</div>
 
 			{/* Controls bar */}
-			<div className="flex items-center gap-2 px-6 py-2 bg-base-100 border-b border-base-200">
+			<div className="flex items-center gap-2 px-6 py-2 bg-base-200 border-b border-base-300">
 				<input
 					ref={searchRef}
 					type="text"

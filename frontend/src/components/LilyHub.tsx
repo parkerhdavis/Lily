@@ -145,7 +145,7 @@ export default function LilyHub() {
 					{/* Pipeline card */}
 					<button
 						type="button"
-						className="card bg-base-200/60 border border-base-300 hover:bg-base-200 transition-colors text-left"
+						className="card bg-base-100 border border-base-300 hover:bg-base-100/80 transition-colors text-left"
 						onClick={goToPipeline}
 					>
 						<div className="card-body p-4 gap-1">
@@ -168,7 +168,7 @@ export default function LilyHub() {
 					{/* Settings card */}
 					<button
 						type="button"
-						className="card bg-base-200/60 border border-base-300 hover:bg-base-200 transition-colors text-left"
+						className="card bg-base-100 border border-base-300 hover:bg-base-100/80 transition-colors text-left"
 						onClick={goToSettings}
 					>
 						<div className="card-body p-4 gap-1">

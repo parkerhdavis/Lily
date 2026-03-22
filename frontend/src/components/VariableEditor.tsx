@@ -612,7 +612,7 @@ export default function VariableEditor() {
 	return (
 		<div className="flex flex-col h-screen">
 			{/* Header */}
-			<header className="flex items-center gap-4 px-5 py-3 border-b border-base-300 bg-base-200/80">
+			<header className="flex items-center gap-4 px-5 py-3 border-b border-base-300 bg-base-100">
 				<button
 					type="button"
 					className="btn btn-ghost btn-sm gap-1.5 text-base-content/70 hover:text-base-content"

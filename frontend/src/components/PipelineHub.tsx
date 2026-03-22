@@ -133,7 +133,7 @@ export default function PipelineHub() {
 			<PageHeader title="Pipeline Management" onBack={goToHub} />
 
 			{/* Tab bar */}
-			<div className="border-b border-base-300 bg-base-100">
+			<div className="border-b border-base-300">
 				<div className="flex">
 					{(
 						[
@@ -339,7 +339,7 @@ function TemplateDetails({
 				<div className="space-y-6">
 					{/* Summary */}
 					<div className="flex gap-4">
-						<div className="px-4 py-3 rounded-lg bg-base-200/60 border border-base-300 text-center">
+						<div className="px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
 							<div className="text-2xl font-bold">
 								{variables.length}
 							</div>
@@ -348,7 +348,7 @@ function TemplateDetails({
 							</div>
 						</div>
 						{replacementVars.length > 0 && (
-							<div className="px-4 py-3 rounded-lg bg-base-200/60 border border-base-300 text-center">
+							<div className="px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
 								<div className="text-2xl font-bold">
 									{replacementVars.length}
 								</div>
@@ -358,7 +358,7 @@ function TemplateDetails({
 							</div>
 						)}
 						{conditionalVars.length > 0 && (
-							<div className="px-4 py-3 rounded-lg bg-base-200/60 border border-base-300 text-center">
+							<div className="px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
 								<div className="text-2xl font-bold">
 									{conditionalVars.length}
 								</div>

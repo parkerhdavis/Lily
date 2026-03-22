@@ -537,7 +537,7 @@ function DocumentRow({
 			{menuPos && (
 				<div
 					ref={menuRef}
-					className="fixed z-50 menu bg-base-200 rounded-box shadow-lg border border-base-300 w-48 p-1"
+					className="fixed z-50 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-1"
 					style={{ left: menuPos.x, top: menuPos.y }}
 				>
 					<li>
