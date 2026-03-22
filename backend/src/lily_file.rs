@@ -605,18 +605,35 @@ pub fn save_contact_bindings(
 
 /// Resolve all contact bindings: for each binding with a contact_id, write
 /// the contact's property values into the variables pool and persist.
+/// Also auto-sets `Has {role}` conditional variables to `"true"` when a
+/// contact is bound to a role, or `"false"` when the binding has no contact.
 #[tauri::command]
 pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
     let mut lily = read_lily_file(&working_dir)?;
-    for binding in lily.contact_bindings.values() {
-        let contact = match &binding.contact_id {
-            Some(id) => lily.contacts.iter().find(|c| &c.id == id),
-            None => continue,
-        };
-        if let Some(contact) = contact {
-            for (var_name, prop_key) in &binding.variable_mappings {
-                let value = get_contact_property(contact, prop_key);
-                lily.variables.insert(var_name.clone(), value);
+    for (role, binding) in &lily.contact_bindings {
+        let has_key = format!("Has {}", role);
+        match &binding.contact_id {
+            Some(id) => {
+                let contact = lily.contacts.iter().find(|c| &c.id == id);
+                if let Some(contact) = contact {
+                    for (var_name, prop_key) in &binding.variable_mappings {
+                        let value = get_contact_property(contact, prop_key);
+                        lily.variables.insert(var_name.clone(), value);
+                    }
+                    lily.variables.insert(has_key, "true".to_string());
+                } else {
+                    lily.variables.insert(has_key, "false".to_string());
+                }
+            }
+            None => {
+                // "Other" (manual entry) — properties are set manually,
+                // but the role is still considered "has" if any mapped
+                // variable has a value.
+                let any_filled = binding.variable_mappings.keys().any(|k| {
+                    lily.variables.get(k).is_some_and(|v| !v.is_empty())
+                });
+                lily.variables
+                    .insert(has_key, if any_filled { "true" } else { "false" }.to_string());
             }
         }
     }

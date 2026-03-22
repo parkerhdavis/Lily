@@ -954,7 +954,7 @@ function ContactRoleField({
 	bindings: Record<string, import("@/types").ContactBinding>;
 	variableValues: Record<string, string>;
 	onSelectContact: (contactId: string | null) => Promise<void>;
-	onClear: () => void;
+	onClear: () => Promise<void>;
 	onManualChange: (varName: string, value: string) => void;
 	onSelect: (varName: string) => void;
 	onDeselect: () => void;
@@ -962,9 +962,15 @@ function ContactRoleField({
 }) {
 	const binding = bindings[group.role];
 	const boundContactId = binding?.contact_id ?? null;
-	const selectedContact = contacts.find((c) => c.id === boundContactId) ?? null;
-	const isOther = binding !== undefined && boundContactId === null;
+	const selectedContact =
+		contacts.find((c) => c.id === boundContactId) ?? null;
+	const isManual = binding !== undefined && boundContactId === null;
 
+	// Determine which tier is active
+	// Tier 1: contact selected (from questionnaire or override)
+	// Tier 2: manual entry ("Other")
+	// Tier 3: unset (no binding)
+	const hasContact = selectedContact !== null;
 	const allFilled = group.properties.every((p) =>
 		variableValues[p.displayName]?.trim(),
 	);
@@ -1012,19 +1018,19 @@ function ContactRoleField({
 				</div>
 			</div>
 
-			{/* Contact dropdown */}
+			{/* Tier 1: Contact selection (from questionnaire or override) */}
 			<select
 				className="select select-bordered select-sm w-full"
 				value={
-					selectedContact
+					hasContact
 						? selectedContact.id
-						: isOther
-							? "__other__"
+						: isManual
+							? "__manual__"
 							: ""
 				}
 				onChange={(e) => {
 					const val = e.target.value;
-					if (val === "__other__") {
+					if (val === "__manual__") {
 						onSelectContact(null);
 					} else if (val === "") {
 						onClear();
@@ -1035,49 +1041,55 @@ function ContactRoleField({
 				onFocus={() => onSelect(group.properties[0]?.displayName)}
 				onBlur={onDeselect}
 			>
-				<option value="">Select a contact...</option>
+				<option value="">Not assigned</option>
 				{contacts.map((c) => (
 					<option key={c.id} value={c.id}>
 						{c.full_name}
 						{c.relationship ? ` (${c.relationship})` : ""}
 					</option>
 				))}
-				<option value="__other__">Other (manual entry)</option>
+				<option value="__manual__">Custom values...</option>
 			</select>
 
 			{/* Show resolved properties when a contact is selected */}
-			{selectedContact && (
-				<div className="mt-2 pl-3 border-l-2 border-primary/30 space-y-1">
-					{group.properties.map(({ displayName, property }) => {
-						const value = getContactProperty(
-							selectedContact,
-							property,
-						);
-						return (
-							<div
-								key={displayName}
-								className="flex items-center gap-2 text-xs"
-							>
-								<span className="text-base-content/50 min-w-20">
-									{PROPERTY_LABELS[property] ?? property}:
-								</span>
-								<span
-									className={
-										value
-											? "text-base-content"
-											: "text-base-content/30 italic"
-									}
-								>
-									{value || "empty"}
-								</span>
-							</div>
-						);
-					})}
+			{hasContact && (
+				<div className="mt-2 pl-3 border-l-2 border-primary/30">
+					<div className="space-y-1">
+						{group.properties.map(
+							({ displayName, property }) => {
+								const value = getContactProperty(
+									selectedContact,
+									property,
+								);
+								return (
+									<div
+										key={displayName}
+										className="flex items-center gap-2 text-xs"
+									>
+										<span className="text-base-content/50 min-w-20">
+											{PROPERTY_LABELS[property] ??
+												property}
+											:
+										</span>
+										<span
+											className={
+												value
+													? "text-base-content"
+													: "text-base-content/30 italic"
+											}
+										>
+											{value || "empty"}
+										</span>
+									</div>
+								);
+							},
+						)}
+					</div>
 				</div>
 			)}
 
-			{/* Manual entry when "Other" is selected */}
-			{isOther && (
+			{/* Tier 2/3: Manual entry when "Custom values" is selected */}
+			{isManual && (
 				<div className="mt-2 pl-3 border-l-2 border-warning/30 space-y-2">
 					{group.properties.map(({ displayName, property }) => (
 						<div key={displayName}>
