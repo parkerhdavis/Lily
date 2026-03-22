@@ -328,7 +328,7 @@ export default function TemplatePicker() {
 
 	if (loading) {
 		return (
-			<div className="flex flex-col items-center justify-center min-h-screen gap-3">
+			<div className="flex flex-col items-center justify-center h-full gap-3">
 				<img
 					src="/lily-icon-trans.png"
 					alt="Loading..."
@@ -340,7 +340,7 @@ export default function TemplatePicker() {
 
 	if (!settings.templates_dir) {
 		return (
-			<div className="flex flex-col items-center justify-center min-h-screen gap-6 p-8">
+			<div className="flex flex-col items-center justify-center h-full gap-6 p-8">
 				<h2 className="text-2xl font-bold">Set Templates Folder</h2>
 				<p className="text-base-content/70 text-center max-w-md">
 					Before selecting a template, you need to choose the folder where
@@ -365,7 +365,7 @@ export default function TemplatePicker() {
 	}
 
 	return (
-		<div className="flex flex-col h-screen">
+		<div className="flex flex-col h-full">
 			<PageHeader title="Add New Document" onBack={returnToHub} />
 
 			{error && (

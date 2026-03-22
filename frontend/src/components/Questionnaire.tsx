@@ -248,7 +248,7 @@ export default function Questionnaire() {
 	);
 
 	return (
-		<div className="flex flex-col h-screen">
+		<div className="flex flex-col h-full">
 			<PageHeader
 				title={`${folderName} \u2014 Questionnaire`}
 				onBack={returnToHub}

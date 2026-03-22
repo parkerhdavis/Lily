@@ -8,7 +8,7 @@ import VariableEditor from "@/components/VariableEditor";
 import Questionnaire from "@/components/Questionnaire";
 import AppSettings from "@/components/AppSettings";
 import PipelineHub from "@/components/PipelineHub";
-import ThemeToggle from "@/components/ThemeToggle";
+import StatusBar from "@/components/ui/StatusBar";
 
 export default function App() {
 	const { loaded, load, zoomIn, zoomOut, zoomReset } = useSettingsStore();
@@ -87,9 +87,9 @@ export default function App() {
 	})();
 
 	return (
-		<>
-			{page}
-			<ThemeToggle />
-		</>
+		<div className="flex flex-col h-screen">
+			<div className="flex-1 min-h-0">{page}</div>
+			<StatusBar />
+		</div>
 	);
 }

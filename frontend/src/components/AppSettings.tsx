@@ -28,7 +28,7 @@ export default function AppSettings() {
 	};
 
 	return (
-		<div className="flex flex-col h-screen">
+		<div className="flex flex-col h-full">
 			<PageHeader title="Settings" onBack={goToHub} />
 
 			<div className="flex-1 overflow-y-auto p-8">

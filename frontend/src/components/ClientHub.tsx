@@ -105,7 +105,7 @@ export default function ClientHub() {
 
 	if (loading) {
 		return (
-			<div className="flex flex-col items-center justify-center min-h-screen gap-3">
+			<div className="flex flex-col items-center justify-center h-full gap-3">
 				<img
 					src="/lily-icon-trans.png"
 					alt="Loading..."
@@ -116,7 +116,7 @@ export default function ClientHub() {
 	}
 
 	return (
-		<div className="flex flex-col h-screen">
+		<div className="flex flex-col h-full">
 			<PageHeader
 				title={folderName}
 				subtitle={workingDir ?? undefined}

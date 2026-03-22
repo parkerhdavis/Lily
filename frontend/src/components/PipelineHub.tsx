@@ -129,7 +129,7 @@ export default function PipelineHub() {
 	const conditionalVars = templateVars.filter((v) => v.is_conditional);
 
 	return (
-		<div className="flex flex-col h-screen">
+		<div className="flex flex-col h-full">
 			<PageHeader title="Pipeline Management" onBack={goToHub} />
 
 			{/* Tab bar */}

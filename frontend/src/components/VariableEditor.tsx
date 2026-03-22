@@ -610,7 +610,7 @@ export default function VariableEditor() {
 	).length;
 
 	return (
-		<div className="flex flex-col h-screen">
+		<div className="flex flex-col h-full">
 			{/* Header */}
 			<header className="flex items-center gap-4 px-5 py-3 border-b border-base-300 bg-base-100">
 				<button

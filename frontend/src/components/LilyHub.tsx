@@ -39,7 +39,7 @@ export default function LilyHub() {
 	};
 
 	return (
-		<div className="flex flex-col h-screen">
+		<div className="flex flex-col h-full">
 			{/* Header bar */}
 			<header className="flex items-center gap-4 px-6 py-4 border-b border-base-300 bg-base-100">
 				<img
