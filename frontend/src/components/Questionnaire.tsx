@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { questionnaireDef } from "@/data/questionnaireDef";
+import ContactManager from "@/components/ContactManager";
 import type { QuestionDef } from "@/types/questionnaire";
 
 /** Extract just the folder name from a full directory path. */
@@ -18,6 +19,8 @@ export default function Questionnaire() {
 	} = useWorkflowStore();
 
 	const variables = lilyFile?.variables ?? {};
+
+	const [showContacts, setShowContacts] = useState(false);
 
 	// Track which sections are collapsed
 	const [collapsedSections, setCollapsedSections] = useState<
@@ -85,8 +88,22 @@ export default function Questionnaire() {
 				<div className="text-sm text-base-content/60">
 					{stats.filled} / {stats.total} fields filled
 				</div>
+				<button
+					type="button"
+					className="btn btn-outline btn-sm"
+					onClick={() => setShowContacts(!showContacts)}
+				>
+					Contacts
+					{(lilyFile?.contacts?.length ?? 0) > 0 && (
+						<span className="badge badge-sm badge-neutral ml-1">
+							{lilyFile?.contacts?.length}
+						</span>
+					)}
+				</button>
 			</div>
 
+			{/* Main content area */}
+			<div className="flex flex-1 overflow-hidden">
 			{/* Sections */}
 			<div className="flex-1 overflow-y-auto p-6">
 				<div className="max-w-2xl mx-auto flex flex-col gap-6">
@@ -154,6 +171,16 @@ export default function Questionnaire() {
 						);
 					})}
 				</div>
+			</div>
+
+			{/* Contacts sidebar (toggled) */}
+			{showContacts && (
+				<div className="w-80 shrink-0 border-l border-base-300 bg-base-100 overflow-y-auto">
+					<ContactManager
+						onClose={() => setShowContacts(false)}
+					/>
+				</div>
+			)}
 			</div>
 		</div>
 	);

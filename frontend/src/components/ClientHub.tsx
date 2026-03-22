@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { questionnaireDef } from "@/data/questionnaireDef";
+import ContactManager from "@/components/ContactManager";
 
 /** Format an ISO date string to a readable local format. */
 function formatDate(iso: string): string {
@@ -80,6 +81,7 @@ export default function ClientHub() {
 	const [newVarName, setNewVarName] = useState("");
 	const [addingVar, setAddingVar] = useState(false);
 	const [varSearch, setVarSearch] = useState("");
+	const [showContacts, setShowContacts] = useState(false);
 	const newVarInputRef = useRef<HTMLInputElement>(null);
 
 	// Build client documents list from .lily file, sorted by modification date
@@ -300,97 +302,123 @@ export default function ClientHub() {
 					)}
 				</div>
 
-				{/* Right sidebar: Client Variables */}
-				<div className="w-80 shrink-0 overflow-y-auto p-4 bg-base-100">
-					<div className="flex items-center justify-between mb-3">
-						<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50">
-							Client Variables
-						</h3>
-						<button
-							type="button"
-							className="btn btn-ghost btn-xs"
-							onClick={handleStartAddVar}
-						>
-							+ Add
-						</button>
-					</div>
-
-				{sortedVariables.length > 0 && (
-					<div className="pb-3 mb-3 border-b border-base-300">
-						<input
-							type="text"
-							className="input input-bordered input-sm w-full"
-							placeholder="Search variables..."
-							value={varSearch}
-							onChange={(e) => setVarSearch(e.target.value)}
+				{/* Right sidebar */}
+				<div className="w-80 shrink-0 overflow-y-auto bg-base-100">
+					{showContacts ? (
+						<ContactManager
+							onClose={() => setShowContacts(false)}
 						/>
-					</div>
-				)}
-
-					{sortedVariables.length === 0 && !addingVar ? (
-						<div className="text-sm text-base-content/50 space-y-2">
-							<p>No variables defined yet.</p>
-							<p>
-								Add a document to automatically populate
-								variables, or add them manually.
-							</p>
-						</div>
-					) : filteredVariables.length === 0 && varSearch ? (
-						<p className="text-sm text-base-content/50">
-							No variables match your search.
-						</p>
 					) : (
-					<div className="flex flex-col divide-y divide-base-200">
-					{filteredVariables.map(([name, value]) => (
-						<VariableField
-							key={name}
-							name={name}
-							value={value}
-							isConditional={conditionalVarNames.has(
-								name,
-							)}
-							onBlur={handleVariableBlur}
-							onRemove={removeClientVariable}
-						/>
-					))}
-					</div>
-					)}
+						<div className="p-4">
+							{/* Contacts button */}
+							<button
+								type="button"
+								className="btn btn-outline btn-sm w-full mb-4"
+								onClick={() => setShowContacts(true)}
+							>
+								Manage Contacts
+								{(lilyFile?.contacts?.length ?? 0) > 0 && (
+									<span className="badge badge-sm badge-neutral ml-1">
+										{lilyFile?.contacts?.length}
+									</span>
+								)}
+							</button>
 
-					{/* Add variable inline form */}
-					{addingVar && (
-						<div className="mt-3 flex gap-2">
-							<input
-								ref={newVarInputRef}
-								type="text"
-								className="input input-bordered input-sm flex-1"
-								placeholder="Variable Name"
-								value={newVarName}
-								onChange={(e) => setNewVarName(e.target.value)}
-								onKeyDown={handleAddVarKeyDown}
-								onBlur={() => {
-									if (!newVarName.trim()) {
-										setAddingVar(false);
-									}
-								}}
-							/>
-							<button
-								type="button"
-								className="btn btn-primary btn-sm"
-								onClick={handleAddVariable}
-								disabled={!newVarName.trim()}
-							>
-								Add
-							</button>
-							<button
-								type="button"
-								className="btn btn-ghost btn-sm"
-								onClick={() => {
-									setNewVarName("");
-									setAddingVar(false);
-								}}
-							>
-								Cancel
-							</button>
+							<div className="flex items-center justify-between mb-3">
+								<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50">
+									Client Variables
+								</h3>
+								<button
+									type="button"
+									className="btn btn-ghost btn-xs"
+									onClick={handleStartAddVar}
+								>
+									+ Add
+								</button>
+							</div>
+
+							{sortedVariables.length > 0 && (
+								<div className="pb-3 mb-3 border-b border-base-300">
+									<input
+										type="text"
+										className="input input-bordered input-sm w-full"
+										placeholder="Search variables..."
+										value={varSearch}
+										onChange={(e) =>
+											setVarSearch(e.target.value)
+										}
+									/>
+								</div>
+							)}
+
+							{sortedVariables.length === 0 && !addingVar ? (
+								<div className="text-sm text-base-content/50 space-y-2">
+									<p>No variables defined yet.</p>
+									<p>
+										Add a document to automatically populate
+										variables, or add them manually.
+									</p>
+								</div>
+							) : filteredVariables.length === 0 && varSearch ? (
+								<p className="text-sm text-base-content/50">
+									No variables match your search.
+								</p>
+							) : (
+								<div className="flex flex-col divide-y divide-base-200">
+									{filteredVariables.map(([name, value]) => (
+										<VariableField
+											key={name}
+											name={name}
+											value={value}
+											isConditional={conditionalVarNames.has(
+												name,
+											)}
+											onBlur={handleVariableBlur}
+											onRemove={removeClientVariable}
+										/>
+									))}
+								</div>
+							)}
+
+							{/* Add variable inline form */}
+							{addingVar && (
+								<div className="mt-3 flex gap-2">
+									<input
+										ref={newVarInputRef}
+										type="text"
+										className="input input-bordered input-sm flex-1"
+										placeholder="Variable Name"
+										value={newVarName}
+										onChange={(e) =>
+											setNewVarName(e.target.value)
+										}
+										onKeyDown={handleAddVarKeyDown}
+										onBlur={() => {
+											if (!newVarName.trim()) {
+												setAddingVar(false);
+											}
+										}}
+									/>
+									<button
+										type="button"
+										className="btn btn-primary btn-sm"
+										onClick={handleAddVariable}
+										disabled={!newVarName.trim()}
+									>
+										Add
+									</button>
+									<button
+										type="button"
+										className="btn btn-ghost btn-sm"
+										onClick={() => {
+											setNewVarName("");
+											setAddingVar(false);
+										}}
+									>
+										Cancel
+									</button>
+								</div>
+							)}
 						</div>
 					)}
 				</div>
