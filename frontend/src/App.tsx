@@ -67,6 +67,8 @@ export default function App() {
 		);
 	}
 
+	const zoom = useSettingsStore((s) => s.settings.zoom) ?? 100;
+
 	const page = (() => {
 		switch (step) {
 			case "hub":
@@ -88,7 +90,12 @@ export default function App() {
 
 	return (
 		<div className="flex flex-col h-screen">
-			<div className="flex-1 min-h-0">{page}</div>
+			<div
+				className="flex-1 min-h-0"
+				style={zoom !== 100 ? { zoom: `${zoom}%` } : undefined}
+			>
+				{page}
+			</div>
 			<StatusBar />
 		</div>
 	);

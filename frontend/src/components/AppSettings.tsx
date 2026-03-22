@@ -10,6 +10,7 @@ export default function AppSettings() {
 	const theme = settings.theme;
 	const isDark = theme === "dark";
 	const zoom = settings.zoom ?? 100;
+	const footerSize = settings.footer_size ?? "medium";
 
 	const setTheme = (value: "light" | "dark") => {
 		document.documentElement.setAttribute("data-theme", value);
@@ -105,6 +106,44 @@ export default function AppSettings() {
 								>
 									+
 								</button>
+							</div>
+						</div>
+					</section>
+
+					{/* Footer size */}
+					<section>
+						<div className="flex items-center justify-between p-4 rounded-xl border border-base-300 bg-base-100">
+							<p className="text-sm font-medium">
+								Status Bar Size
+							</p>
+							<div className="flex rounded-lg overflow-hidden border border-base-300">
+								{(
+									[
+										{ value: "small", label: "Small" },
+										{
+											value: "medium",
+											label: "Medium",
+										},
+										{ value: "large", label: "Large" },
+									] as const
+								).map((opt) => (
+									<button
+										key={opt.value}
+										type="button"
+										className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+											footerSize === opt.value
+												? "bg-primary text-primary-content"
+												: "bg-base-200 text-base-content/40 hover:bg-base-300"
+										}`}
+										onClick={() =>
+											save({
+												footer_size: opt.value,
+											})
+										}
+									>
+										{opt.label}
+									</button>
+								))}
 							</div>
 						</div>
 					</section>

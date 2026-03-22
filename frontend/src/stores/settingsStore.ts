@@ -26,6 +26,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 		window_height: null,
 		theme: null,
 		zoom: null,
+		footer_size: null,
 	},
 	loaded: false,
 
@@ -100,8 +101,11 @@ function applyTheme(theme: string | null) {
 	);
 }
 
-/** Apply zoom level via CSS zoom on the root element. */
-function applyZoom(zoom: number | null) {
-	const level = zoom ?? 100;
-	document.documentElement.style.zoom = `${level}%`;
+/**
+ * Apply zoom level. The actual CSS zoom is applied via React inline style
+ * on the page content wrapper (not here), so the status bar stays unaffected.
+ * This function clears any stale zoom on the root element from older versions.
+ */
+function applyZoom(_zoom: number | null) {
+	document.documentElement.style.zoom = "";
 }

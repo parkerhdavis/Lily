@@ -15,6 +15,19 @@ export default function StatusBar() {
 
 	const isDark = settings.theme === "dark";
 	const zoom = settings.zoom ?? 100;
+	const footerSize = settings.footer_size ?? "medium";
+	const sizeClasses =
+		footerSize === "small"
+			? "h-6 text-[10px]"
+			: footerSize === "large"
+				? "h-9 text-xs"
+				: "h-7 text-[11px]";
+	const iconSize =
+		footerSize === "small"
+			? "size-2.5"
+			: footerSize === "large"
+				? "size-3.5"
+				: "size-3";
 
 	const openFolder = async (path: string) => {
 		try {
@@ -33,7 +46,7 @@ export default function StatusBar() {
 			: null;
 
 	return (
-		<footer className="flex items-center justify-between h-7 px-2 border-t border-base-300 bg-base-100 text-base-content/60 text-[11px] shrink-0 select-none">
+		<footer className={`flex items-center justify-between px-2 border-t border-base-300 bg-base-100 text-base-content/60 shrink-0 select-none ${sizeClasses}`}>
 			{/* Left side */}
 			<div className="flex items-center gap-0.5">
 				{/* Settings */}
@@ -47,7 +60,7 @@ export default function StatusBar() {
 						xmlns="http://www.w3.org/2000/svg"
 						viewBox="0 0 16 16"
 						fill="currentColor"
-						className="size-3"
+						className={iconSize}
 					>
 						<title>Settings</title>
 						<path
@@ -70,7 +83,7 @@ export default function StatusBar() {
 							xmlns="http://www.w3.org/2000/svg"
 							viewBox="0 0 16 16"
 							fill="currentColor"
-							className="size-3"
+							className={iconSize}
 						>
 							<title>Open folder</title>
 							<path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h2.879a1.5 1.5 0 0 1 1.06.44l1.122 1.12A1.5 1.5 0 0 0 9.62 4H12.5A1.5 1.5 0 0 1 14 5.5v1.401a2.986 2.986 0 0 0-1.5-.401h-9c-.546 0-1.059.146-1.5.401V3.5ZM2 11.5v-3A1.5 1.5 0 0 1 3.5 7h9A1.5 1.5 0 0 1 14 8.5v3a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5Z" />
@@ -105,7 +118,7 @@ export default function StatusBar() {
 							xmlns="http://www.w3.org/2000/svg"
 							viewBox="0 0 16 16"
 							fill="currentColor"
-							className="size-3"
+							className={iconSize}
 						>
 							<title>Light mode</title>
 							<path d="M8 1a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 8 1ZM10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0ZM12.95 4.11a.75.75 0 1 0-1.06-1.06l-1.062 1.06a.75.75 0 0 0 1.061 1.062l1.06-1.061ZM15 8a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 15 8ZM11.828 11.828a.75.75 0 1 0-1.06-1.06l-1.061 1.06a.75.75 0 1 0 1.06 1.06l1.061-1.06ZM8 13.5a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 8 13.5ZM4.11 12.95a.75.75 0 1 0 1.06-1.06l-1.06-1.062a.75.75 0 0 0-1.062 1.061l1.061 1.06ZM2.5 8a.75.75 0 0 1-.75.75H.25a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 2.5 8ZM4.11 3.05a.75.75 0 1 0-1.06 1.06l1.06 1.062a.75.75 0 0 0 1.062-1.061L4.11 3.05Z" />
@@ -115,7 +128,7 @@ export default function StatusBar() {
 							xmlns="http://www.w3.org/2000/svg"
 							viewBox="0 0 16 16"
 							fill="currentColor"
-							className="size-3"
+							className={iconSize}
 						>
 							<title>Dark mode</title>
 							<path d="M14.438 10.148c.19-.425-.321-.787-.748-.601A5.5 5.5 0 0 1 6.453 2.31c.186-.427-.176-.938-.6-.748a6.501 6.501 0 1 0 8.585 8.586Z" />

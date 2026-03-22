@@ -6,6 +6,7 @@ export interface AppSettings {
 	window_height: number | null;
 	theme: string | null;
 	zoom: number | null;
+	footer_size: string | null;
 }
 
 export type WorkflowStep =
