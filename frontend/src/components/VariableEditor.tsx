@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
-import type { VariableInfo } from "@/types";
+import type { VariableInfo, Contact } from "@/types";
 
 /**
  * Fuzzy-filter a list of variables by a search query.
@@ -145,6 +145,60 @@ function resolveNestedVariables(
 	});
 }
 
+/** Known contact property keys matching the Rust Contact struct. */
+const CONTACT_PROPERTIES = new Set([
+	"full_name",
+	"first_name",
+	"last_name",
+	"relationship",
+	"phone",
+	"email",
+	"address",
+	"city",
+	"state",
+	"zip",
+]);
+
+/** Property key → human label. */
+const PROPERTY_LABELS: Record<string, string> = {
+	full_name: "Full Name",
+	first_name: "First Name",
+	last_name: "Last Name",
+	relationship: "Relationship",
+	phone: "Phone",
+	email: "Email",
+	address: "Address",
+	city: "City",
+	state: "State",
+	zip: "ZIP",
+};
+
+/**
+ * Try to parse a variable variant as contact-role dot notation.
+ * Returns { role, property } if the variant matches `Role.property`.
+ */
+function parseContactRoleVariant(
+	variant: string,
+): { role: string; property: string } | null {
+	const dotIdx = variant.lastIndexOf(".");
+	if (dotIdx < 0) return null;
+	const role = variant.substring(0, dotIdx).trim();
+	const property = variant.substring(dotIdx + 1).trim().toLowerCase();
+	if (!role || !CONTACT_PROPERTIES.has(property)) return null;
+	return { role, property };
+}
+
+/** Read a contact property by key. */
+function getContactProperty(contact: Contact, key: string): string {
+	return (contact as unknown as Record<string, string>)[key] ?? "";
+}
+
+/** Info about a contact-role group (all variables sharing a role). */
+interface ContactRoleGroup {
+	role: string;
+	properties: { displayName: string; property: string }[];
+}
+
 export default function VariableEditor() {
 	const {
 		variables,
@@ -158,6 +212,7 @@ export default function VariableEditor() {
 		updateVariable,
 		renameDocument,
 		saveDocument,
+		setContactBinding,
 		returnToHub,
 	} = useWorkflowStore();
 
@@ -185,22 +240,47 @@ export default function VariableEditor() {
 		return map;
 	}, [variables]);
 
-	// Build a map: variable name -> role name for contact-bound variables
-	const contactBoundVars = useMemo(() => {
-		const map: Record<string, string> = {};
-		for (const [role, binding] of Object.entries(
-			lilyFile?.contact_bindings ?? {},
-		)) {
-			if (binding.contact_id) {
-				for (const varName of Object.keys(
-					binding.variable_mappings,
-				)) {
-					map[varName] = role;
+	// Detect contact-role variables from dot notation in variants.
+	// Maps display_name → { role, property } for contact-role variables.
+	const contactRoleVarMap = useMemo(() => {
+		const map: Record<string, { role: string; property: string }> = {};
+		for (const v of variables) {
+			for (const variant of v.variants) {
+				const parsed = parseContactRoleVariant(variant);
+				if (parsed) {
+					map[v.display_name] = parsed;
+					break;
 				}
 			}
 		}
 		return map;
-	}, [lilyFile]);
+	}, [variables]);
+
+	// Group contact-role variables by role, preserving document order.
+	const contactRoleGroups = useMemo(() => {
+		const groups: ContactRoleGroup[] = [];
+		const seen = new Set<string>();
+		for (const v of variables) {
+			const info = contactRoleVarMap[v.display_name];
+			if (!info) continue;
+			if (!seen.has(info.role)) {
+				seen.add(info.role);
+				groups.push({ role: info.role, properties: [] });
+			}
+			const group = groups.find((g) => g.role === info.role);
+			group?.properties.push({
+				displayName: v.display_name,
+				property: info.property,
+			});
+		}
+		return groups;
+	}, [variables, contactRoleVarMap]);
+
+	// Set of display_names that belong to a contact-role group
+	const contactRoleVarNames = useMemo(
+		() => new Set(Object.keys(contactRoleVarMap)),
+		[contactRoleVarMap],
+	);
 
 	// Focus the title input when entering edit mode
 	useEffect(() => {
@@ -598,9 +678,12 @@ export default function VariableEditor() {
 					</p>
 				) : (
 				<div className="flex flex-col divide-y divide-base-200">
-					{filteredVariables.map((varInfo) => {
+					{(() => {
+						const renderedRoles = new Set<string>();
+						return filteredVariables.map((varInfo) => {
 						const name = varInfo.display_name;
 
+						// ── Conditional variable ──
 						if (varInfo.is_conditional) {
 							const isTrue =
 								variableValues[name] === "true";
@@ -701,8 +784,49 @@ export default function VariableEditor() {
 							);
 						}
 
+						// ── Contact-role variable ──
+						const crInfo = contactRoleVarMap[name];
+						if (crInfo) {
+							// Render the group once at the first property
+							if (renderedRoles.has(crInfo.role)) return null;
+							renderedRoles.add(crInfo.role);
+							const group = contactRoleGroups.find(
+								(g) => g.role === crInfo.role,
+							);
+							if (!group) return null;
+							return (
+								<ContactRoleField
+									key={`role:${group.role}`}
+									group={group}
+									contacts={lilyFile?.contacts ?? []}
+									bindings={lilyFile?.contact_bindings ?? {}}
+									variableValues={variableValues}
+									onSelectContact={async (contactId) => {
+										const mappings: Record<string, string> = {};
+										for (const p of group.properties) {
+											mappings[p.displayName] = p.property;
+										}
+										await setContactBinding(group.role, {
+											contact_id: contactId,
+											variable_mappings: mappings,
+										});
+									}}
+									onManualChange={(varName, value) => {
+										handleVariableChange(varName, value);
+									}}
+									onSelect={(varName) =>
+										setSelectedVariable(varName)
+									}
+									onDeselect={() =>
+										setSelectedVariable(null)
+									}
+									scrollToOccurrence={scrollToOccurrence}
+								/>
+							);
+						}
+
+						// ── Regular replacement variable ──
 						const isFilled = Boolean(variableValues[name]);
-						const boundRole = contactBoundVars[name];
 						return (
 							<div
 								key={name}
@@ -715,14 +839,6 @@ export default function VariableEditor() {
 											className={`inline-block size-2 shrink-0 rounded-full ${isFilled ? "bg-success" : "bg-error"}`}
 										/>
 										{name}
-										{boundRole && (
-											<span
-												className="text-xs text-primary/60 font-normal"
-												title={`Linked from ${boundRole}`}
-											>
-												&#128279; {boundRole}
-											</span>
-										)}
 									</span>
 									<div className="join">
 										<button
@@ -773,7 +889,8 @@ export default function VariableEditor() {
 								/>
 							</div>
 						);
-					})}
+					});
+					})()}
 				</div>
 				)}
 				</div>
@@ -794,6 +911,177 @@ export default function VariableEditor() {
 					/>
 				</div>
 			</div>
+		</div>
+	);
+}
+
+// ─── Contact-role field ─────────────────────────────────────────────────────
+
+function ContactRoleField({
+	group,
+	contacts,
+	bindings,
+	variableValues,
+	onSelectContact,
+	onManualChange,
+	onSelect,
+	onDeselect,
+	scrollToOccurrence,
+}: {
+	group: ContactRoleGroup;
+	contacts: Contact[];
+	bindings: Record<string, import("@/types").ContactBinding>;
+	variableValues: Record<string, string>;
+	onSelectContact: (contactId: string | null) => Promise<void>;
+	onManualChange: (varName: string, value: string) => void;
+	onSelect: (varName: string) => void;
+	onDeselect: () => void;
+	scrollToOccurrence: (varName: string, direction: "prev" | "next") => void;
+}) {
+	const binding = bindings[group.role];
+	const boundContactId = binding?.contact_id ?? null;
+	const selectedContact = contacts.find((c) => c.id === boundContactId) ?? null;
+	const isOther = binding !== undefined && boundContactId === null;
+
+	const allFilled = group.properties.every((p) =>
+		variableValues[p.displayName]?.trim(),
+	);
+
+	return (
+		<div
+			className="py-3 w-full"
+			data-var-entry={group.properties[0]?.displayName}
+		>
+			{/* Role header */}
+			<div className="flex items-center justify-between mb-1.5">
+				<span className="label-text text-sm font-medium flex items-center gap-1.5">
+					<span
+						className={`inline-block size-2 shrink-0 rounded-full ${allFilled ? "bg-success" : "bg-error"}`}
+					/>
+					{group.role}
+				</span>
+				<div className="join">
+					<button
+						type="button"
+						className="join-item btn btn-ghost btn-xs px-1"
+						onClick={() =>
+							scrollToOccurrence(
+								group.properties[0]?.displayName,
+								"prev",
+							)
+						}
+						title="Previous occurrence"
+					>
+						&lsaquo;
+					</button>
+					<button
+						type="button"
+						className="join-item btn btn-ghost btn-xs px-1"
+						onClick={() =>
+							scrollToOccurrence(
+								group.properties[0]?.displayName,
+								"next",
+							)
+						}
+						title="Next occurrence"
+					>
+						&rsaquo;
+					</button>
+				</div>
+			</div>
+
+			{/* Contact dropdown */}
+			<select
+				className="select select-bordered select-sm w-full"
+				value={
+					selectedContact
+						? selectedContact.id
+						: isOther
+							? "__other__"
+							: ""
+				}
+				onChange={(e) => {
+					const val = e.target.value;
+					if (val === "__other__") {
+						onSelectContact(null);
+					} else if (val === "") {
+						onSelectContact(null);
+					} else {
+						onSelectContact(val);
+					}
+				}}
+				onFocus={() => onSelect(group.properties[0]?.displayName)}
+				onBlur={onDeselect}
+			>
+				<option value="">Select a contact...</option>
+				{contacts.map((c) => (
+					<option key={c.id} value={c.id}>
+						{c.full_name}
+						{c.relationship ? ` (${c.relationship})` : ""}
+					</option>
+				))}
+				<option value="__other__">Other (manual entry)</option>
+			</select>
+
+			{/* Show resolved properties when a contact is selected */}
+			{selectedContact && (
+				<div className="mt-2 pl-3 border-l-2 border-primary/30 space-y-1">
+					{group.properties.map(({ displayName, property }) => {
+						const value = getContactProperty(
+							selectedContact,
+							property,
+						);
+						return (
+							<div
+								key={displayName}
+								className="flex items-center gap-2 text-xs"
+							>
+								<span className="text-base-content/50 min-w-20">
+									{PROPERTY_LABELS[property] ?? property}:
+								</span>
+								<span
+									className={
+										value
+											? "text-base-content"
+											: "text-base-content/30 italic"
+									}
+								>
+									{value || "empty"}
+								</span>
+							</div>
+						);
+					})}
+				</div>
+			)}
+
+			{/* Manual entry when "Other" is selected */}
+			{isOther && (
+				<div className="mt-2 pl-3 border-l-2 border-warning/30 space-y-2">
+					{group.properties.map(({ displayName, property }) => (
+						<div key={displayName}>
+							<label className="label pb-0.5">
+								<span className="label-text text-xs text-base-content/60">
+									{PROPERTY_LABELS[property] ?? property}
+								</span>
+							</label>
+							<input
+								type="text"
+								className="input input-bordered input-xs w-full"
+								placeholder={`Enter ${PROPERTY_LABELS[property] ?? property}`}
+								value={variableValues[displayName] ?? ""}
+								onChange={(e) =>
+									onManualChange(
+										displayName,
+										e.target.value,
+									)
+								}
+								onFocus={() => onSelect(displayName)}
+								onBlur={onDeselect}
+							/>
+						</div>
+					))}
+				</div>
+			)}
 		</div>
 	);
 }
