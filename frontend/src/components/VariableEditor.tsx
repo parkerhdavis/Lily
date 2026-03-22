@@ -1110,7 +1110,7 @@ function ContactRoleField({
 					className={`flex items-center gap-1.5 text-xs transition-colors ${
 						isOverridden
 							? "text-warning hover:text-warning/80"
-							: "text-primary/60 hover:text-primary/80"
+							: "text-base-content/50 hover:text-base-content/70"
 					}`}
 					onClick={() => onToggleOverride(!isOverridden)}
 					title={
