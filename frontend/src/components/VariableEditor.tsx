@@ -218,8 +218,28 @@ export default function VariableEditor() {
 		saveDocument,
 		setContactBinding,
 		clearContactBinding,
+		setRoleOverride,
 		returnToHub,
 	} = useWorkflowStore();
+
+	// Current document filename (for looking up per-document overrides)
+	const currentFilename = useMemo(() => {
+		if (!documentPath) return null;
+		return (
+			documentPath.split("/").pop() ??
+			documentPath.split("\\").pop() ??
+			null
+		);
+	}, [documentPath]);
+
+	// Per-document role overrides for the current document
+	const roleOverrides = useMemo(() => {
+		if (!currentFilename || !lilyFile?.documents[currentFilename])
+			return {};
+		return (
+			lilyFile.documents[currentFilename].role_overrides ?? {}
+		);
+	}, [lilyFile, currentFilename]);
 
 	const [selectedVariable, setSelectedVariable] = useState<string | null>(
 		null,
@@ -806,30 +826,48 @@ export default function VariableEditor() {
 									contacts={lilyFile?.contacts ?? []}
 									bindings={lilyFile?.contact_bindings ?? {}}
 									variableValues={variableValues}
-									onSelectContact={async (contactId) => {
-										const mappings: Record<string, string> = {};
-										for (const p of group.properties) {
-											mappings[p.displayName] = p.property;
+									isOverridden={group.role in roleOverrides}
+									onToggleOverride={async (overriding) => {
+										if (overriding) {
+											// Snapshot current values as the override
+											const values: Record<string, string> = {};
+											for (const p of group.properties) {
+												values[p.displayName] = variableValues[p.displayName] ?? "";
+											}
+											const binding = lilyFile?.contact_bindings?.[group.role];
+											await setRoleOverride(group.role, {
+												contact_id: binding?.contact_id ?? null,
+												values,
+											});
+										} else {
+											// Remove override — revert to questionnaire
+											await setRoleOverride(group.role, null);
+											// Restore questionnaire values into variableValues
+											const savedVars = lilyFile?.variables ?? {};
+											for (const p of group.properties) {
+												handleVariableChange(p.displayName, savedVars[p.displayName] ?? "");
+											}
 										}
-										await setContactBinding(group.role, {
-											contact_id: contactId,
-											variable_mappings: mappings,
-										});
 									}}
-									onClear={async () => {
-										// Blank out variable values
+									onSelectContact={async (contactId) => {
+										// Save as per-document override
+										const values: Record<string, string> = {};
+										const contact = contactId
+											? (lilyFile?.contacts ?? []).find((c) => c.id === contactId)
+											: null;
 										for (const p of group.properties) {
-											handleVariableChange(p.displayName, "");
+											values[p.displayName] = contact
+												? getContactProperty(contact, p.property)
+												: "";
 										}
-										// Set binding with no contact and no "Other"
-										// by re-saving bindings without this role
-										const mappings: Record<string, string> = {};
-										for (const p of group.properties) {
-											mappings[p.displayName] = p.property;
+										await setRoleOverride(group.role, {
+											contact_id: contactId,
+											values,
+										});
+										// Update live preview
+										for (const [varName, value] of Object.entries(values)) {
+											handleVariableChange(varName, value);
 										}
-										// Use setContactBinding with a sentinel,
-										// then remove the binding
-										await clearContactBinding(group.role);
 									}}
 									onManualChange={(varName, value) => {
 										handleVariableChange(varName, value);
@@ -975,8 +1013,9 @@ function ContactRoleField({
 	contacts,
 	bindings,
 	variableValues,
+	isOverridden,
+	onToggleOverride,
 	onSelectContact,
-	onClear,
 	onManualChange,
 	onSelect,
 	onDeselect,
@@ -986,53 +1025,40 @@ function ContactRoleField({
 	contacts: Contact[];
 	bindings: Record<string, import("@/types").ContactBinding>;
 	variableValues: Record<string, string>;
+	isOverridden: boolean;
+	onToggleOverride: (overriding: boolean) => Promise<void>;
 	onSelectContact: (contactId: string | null) => Promise<void>;
-	onClear: () => Promise<void>;
 	onManualChange: (varName: string, value: string) => void;
 	onSelect: (varName: string) => void;
 	onDeselect: () => void;
 	scrollToOccurrence: (varName: string, direction: "prev" | "next") => void;
 }) {
-	const binding = bindings[group.role];
-	const boundContactId = binding?.contact_id ?? null;
-	const selectedContact =
-		contacts.find((c) => c.id === boundContactId) ?? null;
-	const isManual = binding !== undefined && boundContactId === null;
+	// Questionnaire binding (source of truth when linked)
+	const qBinding = bindings[group.role];
+	const qContactId = qBinding?.contact_id ?? null;
+	const qContact = contacts.find((c) => c.id === qContactId) ?? null;
 
-	const isLinked = selectedContact !== null;
-	const isUnlinked = isManual;
+	// Determine the effective display state
 	const allFilled = group.properties.every((p) =>
 		variableValues[p.displayName]?.trim(),
 	);
+
+	// When overridden, figure out what the override looks like
+	// (could be a different contact or custom values)
+	const overrideHasContact = isOverridden && variableValues[group.properties[0]?.displayName];
 
 	return (
 		<div
 			className="py-3 w-full"
 			data-var-entry={group.properties[0]?.displayName}
 		>
-			{/* Role header with link status */}
+			{/* Role header */}
 			<div className="flex items-center justify-between mb-1.5">
 				<span className="label-text text-sm font-medium flex items-center gap-1.5">
 					<span
 						className={`inline-block size-2 shrink-0 rounded-full ${allFilled ? "bg-success" : "bg-error"}`}
 					/>
 					{group.role}
-					{isLinked && (
-						<span
-							className="text-primary/60"
-							title={`Linked to ${selectedContact.full_name}`}
-						>
-							<LinkIcon className="size-3.5" />
-						</span>
-					)}
-					{isUnlinked && (
-						<span
-							className="text-warning/60"
-							title="Using custom values (unlinked from contacts)"
-						>
-							<LinkSlashIcon className="size-3.5" />
-						</span>
-					)}
 				</span>
 				<div className="join">
 					<button
@@ -1064,103 +1090,164 @@ function ContactRoleField({
 				</div>
 			</div>
 
-			{/* Contact selection dropdown */}
-			<select
-				className={`select select-bordered select-sm w-full ${isLinked ? "select-primary" : isUnlinked ? "select-warning" : ""}`}
-				value={
-					isLinked
-						? selectedContact.id
-						: isUnlinked
-							? "__manual__"
-							: ""
-				}
-				onChange={(e) => {
-					const val = e.target.value;
-					if (val === "__manual__") {
-						onSelectContact(null);
-					} else if (val === "") {
-						onClear();
-					} else {
-						onSelectContact(val);
+			{/* Override toggle */}
+			<div className="flex items-center gap-2 mb-1.5">
+				<button
+					type="button"
+					className={`flex items-center gap-1.5 text-xs transition-colors ${
+						isOverridden
+							? "text-warning hover:text-warning/80"
+							: "text-primary/60 hover:text-primary/80"
+					}`}
+					onClick={() => onToggleOverride(!isOverridden)}
+					title={
+						isOverridden
+							? "Click to re-link to questionnaire"
+							: "Click to override for this document"
 					}
-				}}
-				onFocus={() => onSelect(group.properties[0]?.displayName)}
-				onBlur={onDeselect}
-			>
-				<option value="">Not assigned</option>
-				{contacts.map((c) => (
-					<option key={c.id} value={c.id}>
-						{c.full_name}
-						{c.relationship ? ` (${c.relationship})` : ""}
-					</option>
-				))}
-				<option value="__manual__">Custom values...</option>
-			</select>
+				>
+					{isOverridden ? (
+						<LinkSlashIcon className="size-3.5" />
+					) : (
+						<LinkIcon className="size-3.5" />
+					)}
+					<span>
+						{isOverridden
+							? "Overridden for this document"
+							: "Linked to questionnaire"}
+					</span>
+				</button>
+			</div>
 
-			{/* Linked: read-only property summary from the contact */}
-			{isLinked && (
-				<div className="mt-2 pl-3 border-l-2 border-primary/30">
-					<div className="space-y-1">
-						{group.properties.map(
-							({ displayName, property }) => {
-								const value = getContactProperty(
-									selectedContact,
-									property,
-								);
-								return (
-									<div
-										key={displayName}
-										className="flex items-center gap-2 text-xs"
-									>
-										<span className="text-base-content/50 min-w-20">
-											{PROPERTY_LABELS[property] ??
-												property}
-											:
-										</span>
-										<span
-											className={
-												value
-													? "text-base-content"
-													: "text-base-content/30 italic"
-											}
-										>
-											{value || "empty"}
-										</span>
-									</div>
-								);
-							},
-						)}
-					</div>
-				</div>
+			{/* ── Linked state: greyed-out, shows questionnaire value ── */}
+			{!isOverridden && (
+				<>
+					<select
+						className="select select-bordered select-sm w-full opacity-50 pointer-events-none"
+						value={qContact ? qContact.id : ""}
+						disabled
+						tabIndex={-1}
+					>
+						<option value="">Not assigned</option>
+						{contacts.map((c) => (
+							<option key={c.id} value={c.id}>
+								{c.full_name}
+								{c.relationship
+									? ` (${c.relationship})`
+									: ""}
+							</option>
+						))}
+					</select>
+					{qContact && (
+						<div className="mt-2 pl-3 border-l-2 border-primary/30 opacity-75">
+							<div className="space-y-1">
+								{group.properties.map(
+									({ displayName, property }) => {
+										const value = getContactProperty(
+											qContact,
+											property,
+										);
+										return (
+											<div
+												key={displayName}
+												className="flex items-center gap-2 text-xs"
+											>
+												<span className="text-base-content/50 min-w-20">
+													{PROPERTY_LABELS[
+														property
+													] ?? property}
+													:
+												</span>
+												<span
+													className={
+														value
+															? "text-base-content"
+															: "text-base-content/30 italic"
+													}
+												>
+													{value || "empty"}
+												</span>
+											</div>
+										);
+									},
+								)}
+							</div>
+						</div>
+					)}
+				</>
 			)}
 
-			{/* Unlinked: editable manual entry fields */}
-			{isUnlinked && (
-				<div className="mt-2 pl-3 border-l-2 border-warning/30 space-y-2">
-					{group.properties.map(({ displayName, property }) => (
-						<div key={displayName}>
-							<label className="label pb-0.5">
-								<span className="label-text text-xs text-base-content/60">
-									{PROPERTY_LABELS[property] ?? property}
-								</span>
-							</label>
-							<input
-								type="text"
-								className="input input-bordered input-xs w-full"
-								placeholder={`Enter ${PROPERTY_LABELS[property] ?? property}`}
-								value={variableValues[displayName] ?? ""}
-								onChange={(e) =>
-									onManualChange(
-										displayName,
-										e.target.value,
-									)
-								}
-								onFocus={() => onSelect(displayName)}
-								onBlur={onDeselect}
-							/>
-						</div>
-					))}
-				</div>
+			{/* ── Overridden state: editable dropdown + manual fallback ── */}
+			{isOverridden && (
+				<>
+					<select
+						className="select select-bordered select-sm w-full select-warning"
+						value={
+							// Find if current values match any contact
+							contacts.find((c) =>
+								group.properties.every(
+									(p) =>
+										getContactProperty(c, p.property) ===
+										(variableValues[p.displayName] ?? ""),
+								),
+							)?.id ?? "__manual__"
+						}
+						onChange={(e) => {
+							const val = e.target.value;
+							if (val === "__manual__") {
+								onSelectContact(null);
+							} else {
+								onSelectContact(val);
+							}
+						}}
+						onFocus={() =>
+							onSelect(group.properties[0]?.displayName)
+						}
+						onBlur={onDeselect}
+					>
+						{contacts.map((c) => (
+							<option key={c.id} value={c.id}>
+								{c.full_name}
+								{c.relationship
+									? ` (${c.relationship})`
+									: ""}
+							</option>
+						))}
+						<option value="__manual__">Custom values...</option>
+					</select>
+
+					{/* Editable fields for the override */}
+					<div className="mt-2 pl-3 border-l-2 border-warning/30 space-y-2">
+						{group.properties.map(
+							({ displayName, property }) => (
+								<div key={displayName}>
+									<label className="label pb-0.5">
+										<span className="label-text text-xs text-base-content/60">
+											{PROPERTY_LABELS[property] ??
+												property}
+										</span>
+									</label>
+									<input
+										type="text"
+										className="input input-bordered input-xs w-full"
+										placeholder={`Enter ${PROPERTY_LABELS[property] ?? property}`}
+										value={
+											variableValues[displayName] ?? ""
+										}
+										onChange={(e) =>
+											onManualChange(
+												displayName,
+												e.target.value,
+											)
+										}
+										onFocus={() => onSelect(displayName)}
+										onBlur={onDeselect}
+									/>
+								</div>
+							),
+						)}
+					</div>
+				</>
 			)}
 		</div>
 	);

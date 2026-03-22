@@ -69,6 +69,11 @@ interface WorkflowState {
 	clearContactBinding: (role: string) => Promise<void>;
 	/** Resolve all contact bindings into the variable pool. */
 	resolveContactBindings: () => Promise<void>;
+	/** Set or remove a per-document role override. */
+	setRoleOverride: (
+		role: string,
+		overrideData: import("@/types").RoleOverride | null,
+	) => Promise<void>;
 	/** Save a questionnaire note for a section. */
 	saveQuestionnaireNote: (
 		section: string,
@@ -273,6 +278,16 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 					savedVars[v.display_name] ?? defaultVal;
 			}
 
+			// Apply per-document role overrides (override questionnaire values)
+			const docMeta = lilyFile?.documents[filename];
+			if (docMeta?.role_overrides) {
+				for (const override of Object.values(docMeta.role_overrides)) {
+					for (const [varName, value] of Object.entries(override.values)) {
+						variableValues[varName] = value;
+					}
+				}
+			}
+
 			set({
 				documentPath: docPath,
 				templateRelPath,
@@ -315,6 +330,34 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				variables: variableValues,
 				conditionalDefinitions: lilyFile?.conditional_definitions ?? {},
 			});
+
+			// Update per-document role override values with current variableValues
+			const filename =
+				documentPath.split("/").pop() ??
+				documentPath.split("\\").pop() ??
+				"";
+			const docMeta = lilyFile?.documents[filename];
+			if (docMeta?.role_overrides && workingDir) {
+				for (const [role, override] of Object.entries(
+					docMeta.role_overrides,
+				)) {
+					const updatedValues = { ...override.values };
+					for (const varName of Object.keys(updatedValues)) {
+						if (variableValues[varName] !== undefined) {
+							updatedValues[varName] = variableValues[varName];
+						}
+					}
+					await invoke("set_role_override", {
+						workingDir,
+						filename,
+						role,
+						overrideData: {
+							contact_id: override.contact_id,
+							values: updatedValues,
+						},
+					});
+				}
+			}
 
 			// Reload .lily file to reflect updated variable values and timestamp
 			if (workingDir) {
@@ -539,6 +582,23 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		await invoke("save_contact_bindings", {
 			workingDir,
 			contactBindings: bindings,
+		});
+		await get().reloadLilyFile();
+	},
+
+	setRoleOverride: async (role, overrideData) => {
+		const { workingDir, documentPath } = get();
+		if (!workingDir || !documentPath) return;
+
+		const filename =
+			documentPath.split("/").pop() ??
+			documentPath.split("\\").pop() ??
+			"";
+		await invoke("set_role_override", {
+			workingDir,
+			filename,
+			role,
+			overrideData,
 		});
 		await get().reloadLilyFile();
 	},
