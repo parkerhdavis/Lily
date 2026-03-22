@@ -702,7 +702,7 @@ export default function VariableEditor() {
 						No variables match your search.
 					</p>
 				) : (
-				<div className="flex flex-col divide-y divide-base-200">
+				<div className="flex flex-col gap-2">
 					{(() => {
 						const renderedRoles = new Set<string>();
 						return filteredVariables.map((varInfo) => {
@@ -716,7 +716,7 @@ export default function VariableEditor() {
 								<div
 									key={name}
 									data-var-entry={name}
-									className="py-3 w-full"
+									className="p-3 w-full rounded-lg border border-base-300 bg-base-100"
 								>
 									<div className="flex items-center justify-between mb-1.5">
 										<span className="label-text text-sm font-medium">
@@ -889,7 +889,7 @@ export default function VariableEditor() {
 							<div
 								key={name}
 								data-var-entry={name}
-								className="py-3 w-full"
+								className="p-3 w-full rounded-lg border border-base-300 bg-base-100"
 							>
 								<div className="flex items-center justify-between mb-1">
 									<span className="label-text text-sm font-medium flex items-center gap-1.5">
@@ -1049,7 +1049,7 @@ function ContactRoleField({
 
 	return (
 		<div
-			className="py-3 w-full"
+			className="p-3 w-full rounded-lg border border-base-300 bg-base-100"
 			data-var-entry={group.properties[0]?.displayName}
 		>
 			{/* Role header */}
