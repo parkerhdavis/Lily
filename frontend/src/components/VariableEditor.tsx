@@ -185,6 +185,23 @@ export default function VariableEditor() {
 		return map;
 	}, [variables]);
 
+	// Build a map: variable name -> role name for contact-bound variables
+	const contactBoundVars = useMemo(() => {
+		const map: Record<string, string> = {};
+		for (const [role, binding] of Object.entries(
+			lilyFile?.contact_bindings ?? {},
+		)) {
+			if (binding.contact_id) {
+				for (const varName of Object.keys(
+					binding.variable_mappings,
+				)) {
+					map[varName] = role;
+				}
+			}
+		}
+		return map;
+	}, [lilyFile]);
+
 	// Focus the title input when entering edit mode
 	useEffect(() => {
 		if (editingTitle && titleInputRef.current) {
@@ -685,6 +702,7 @@ export default function VariableEditor() {
 						}
 
 						const isFilled = Boolean(variableValues[name]);
+						const boundRole = contactBoundVars[name];
 						return (
 							<div
 								key={name}
@@ -697,6 +715,14 @@ export default function VariableEditor() {
 											className={`inline-block size-2 shrink-0 rounded-full ${isFilled ? "bg-success" : "bg-error"}`}
 										/>
 										{name}
+										{boundRole && (
+											<span
+												className="text-xs text-primary/60 font-normal"
+												title={`Linked from ${boundRole}`}
+											>
+												&#128279; {boundRole}
+											</span>
+										)}
 									</span>
 									<div className="join">
 										<button
