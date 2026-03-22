@@ -184,7 +184,7 @@ export default function LilyHub() {
 							) && (
 								<button
 									type="button"
-									className="card bg-primary/10 border border-primary/20 shadow-sm hover:shadow-md transition-shadow text-left"
+									className="card bg-primary/10 border border-primary/20 shadow-sm hover:shadow-md hover:bg-primary/15 hover:border-primary/30 transition-all cursor-pointer text-left"
 									onClick={resumeLastSession}
 								>
 									<div className="card-body p-5 gap-2">
@@ -224,7 +224,7 @@ export default function LilyHub() {
 						{/* Pipeline card */}
 						<button
 							type="button"
-							className="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md transition-shadow text-left flex-1"
+							className="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md hover:bg-base-200/50 hover:border-base-content/20 transition-all cursor-pointer text-left flex-1"
 							onClick={goToPipeline}
 						>
 							<div className="card-body p-5 gap-2">
@@ -252,7 +252,7 @@ export default function LilyHub() {
 						{/* Settings card */}
 						<button
 							type="button"
-							className="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md transition-shadow text-left flex-1"
+							className="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md hover:bg-base-200/50 hover:border-base-content/20 transition-all cursor-pointer text-left flex-1"
 							onClick={goToSettings}
 						>
 							<div className="card-body p-5 gap-2">
