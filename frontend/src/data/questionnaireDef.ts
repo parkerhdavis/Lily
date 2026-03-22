@@ -166,12 +166,25 @@ export const questionnaireDef: QuestionnaireDef = [
 				role: "Financial POA Alternate Agent",
 				label: "Alternate Financial POA Agent",
 				variableMappings: {
-					"Financial POA Alternate Full Name": "full_name",
-					"Financial POA Alternate Phone": "phone",
-					"Financial POA Alternate Address": "address",
-					"Financial POA Alternate City": "city",
-					"Financial POA Alternate State": "state",
-					"Financial POA Alternate Zip": "zip",
+					"Financial POA Alternate Agent Full Name": "full_name",
+					"Financial POA Alternate Agent Phone": "phone",
+					"Financial POA Alternate Agent Address": "address",
+					"Financial POA Alternate Agent City": "city",
+					"Financial POA Alternate Agent State": "state",
+					"Financial POA Alternate Agent Zip": "zip",
+				},
+			},
+			{
+				kind: "contact-role",
+				role: "Financial POA Third Agent",
+				label: "Third Financial POA Agent",
+				variableMappings: {
+					"Financial POA Third Agent Full Name": "full_name",
+					"Financial POA Third Agent Phone": "phone",
+					"Financial POA Third Agent Address": "address",
+					"Financial POA Third Agent City": "city",
+					"Financial POA Third Agent State": "state",
+					"Financial POA Third Agent Zip": "zip",
 				},
 			},
 		],
@@ -206,6 +219,44 @@ export const questionnaireDef: QuestionnaireDef = [
 					"Alternate Personal Representative City": "city",
 					"Alternate Personal Representative State": "state",
 					"Alternate Personal Representative Zip": "zip",
+				},
+			},
+			{
+				kind: "contact-role",
+				role: "Third Personal Representative",
+				label: "Third Personal Representative",
+				variableMappings: {
+					"Third Personal Representative Full Name": "full_name",
+					"Third Personal Representative Phone": "phone",
+					"Third Personal Representative Address": "address",
+					"Third Personal Representative City": "city",
+					"Third Personal Representative State": "state",
+					"Third Personal Representative Zip": "zip",
+				},
+			},
+		],
+	},
+	{
+		title: "Guardians",
+		tab: "assignments",
+		description:
+			"Designate guardians for minor children. Only applies if the " +
+			"client has minor children.",
+		questions: [
+			{
+				kind: "contact-role",
+				role: "Guardian",
+				label: "Primary Guardian",
+				variableMappings: {
+					"Guardian Full Name": "full_name",
+				},
+			},
+			{
+				kind: "contact-role",
+				role: "Alternate Guardian",
+				label: "Alternate Guardian",
+				variableMappings: {
+					"Alternate Guardian Full Name": "full_name",
 				},
 			},
 		],
