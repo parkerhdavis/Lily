@@ -46,13 +46,13 @@ export default function StatusBar() {
 			: null;
 
 	return (
-		<footer className={`flex items-center justify-between px-2 border-t border-base-300 bg-base-100 text-base-content/60 shrink-0 select-none ${sizeClasses}`}>
+		<footer className={`flex items-center justify-between px-2 border-t border-[#1a1e24] shrink-0 select-none ${sizeClasses}`} style={{ backgroundColor: "#111418", color: "oklch(0.7 0 0)" }}>
 			{/* Left side */}
 			<div className="flex items-center gap-0.5">
 				{/* Settings */}
 				<button
 					type="button"
-					className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-base-200 hover:text-base-content transition-colors"
+					className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-white/10 hover:text-white/90 transition-colors"
 					onClick={goToSettings}
 					title="Settings"
 				>
@@ -75,7 +75,7 @@ export default function StatusBar() {
 				{folderPath && (
 					<button
 						type="button"
-						className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-base-200 hover:text-base-content transition-colors"
+						className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-white/10 hover:text-white/90 transition-colors"
 						onClick={() => openFolder(folderPath)}
 						title={folderLabel ?? "Open folder"}
 					>
@@ -94,8 +94,8 @@ export default function StatusBar() {
 				{/* Divider + context breadcrumb */}
 				{step !== "hub" && (
 					<>
-						<span className="mx-1 text-base-content/20">|</span>
-						<span className="text-base-content/40 truncate max-w-64">
+						<span className="mx-1 text-white/15">|</span>
+						<span className="text-white/40 truncate max-w-64">
 							{getStepLabel(step, workingDir)}
 						</span>
 					</>
@@ -107,7 +107,7 @@ export default function StatusBar() {
 				{/* Theme toggle */}
 				<button
 					type="button"
-					className="flex items-center px-1.5 py-0.5 rounded hover:bg-base-200 hover:text-base-content transition-colors"
+					className="flex items-center px-1.5 py-0.5 rounded hover:bg-white/10 hover:text-white/90 transition-colors"
 					onClick={toggleTheme}
 					title={
 						isDark ? "Switch to light mode" : "Switch to dark mode"
@@ -136,13 +136,13 @@ export default function StatusBar() {
 					)}
 				</button>
 
-				<span className="mx-1 text-base-content/20">|</span>
+				<span className="mx-1 text-white/15">|</span>
 
 				{/* Zoom controls */}
 				{zoom !== 100 && (
 					<button
 						type="button"
-						className="px-1.5 py-0.5 rounded hover:bg-base-200 hover:text-base-content transition-colors"
+						className="px-1.5 py-0.5 rounded hover:bg-white/10 hover:text-white/90 transition-colors"
 						onClick={zoomReset}
 						title="Reset zoom to 100%"
 					>
@@ -151,7 +151,7 @@ export default function StatusBar() {
 				)}
 				<button
 					type="button"
-					className="px-1 py-0.5 rounded hover:bg-base-200 hover:text-base-content transition-colors font-mono tabular-nums"
+					className="px-1 py-0.5 rounded hover:bg-white/10 hover:text-white/90 transition-colors font-mono tabular-nums"
 					onClick={zoomReset}
 					title="Reset zoom (Ctrl+0)"
 				>

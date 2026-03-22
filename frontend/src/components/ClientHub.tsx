@@ -143,7 +143,7 @@ export default function ClientHub() {
 					{/* Questionnaire card */}
 					<button
 						type="button"
-						className="w-full text-left p-5 rounded-xl border border-primary/30 bg-base-100 shadow-sm hover:shadow-md transition-shadow"
+						className="w-full text-left p-5 rounded-xl border-2 border-primary/40 bg-base-100 shadow-sm hover:shadow-md transition-shadow"
 						onClick={openQuestionnaire}
 					>
 						<div className="flex items-center gap-4">
