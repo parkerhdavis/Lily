@@ -33,6 +33,7 @@ export default function ContactPicker({
 		lilyFile,
 		saveClientVariable,
 		setContactBinding,
+		clearContactBinding,
 	} = useWorkflowStore();
 
 	const contacts = lilyFile?.contacts ?? [];
@@ -79,10 +80,7 @@ export default function ContactPicker({
 				onAddContact?.();
 			} else if (value === "") {
 				// No selection — remove binding entirely
-				await setContactBinding(question.role, {
-					contact_id: null,
-					variable_mappings: question.variableMappings,
-				});
+				await clearContactBinding(question.role);
 			} else {
 				// Selected a contact
 				await setContactBinding(question.role, {
@@ -91,7 +89,7 @@ export default function ContactPicker({
 				});
 			}
 		},
-		[question.role, question.variableMappings, setContactBinding, onAddContact],
+		[question.role, question.variableMappings, setContactBinding, clearContactBinding, onAddContact],
 	);
 
 	const handleManualBlur = useCallback(

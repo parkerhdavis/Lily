@@ -65,6 +65,8 @@ interface WorkflowState {
 		role: string,
 		binding: ContactBinding,
 	) => Promise<void>;
+	/** Clear a contact binding for a role (remove it entirely). */
+	clearContactBinding: (role: string) => Promise<void>;
 	/** Resolve all contact bindings into the variable pool. */
 	resolveContactBindings: () => Promise<void>;
 	/** Save a questionnaire note for a section. */
@@ -526,6 +528,19 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			}
 			set({ variableValues: merged, dirty: true });
 		}
+	},
+
+	clearContactBinding: async (role) => {
+		const { workingDir, lilyFile } = get();
+		if (!workingDir) return;
+
+		const bindings = { ...(lilyFile?.contact_bindings ?? {}) };
+		delete bindings[role];
+		await invoke("save_contact_bindings", {
+			workingDir,
+			contactBindings: bindings,
+		});
+		await get().reloadLilyFile();
 	},
 
 	resolveContactBindings: async () => {

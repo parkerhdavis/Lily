@@ -213,6 +213,7 @@ export default function VariableEditor() {
 		renameDocument,
 		saveDocument,
 		setContactBinding,
+		clearContactBinding,
 		returnToHub,
 	} = useWorkflowStore();
 
@@ -811,6 +812,21 @@ export default function VariableEditor() {
 											variable_mappings: mappings,
 										});
 									}}
+									onClear={async () => {
+										// Blank out variable values
+										for (const p of group.properties) {
+											handleVariableChange(p.displayName, "");
+										}
+										// Set binding with no contact and no "Other"
+										// by re-saving bindings without this role
+										const mappings: Record<string, string> = {};
+										for (const p of group.properties) {
+											mappings[p.displayName] = p.property;
+										}
+										// Use setContactBinding with a sentinel,
+										// then remove the binding
+										await clearContactBinding(group.role);
+									}}
 									onManualChange={(varName, value) => {
 										handleVariableChange(varName, value);
 									}}
@@ -923,6 +939,7 @@ function ContactRoleField({
 	bindings,
 	variableValues,
 	onSelectContact,
+	onClear,
 	onManualChange,
 	onSelect,
 	onDeselect,
@@ -933,6 +950,7 @@ function ContactRoleField({
 	bindings: Record<string, import("@/types").ContactBinding>;
 	variableValues: Record<string, string>;
 	onSelectContact: (contactId: string | null) => Promise<void>;
+	onClear: () => void;
 	onManualChange: (varName: string, value: string) => void;
 	onSelect: (varName: string) => void;
 	onDeselect: () => void;
@@ -1005,7 +1023,7 @@ function ContactRoleField({
 					if (val === "__other__") {
 						onSelectContact(null);
 					} else if (val === "") {
-						onSelectContact(null);
+						onClear();
 					} else {
 						onSelectContact(val);
 					}
