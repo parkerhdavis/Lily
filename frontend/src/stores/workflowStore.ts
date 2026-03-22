@@ -67,6 +67,12 @@ interface WorkflowState {
 	) => Promise<void>;
 	/** Resolve all contact bindings into the variable pool. */
 	resolveContactBindings: () => Promise<void>;
+	/** Save a questionnaire note for a section. */
+	saveQuestionnaireNote: (
+		section: string,
+		noteKind: "client" | "internal",
+		value: string,
+	) => Promise<void>;
 	/** Navigate to the interactive questionnaire view. */
 	openQuestionnaire: () => void;
 	/** Navigate to Add New Document (template selection). */
@@ -516,6 +522,31 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
 		await invoke("resolve_contact_variables", { workingDir });
 		await get().reloadLilyFile();
+	},
+
+	saveQuestionnaireNote: async (section, noteKind, value) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		await invoke("save_questionnaire_note", {
+			workingDir,
+			section,
+			noteKind,
+			value,
+		});
+		// Update local state without full reload
+		const { lilyFile } = get();
+		if (lilyFile) {
+			const notes = { ...(lilyFile.questionnaire_notes ?? {}) };
+			const sectionNotes = notes[section] ?? {
+				client: "",
+				internal: "",
+			};
+			notes[section] = { ...sectionNotes, [noteKind]: value };
+			set({
+				lilyFile: { ...lilyFile, questionnaire_notes: notes },
+			});
+		}
 	},
 
 	openQuestionnaire: () => {

@@ -30,10 +30,15 @@ export type QuestionDef =
 			variableMappings: Record<string, string>;
 	  };
 
-/** A section grouping related questions. */
+/** A section grouping related questions.
+ *
+ *  Sections with `kind: "contacts"` render an inline contact list instead
+ *  of iterating over `questions` (which should be empty for those sections). */
 export interface QuestionnaireSectionDef {
 	title: string;
 	description?: string;
+	/** Section kind. Defaults to `"standard"` if omitted. */
+	kind?: "standard" | "contacts";
 	questions: QuestionDef[];
 }
 

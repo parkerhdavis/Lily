@@ -67,6 +67,16 @@ export interface LilyFile {
 	contacts: Contact[];
 	/** Contact-to-role bindings, keyed by role name. */
 	contact_bindings: Record<string, ContactBinding>;
+	/** Questionnaire notes keyed by section title. */
+	questionnaire_notes: Record<string, SectionNotes>;
+}
+
+/** Notes attached to a questionnaire section. */
+export interface SectionNotes {
+	/** Notes from/for the client (visible in client-facing tools). */
+	client: string;
+	/** Internal notes for the legal team (not visible to clients). */
+	internal: string;
 }
 
 /** Info about a single logical variable, with case-variant grouping. */
