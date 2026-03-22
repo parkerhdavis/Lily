@@ -65,6 +65,35 @@ export default function Questionnaire() {
 		[saveQuestionnaireNote, showSaved],
 	);
 
+	// Wrap contact ops to trigger save indicator
+	const handleAddContact = useCallback(
+		async (contact: Omit<import("@/types").Contact, "id">) => {
+			setSaveStatus("saving");
+			const result = await addContact(contact);
+			showSaved();
+			return result;
+		},
+		[addContact, showSaved],
+	);
+
+	const handleUpdateContact = useCallback(
+		async (contact: import("@/types").Contact) => {
+			setSaveStatus("saving");
+			await updateContact(contact);
+			showSaved();
+		},
+		[updateContact, showSaved],
+	);
+
+	const handleDeleteContact = useCallback(
+		async (contactId: string) => {
+			setSaveStatus("saving");
+			await deleteContact(contactId);
+			showSaved();
+		},
+		[deleteContact, showSaved],
+	);
+
 	useEffect(() => {
 		return () => {
 			if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -348,9 +377,9 @@ export default function Questionnaire() {
 										{isContacts ? (
 											<InlineContactList
 												contacts={contacts}
-												onAdd={addContact}
-												onUpdate={updateContact}
-												onDelete={deleteContact}
+												onAdd={handleAddContact}
+												onUpdate={handleUpdateContact}
+												onDelete={handleDeleteContact}
 											/>
 										) : (
 											<div className="grid grid-cols-6 gap-x-3 gap-y-4">
@@ -448,11 +477,27 @@ function InlineContactList({
 	onDelete: (contactId: string) => Promise<void>;
 }) {
 	const [editingId, setEditingId] = useState<string | null>(null);
-	const [isAdding, setIsAdding] = useState(false);
+
+	const handleAdd = async () => {
+		// Immediately create an empty contact and open it for editing
+		const created = await onAdd({
+			full_name: "",
+			first_name: "",
+			last_name: "",
+			relationship: "",
+			phone: "",
+			email: "",
+			address: "",
+			city: "",
+			state: "",
+			zip: "",
+		});
+		setEditingId(created.id);
+	};
 
 	return (
 		<div className="space-y-3">
-			{contacts.length === 0 && !isAdding && (
+			{contacts.length === 0 && editingId === null && (
 				<p className="text-sm text-base-content/50">
 					No contacts added yet.
 				</p>
@@ -502,30 +547,19 @@ function InlineContactList({
 				),
 			)}
 
-			{isAdding ? (
-				<ContactEditForm
-					contactId={null}
-					onSave={async (contact) => {
-						const { id: _, ...rest } = contact;
-						await onAdd(rest);
-						setIsAdding(false);
-					}}
-					onCancel={() => setIsAdding(false)}
-				/>
-			) : (
-				<button
-					type="button"
-					className="btn btn-outline btn-sm w-full"
-					onClick={() => setIsAdding(true)}
-				>
-					+ Add Contact
-				</button>
-			)}
+			<button
+				type="button"
+				className="btn btn-outline btn-sm w-full"
+				onClick={handleAdd}
+			>
+				+ Add Contact
+			</button>
 		</div>
 	);
 }
 
-/** Inline form for adding/editing a contact with side-by-side fields. */
+/** Inline form for editing a contact with side-by-side fields.
+ *  Auto-saves each field on blur. */
 function ContactEditForm({
 	contactId,
 	onSave,
@@ -553,12 +587,26 @@ function ContactEditForm({
 		zip: existing?.zip ?? "",
 	});
 
+	// Track the last-saved snapshot to avoid redundant saves
+	const savedRef = useRef({ ...form });
+
 	const update = (key: string, value: string) =>
 		setForm((prev) => ({ ...prev, [key]: value }));
 
-	const handleSave = async () => {
-		await onSave({ id: contactId ?? "", ...form });
-	};
+	const handleFieldBlur = useCallback(async () => {
+		// Save if anything changed since last save
+		const current = form;
+		const saved = savedRef.current;
+		const changed = Object.keys(current).some(
+			(k) =>
+				current[k as keyof typeof current] !==
+				saved[k as keyof typeof saved],
+		);
+		if (changed) {
+			savedRef.current = { ...current };
+			await onSave({ id: contactId ?? "", ...current });
+		}
+	}, [form, contactId, onSave]);
 
 	const fields: {
 		key: string;
@@ -601,25 +649,18 @@ function ContactEditForm({
 							className="input input-bordered input-sm w-full"
 							value={form[key as keyof typeof form]}
 							onChange={(e) => update(key, e.target.value)}
+							onBlur={handleFieldBlur}
 						/>
 					</div>
 				))}
 			</div>
-			<div className="flex justify-end gap-2">
+			<div className="flex justify-end">
 				<button
 					type="button"
 					className="btn btn-ghost btn-xs"
 					onClick={onCancel}
 				>
-					Cancel
-				</button>
-				<button
-					type="button"
-					className="btn btn-primary btn-xs"
-					onClick={handleSave}
-					disabled={!form.full_name.trim()}
-				>
-					{contactId ? "Save" : "Add"}
+					Done
 				</button>
 			</div>
 		</div>

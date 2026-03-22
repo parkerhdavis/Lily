@@ -103,9 +103,15 @@ export default function ClientHub() {
 	// Compute questionnaire completion stats from the definition + variables
 	const questionnaireStats = useMemo(() => {
 		const vars = lilyFile?.variables ?? {};
+		const contactCount = lilyFile?.contacts?.length ?? 0;
 		let total = 0;
 		let filled = 0;
 		for (const section of questionnaireDef) {
+			if (section.kind === "contacts") {
+				total++;
+				if (contactCount > 0) filled++;
+				continue;
+			}
 			for (const q of section.questions) {
 				if (q.kind === "text") {
 					total++;
