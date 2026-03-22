@@ -5,10 +5,11 @@ import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 
 export default function AppSettings() {
-	const { settings, save } = useSettingsStore();
+	const { settings, save, zoomIn, zoomOut, zoomReset } = useSettingsStore();
 	const goToHub = useWorkflowStore((s) => s.goToHub);
 	const theme = settings.theme;
 	const isDark = theme === "dark";
+	const zoom = settings.zoom ?? 100;
 
 	const setTheme = (value: "light" | "dark") => {
 		document.documentElement.setAttribute("data-theme", value);
@@ -37,7 +38,7 @@ export default function AppSettings() {
 						<SectionHeading className="mb-4">
 							Appearance
 						</SectionHeading>
-						<div className="flex items-center justify-between p-4 rounded-xl border border-base-300">
+						<div className="flex items-center justify-between p-4 rounded-xl border border-base-300 bg-base-100">
 							<span className="text-sm font-medium">Theme</span>
 							<div className="flex rounded-lg overflow-hidden border border-base-300">
 								<button
@@ -66,12 +67,54 @@ export default function AppSettings() {
 						</div>
 					</section>
 
+					{/* Zoom */}
+					<section>
+						<SectionHeading className="mb-4">
+							Zoom
+						</SectionHeading>
+						<div className="flex items-center justify-between p-4 rounded-xl border border-base-300 bg-base-100">
+							<div>
+								<p className="text-sm font-medium">
+									Interface Scale
+								</p>
+								<p className="text-xs text-base-content/40 mt-0.5">
+									Ctrl+= / Ctrl+- / Ctrl+0
+								</p>
+							</div>
+							<div className="flex items-center gap-2">
+								<button
+									type="button"
+									className="btn btn-outline btn-xs btn-square"
+									onClick={zoomOut}
+									disabled={zoom <= 50}
+								>
+									-
+								</button>
+								<button
+									type="button"
+									className="btn btn-ghost btn-xs min-w-12"
+									onClick={zoomReset}
+								>
+									{zoom}%
+								</button>
+								<button
+									type="button"
+									className="btn btn-outline btn-xs btn-square"
+									onClick={zoomIn}
+									disabled={zoom >= 200}
+								>
+									+
+								</button>
+							</div>
+						</div>
+					</section>
+
 					{/* Workspace */}
 					<section>
 						<SectionHeading className="mb-4">
 							Workspace
 						</SectionHeading>
-						<div className="p-4 rounded-xl border border-base-300 space-y-3">
+						<div className="p-4 rounded-xl border border-base-300 bg-base-100 space-y-3">
 							<div>
 								<p className="text-sm font-medium mb-1">
 									Templates Folder
@@ -94,7 +137,7 @@ export default function AppSettings() {
 					{/* About */}
 					<section>
 						<SectionHeading className="mb-4">About</SectionHeading>
-						<div className="p-4 rounded-xl border border-base-300">
+						<div className="p-4 rounded-xl border border-base-300 bg-base-100">
 							<div className="flex items-center gap-3">
 								<img
 									src="/lily-icon-trans.png"

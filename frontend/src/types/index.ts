@@ -5,6 +5,7 @@ export interface AppSettings {
 	window_width: number | null;
 	window_height: number | null;
 	theme: string | null;
+	zoom: number | null;
 }
 
 export type WorkflowStep =

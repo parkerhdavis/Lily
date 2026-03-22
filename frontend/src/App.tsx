@@ -11,7 +11,7 @@ import PipelineHub from "@/components/PipelineHub";
 import ThemeToggle from "@/components/ThemeToggle";
 
 export default function App() {
-	const { loaded, load } = useSettingsStore();
+	const { loaded, load, zoomIn, zoomOut, zoomReset } = useSettingsStore();
 	const step = useWorkflowStore((s) => s.step);
 	const [splashDone, setSplashDone] = useState(false);
 	const [fadeOut, setFadeOut] = useState(false);
@@ -19,6 +19,25 @@ export default function App() {
 	useEffect(() => {
 		load();
 	}, [load]);
+
+	// Global zoom keyboard shortcuts: Ctrl+= / Ctrl+- / Ctrl+0
+	useEffect(() => {
+		const handleZoom = (e: KeyboardEvent) => {
+			if (!(e.ctrlKey || e.metaKey)) return;
+			if (e.key === "=" || e.key === "+") {
+				e.preventDefault();
+				zoomIn();
+			} else if (e.key === "-") {
+				e.preventDefault();
+				zoomOut();
+			} else if (e.key === "0") {
+				e.preventDefault();
+				zoomReset();
+			}
+		};
+		window.addEventListener("keydown", handleZoom);
+		return () => window.removeEventListener("keydown", handleZoom);
+	}, [zoomIn, zoomOut, zoomReset]);
 
 	// Splash: wait for settings to load + minimum display time, then fade out
 	useEffect(() => {
