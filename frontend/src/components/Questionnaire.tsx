@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
-import { questionnaireDef } from "@/data/questionnaireDef";
+import { questionnaireDef, questionnaireTabs } from "@/data/questionnaireDef";
 import ContactPicker from "@/components/ContactPicker";
 import type { QuestionDef } from "@/types/questionnaire";
 
@@ -9,6 +9,8 @@ function getFolderName(dirPath: string): string {
 	const segments = dirPath.replace(/\\/g, "/").split("/");
 	return segments[segments.length - 1] || dirPath;
 }
+
+type TabId = (typeof questionnaireTabs)[number]["id"];
 
 export default function Questionnaire() {
 	const {
@@ -26,6 +28,9 @@ export default function Questionnaire() {
 	const contacts = lilyFile?.contacts ?? [];
 	const notes = lilyFile?.questionnaire_notes ?? {};
 
+	// Tab state
+	const [activeTab, setActiveTab] = useState<TabId>("client-info");
+
 	// Save-state indicator
 	const [saveStatus, setSaveStatus] = useState<
 		"idle" | "saving" | "saved"
@@ -38,7 +43,6 @@ export default function Questionnaire() {
 		saveTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
 	}, []);
 
-	// Wrap saveClientVariable to trigger save indicator
 	const handleSaveVariable = useCallback(
 		async (name: string, value: string) => {
 			setSaveStatus("saving");
@@ -48,7 +52,6 @@ export default function Questionnaire() {
 		[saveClientVariable, showSaved],
 	);
 
-	// Wrap saveQuestionnaireNote to trigger save indicator
 	const handleSaveNote = useCallback(
 		async (
 			section: string,
@@ -62,32 +65,112 @@ export default function Questionnaire() {
 		[saveQuestionnaireNote, showSaved],
 	);
 
-	// Cleanup timer on unmount
 	useEffect(() => {
 		return () => {
 			if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 		};
 	}, []);
 
-	// Track which sections are collapsed
-	const [collapsedSections, setCollapsedSections] = useState<
-		Record<number, boolean>
-	>({});
+	// Sections for the active tab
+	const tabSections = useMemo(
+		() => questionnaireDef.filter((s) => s.tab === activeTab),
+		[activeTab],
+	);
 
-	const toggleSection = (idx: number) => {
+	// All sections start collapsed
+	const [collapsedSections, setCollapsedSections] = useState<
+		Record<string, boolean>
+	>(() => {
+		const init: Record<string, boolean> = {};
+		for (const s of questionnaireDef) {
+			init[s.title] = true;
+		}
+		return init;
+	});
+
+	const toggleSection = (title: string) => {
 		setCollapsedSections((prev) => ({
 			...prev,
-			[idx]: !prev[idx],
+			[title]: !prev[title],
 		}));
 	};
 
-	// Compute completion stats (text fields only)
+	const expandAll = () => {
+		setCollapsedSections((prev) => {
+			const next = { ...prev };
+			for (const s of tabSections) next[s.title] = false;
+			return next;
+		});
+	};
+
+	const collapseAll = () => {
+		setCollapsedSections((prev) => {
+			const next = { ...prev };
+			for (const s of tabSections) next[s.title] = true;
+			return next;
+		});
+	};
+
+	// Search
+	const [search, setSearch] = useState("");
+	const searchRef = useRef<HTMLInputElement>(null);
+
+	// Ctrl+F to focus search
+	useEffect(() => {
+		const handler = (e: KeyboardEvent) => {
+			if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+				e.preventDefault();
+				searchRef.current?.focus();
+			}
+		};
+		document.addEventListener("keydown", handler);
+		return () => document.removeEventListener("keydown", handler);
+	}, []);
+
+	// Filter sections by search query
+	const filteredSections = useMemo(() => {
+		const q = search.trim().toLowerCase();
+		if (!q) return tabSections;
+
+		const tokens = q.split(/\s+/);
+		return tabSections.filter((section) => {
+			// Match section title
+			if (
+				tokens.every((t) => section.title.toLowerCase().includes(t))
+			)
+				return true;
+			// Match question labels or variable names
+			return section.questions.some((question) => {
+				const label =
+					question.kind === "contact-role"
+						? question.label
+						: question.kind === "text"
+							? `${question.label} ${question.variable}`
+							: question.label;
+				return tokens.every((t) =>
+					label.toLowerCase().includes(t),
+				);
+			});
+		});
+	}, [tabSections, search]);
+
+	// Auto-expand sections that match search
+	useEffect(() => {
+		if (search.trim()) {
+			setCollapsedSections((prev) => {
+				const next = { ...prev };
+				for (const s of filteredSections) next[s.title] = false;
+				return next;
+			});
+		}
+	}, [filteredSections, search]);
+
+	// Completion stats
 	const stats = useMemo(() => {
 		let total = 0;
 		let filled = 0;
 		for (const section of questionnaireDef) {
 			if (section.kind === "contacts") {
-				// Count contacts as progress
 				total++;
 				if (contacts.length > 0) filled++;
 				continue;
@@ -102,15 +185,17 @@ export default function Questionnaire() {
 		return { total, filled };
 	}, [variables, contacts]);
 
-	// Per-section completion
+	// Per-section stats
 	const sectionStats = useMemo(() => {
-		return questionnaireDef.map((section) => {
+		const map: Record<string, { total: number; filled: number; label: string | null }> = {};
+		for (const section of questionnaireDef) {
 			if (section.kind === "contacts") {
-				return {
+				map[section.title] = {
 					total: 1,
 					filled: contacts.length > 0 ? 1 : 0,
 					label: `${contacts.length} contact${contacts.length !== 1 ? "s" : ""}`,
 				};
+				continue;
 			}
 			let total = 0;
 			let filled = 0;
@@ -120,11 +205,16 @@ export default function Questionnaire() {
 					if (variables[q.variable]?.trim()) filled++;
 				}
 			}
-			return { total, filled, label: null as string | null };
-		});
+			map[section.title] = { total, filled, label: null };
+		}
+		return map;
 	}, [variables, contacts]);
 
 	const folderName = workingDir ? getFolderName(workingDir) : "Client";
+
+	const allExpanded = tabSections.every(
+		(s) => !collapsedSections[s.title],
+	);
 
 	return (
 		<div className="flex flex-col h-screen">
@@ -145,7 +235,6 @@ export default function Questionnaire() {
 				<div className="text-sm text-base-content/60">
 					{stats.filled} / {stats.total} fields filled
 				</div>
-				{/* Save-state indicator */}
 				<div className="text-xs w-28 text-right">
 					{saveStatus === "saving" && (
 						<span className="text-warning flex items-center justify-end gap-1">
@@ -154,17 +243,65 @@ export default function Questionnaire() {
 						</span>
 					)}
 					{saveStatus === "saved" && (
-						<span className="text-success">All changes saved</span>
+						<span className="text-success">
+							All changes saved
+						</span>
 					)}
 				</div>
+			</div>
+
+			{/* Tab bar — sticky below header */}
+			<div className="sticky top-0 z-10 bg-base-100 border-b border-base-300">
+				<div className="flex">
+					{questionnaireTabs.map((tab) => (
+						<button
+							key={tab.id}
+							type="button"
+							className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+								activeTab === tab.id
+									? "border-primary text-primary"
+									: "border-transparent text-base-content/50 hover:text-base-content/80 hover:bg-base-200/50"
+							}`}
+							onClick={() => setActiveTab(tab.id)}
+						>
+							{tab.label}
+						</button>
+					))}
+				</div>
+			</div>
+
+			{/* Controls bar */}
+			<div className="flex items-center gap-2 px-6 py-2 bg-base-100 border-b border-base-200">
+				<input
+					ref={searchRef}
+					type="text"
+					className="input input-bordered input-xs flex-1 max-w-xs"
+					placeholder="Search fields... (Ctrl+F)"
+					value={search}
+					onChange={(e) => setSearch(e.target.value)}
+				/>
+				<button
+					type="button"
+					className="btn btn-ghost btn-xs"
+					onClick={allExpanded ? collapseAll : expandAll}
+				>
+					{allExpanded ? "Collapse All" : "Expand All"}
+				</button>
 			</div>
 
 			{/* Sections */}
 			<div className="flex-1 overflow-y-auto p-6">
 				<div className="max-w-2xl mx-auto flex flex-col gap-6">
-					{questionnaireDef.map((section, sIdx) => {
-						const collapsed = collapsedSections[sIdx] ?? false;
-						const ss = sectionStats[sIdx];
+					{filteredSections.length === 0 && search && (
+						<p className="text-sm text-base-content/50 text-center py-8">
+							No fields match your search.
+						</p>
+					)}
+
+					{filteredSections.map((section) => {
+						const collapsed =
+							collapsedSections[section.title] ?? true;
+						const ss = sectionStats[section.title];
 						const isContacts = section.kind === "contacts";
 
 						return (
@@ -172,11 +309,13 @@ export default function Questionnaire() {
 								key={section.title}
 								className="card bg-base-100 border border-base-300 shadow-sm"
 							>
-								{/* Section header — clickable to collapse */}
+								{/* Section header */}
 								<button
 									type="button"
 									className="flex items-center gap-3 p-4 w-full text-left hover:bg-base-200/50 transition-colors rounded-t-2xl"
-									onClick={() => toggleSection(sIdx)}
+									onClick={() =>
+										toggleSection(section.title)
+									}
 								>
 									<span
 										className={`transition-transform text-base-content/40 ${collapsed ? "" : "rotate-90"}`}
@@ -193,17 +332,19 @@ export default function Questionnaire() {
 											</p>
 										)}
 									</div>
-									<span className="text-xs text-base-content/40 shrink-0">
-										{ss.label ??
-											(ss.total > 0
-												? `${ss.filled} / ${ss.total}`
-												: "")}
-									</span>
+									{ss && (
+										<span className="text-xs text-base-content/40 shrink-0">
+											{ss.label ??
+												(ss.total > 0
+													? `${ss.filled} / ${ss.total}`
+													: "")}
+										</span>
+									)}
 								</button>
 
 								{/* Section body */}
 								{!collapsed && (
-									<div className="px-4 pb-4 flex flex-col gap-4 border-t border-base-200 pt-4">
+									<div className="px-4 pb-4 border-t border-base-200 pt-4">
 										{isContacts ? (
 											<InlineContactList
 												contacts={contacts}
@@ -212,31 +353,56 @@ export default function Questionnaire() {
 												onDelete={deleteContact}
 											/>
 										) : (
-											section.questions.map((q) => (
-												<QuestionField
-													key={
-														q.kind ===
-														"contact-role"
-															? q.role
-															: q.variable
-													}
-													question={q}
-													value={
-														q.kind ===
-														"contact-role"
-															? ""
-															: (variables[
-																	q.variable
-																] ?? "")
-													}
-													onSave={
-														handleSaveVariable
-													}
-												/>
-											))
+											<div className="grid grid-cols-6 gap-x-3 gap-y-4">
+												{section.questions.map(
+													(q) => {
+														const span =
+															q.kind ===
+																"text" &&
+															q.third
+																? "col-span-2"
+																: q.kind ===
+																		"text" &&
+																	q.half
+																	? "col-span-3"
+																	: "col-span-6";
+														return (
+															<div
+																key={
+																	q.kind ===
+																	"contact-role"
+																		? q.role
+																		: q.variable
+																}
+																className={
+																	span
+																}
+															>
+																<QuestionField
+																	question={
+																		q
+																	}
+																	value={
+																		q.kind ===
+																		"contact-role"
+																			? ""
+																			: (variables[
+																					q.variable
+																				] ??
+																				"")
+																	}
+																	onSave={
+																		handleSaveVariable
+																	}
+																/>
+															</div>
+														);
+													},
+												)}
+											</div>
 										)}
 
-										{/* Notes */}
+										{/* Notes (collapsible) */}
 										<SectionNotesFields
 											sectionTitle={section.title}
 											clientNotes={
@@ -260,7 +426,7 @@ export default function Questionnaire() {
 	);
 }
 
-// ─── Inline contact list for the "Client Contacts" section ──────────────────
+// ─── Inline contact list ────────────────────────────────────────────────────
 
 function InlineContactList({
 	contacts,
@@ -268,8 +434,16 @@ function InlineContactList({
 	onUpdate,
 	onDelete,
 }: {
-	contacts: { id: string; full_name: string; relationship: string; phone: string; email: string }[];
-	onAdd: (contact: Omit<import("@/types").Contact, "id">) => Promise<import("@/types").Contact>;
+	contacts: {
+		id: string;
+		full_name: string;
+		relationship: string;
+		phone: string;
+		email: string;
+	}[];
+	onAdd: (
+		contact: Omit<import("@/types").Contact, "id">,
+	) => Promise<import("@/types").Contact>;
 	onUpdate: (contact: import("@/types").Contact) => Promise<void>;
 	onDelete: (contactId: string) => Promise<void>;
 }) {
@@ -351,7 +525,7 @@ function InlineContactList({
 	);
 }
 
-/** Inline form for adding/editing a contact. */
+/** Inline form for adding/editing a contact with side-by-side fields. */
 function ContactEditForm({
 	contactId,
 	onSave,
@@ -386,33 +560,46 @@ function ContactEditForm({
 		await onSave({ id: contactId ?? "", ...form });
 	};
 
-	const fields: { key: string; label: string; span2?: boolean }[] = [
-		{ key: "full_name", label: "Full Name", span2: true },
-		{ key: "first_name", label: "First Name" },
-		{ key: "last_name", label: "Last Name" },
-		{ key: "relationship", label: "Relationship" },
-		{ key: "phone", label: "Phone" },
-		{ key: "email", label: "Email" },
-		{ key: "address", label: "Address", span2: true },
-		{ key: "city", label: "City" },
-		{ key: "state", label: "State" },
-		{ key: "zip", label: "ZIP" },
+	const fields: {
+		key: string;
+		label: string;
+		span: 6 | 3 | 2;
+	}[] = [
+		{ key: "first_name", label: "First Name", span: 3 },
+		{ key: "last_name", label: "Last Name", span: 3 },
+		{ key: "full_name", label: "Full Legal Name", span: 6 },
+		{ key: "relationship", label: "Relationship", span: 6 },
+		{ key: "phone", label: "Phone", span: 3 },
+		{ key: "email", label: "Email", span: 3 },
+		{ key: "address", label: "Address", span: 6 },
+		{ key: "city", label: "City", span: 2 },
+		{ key: "state", label: "State", span: 2 },
+		{ key: "zip", label: "ZIP", span: 2 },
 	];
 
 	return (
 		<div className="p-3 rounded-lg border border-primary/30 bg-primary/5 space-y-3">
-			<div className="grid grid-cols-2 gap-2">
-				{fields.map(({ key, label, span2 }) => (
-					<div key={key} className={span2 ? "col-span-2" : ""}>
+			<div className="grid grid-cols-6 gap-2">
+				{fields.map(({ key, label, span }) => (
+					<div
+						key={key}
+						className={
+							span === 6
+								? "col-span-6"
+								: span === 3
+									? "col-span-3"
+									: "col-span-2"
+						}
+					>
 						<label className="label pb-0.5">
-							<span className="label-text text-xs">{label}</span>
+							<span className="label-text text-xs">
+								{label}
+							</span>
 						</label>
 						<input
 							type="text"
 							className="input input-bordered input-sm w-full"
-							value={
-								form[key as keyof typeof form]
-							}
+							value={form[key as keyof typeof form]}
 							onChange={(e) => update(key, e.target.value)}
 						/>
 					</div>
@@ -439,7 +626,7 @@ function ContactEditForm({
 	);
 }
 
-// ─── Section notes ──────────────────────────────────────────────────────────
+// ─── Section notes (collapsible) ────────────────────────────────────────────
 
 function SectionNotesFields({
 	sectionTitle,
@@ -456,6 +643,9 @@ function SectionNotesFields({
 		value: string,
 	) => Promise<void>;
 }) {
+	const hasNotes = Boolean(clientNotes || internalNotes);
+	const [open, setOpen] = useState(hasNotes);
+
 	const [localClient, setLocalClient] = useState(clientNotes);
 	const [localInternal, setLocalInternal] = useState(internalNotes);
 
@@ -472,43 +662,72 @@ function SectionNotesFields({
 	}
 
 	return (
-		<div className="mt-2 pt-3 border-t border-base-200 space-y-3">
-			<div className="form-control w-full">
-				<label className="label pb-1">
-					<span className="label-text text-xs text-base-content/50">
-						Client Notes
-					</span>
-				</label>
-				<textarea
-					className="textarea textarea-bordered textarea-sm w-full min-h-16 text-sm"
-					placeholder="Notes from/for the client..."
-					value={localClient}
-					onChange={(e) => setLocalClient(e.target.value)}
-					onBlur={() => {
-						if (localClient !== clientNotes) {
-							onSave(sectionTitle, "client", localClient);
-						}
-					}}
-				/>
-			</div>
-			<div className="form-control w-full">
-				<label className="label pb-1">
-					<span className="label-text text-xs text-base-content/50">
-						Internal Notes
-					</span>
-				</label>
-				<textarea
-					className="textarea textarea-bordered textarea-sm w-full min-h-16 text-sm"
-					placeholder="Internal notes for the legal team..."
-					value={localInternal}
-					onChange={(e) => setLocalInternal(e.target.value)}
-					onBlur={() => {
-						if (localInternal !== internalNotes) {
-							onSave(sectionTitle, "internal", localInternal);
-						}
-					}}
-				/>
-			</div>
+		<div className="mt-3 pt-3 border-t border-base-200">
+			<button
+				type="button"
+				className="text-xs text-base-content/40 hover:text-base-content/60 transition-colors flex items-center gap-1"
+				onClick={() => setOpen(!open)}
+			>
+				<span
+					className={`transition-transform ${open ? "rotate-90" : ""}`}
+				>
+					&#9654;
+				</span>
+				Notes
+				{hasNotes && (
+					<span className="inline-block size-1.5 rounded-full bg-primary/50" />
+				)}
+			</button>
+			{open && (
+				<div className="mt-2 space-y-3">
+					<div className="form-control w-full">
+						<label className="label pb-1">
+							<span className="label-text text-xs text-base-content/50">
+								Client Notes
+							</span>
+						</label>
+						<textarea
+							className="textarea textarea-bordered textarea-sm w-full min-h-16 text-sm"
+							placeholder="Notes from/for the client..."
+							value={localClient}
+							onChange={(e) => setLocalClient(e.target.value)}
+							onBlur={() => {
+								if (localClient !== clientNotes) {
+									onSave(
+										sectionTitle,
+										"client",
+										localClient,
+									);
+								}
+							}}
+						/>
+					</div>
+					<div className="form-control w-full">
+						<label className="label pb-1">
+							<span className="label-text text-xs text-base-content/50">
+								Internal Notes
+							</span>
+						</label>
+						<textarea
+							className="textarea textarea-bordered textarea-sm w-full min-h-16 text-sm"
+							placeholder="Internal notes for the legal team..."
+							value={localInternal}
+							onChange={(e) =>
+								setLocalInternal(e.target.value)
+							}
+							onBlur={() => {
+								if (localInternal !== internalNotes) {
+									onSave(
+										sectionTitle,
+										"internal",
+										localInternal,
+									);
+								}
+							}}
+						/>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
@@ -557,7 +776,6 @@ function TextQuestion({
 }) {
 	const [localValue, setLocalValue] = useState(value);
 
-	// Sync from parent when the prop changes (e.g., after reload)
 	const [prevValue, setPrevValue] = useState(value);
 	if (value !== prevValue) {
 		setPrevValue(value);

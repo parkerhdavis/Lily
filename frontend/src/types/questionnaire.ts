@@ -8,6 +8,10 @@ export type QuestionDef =
 			label: string;
 			/** Optional placeholder text. */
 			placeholder?: string;
+			/** If true, this field takes half width (for side-by-side layouts). */
+			half?: boolean;
+			/** If set, this field takes 1/3 width. */
+			third?: boolean;
 	  }
 	| {
 			kind: "conditional";
@@ -39,6 +43,8 @@ export interface QuestionnaireSectionDef {
 	description?: string;
 	/** Section kind. Defaults to `"standard"` if omitted. */
 	kind?: "standard" | "contacts";
+	/** Which tab this section belongs to. */
+	tab: "client-info" | "contacts" | "assignments";
 	questions: QuestionDef[];
 }
 
