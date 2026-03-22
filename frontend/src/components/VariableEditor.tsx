@@ -136,7 +136,11 @@ function resolveNestedVariables(
 ): string {
 	return text.replace(/\{([^}]+)\}/g, (_match, innerName: string) => {
 		const trimmed = innerName.trim();
-		const canonical = trimmed.toLowerCase();
+		// Map contact-role dot notation to flat canonical key
+		const parsed = parseContactRoleVariant(trimmed);
+		const canonical = parsed
+			? `${parsed.role} ${PROPERTY_LABELS[parsed.property] ?? parsed.property}`.toLowerCase()
+			: trimmed.toLowerCase();
 		const displayName = canonicalToDisplay[canonical];
 		if (!displayName) return _match;
 		const value = variableValues[displayName] ?? "";
