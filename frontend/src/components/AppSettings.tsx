@@ -1,0 +1,120 @@
+import { open } from "@tauri-apps/plugin-dialog";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useWorkflowStore } from "@/stores/workflowStore";
+import PageHeader from "@/components/ui/PageHeader";
+import SectionHeading from "@/components/ui/SectionHeading";
+
+export default function AppSettings() {
+	const { settings, save } = useSettingsStore();
+	const goToHub = useWorkflowStore((s) => s.goToHub);
+	const theme = settings.theme;
+	const isDark = theme === "dark";
+
+	const setTheme = (value: "light" | "dark") => {
+		document.documentElement.setAttribute("data-theme", value);
+		save({ theme: value });
+	};
+
+	const pickTemplatesDir = async () => {
+		const selected = await open({
+			directory: true,
+			title: "Select Templates Folder",
+			defaultPath: settings.templates_dir ?? undefined,
+		});
+		if (selected) {
+			save({ templates_dir: selected });
+		}
+	};
+
+	return (
+		<div className="flex flex-col h-screen">
+			<PageHeader title="Settings" onBack={goToHub} />
+
+			<div className="flex-1 overflow-y-auto p-8">
+				<div className="max-w-lg mx-auto space-y-8">
+					{/* Appearance */}
+					<section>
+						<SectionHeading className="mb-4">
+							Appearance
+						</SectionHeading>
+						<div className="flex items-center justify-between p-4 rounded-xl border border-base-300">
+							<span className="text-sm font-medium">Theme</span>
+							<div className="flex rounded-lg overflow-hidden border border-base-300">
+								<button
+									type="button"
+									className={`px-4 py-1.5 text-xs font-semibold transition-colors ${
+										!isDark
+											? "bg-primary text-primary-content"
+											: "bg-base-200 text-base-content/40 hover:bg-base-300"
+									}`}
+									onClick={() => setTheme("light")}
+								>
+									Light
+								</button>
+								<button
+									type="button"
+									className={`px-4 py-1.5 text-xs font-semibold transition-colors ${
+										isDark
+											? "bg-primary text-primary-content"
+											: "bg-base-200 text-base-content/40 hover:bg-base-300"
+									}`}
+									onClick={() => setTheme("dark")}
+								>
+									Dark
+								</button>
+							</div>
+						</div>
+					</section>
+
+					{/* Workspace */}
+					<section>
+						<SectionHeading className="mb-4">
+							Workspace
+						</SectionHeading>
+						<div className="p-4 rounded-xl border border-base-300 space-y-3">
+							<div>
+								<p className="text-sm font-medium mb-1">
+									Templates Folder
+								</p>
+								<p className="text-xs text-base-content/40 font-mono break-all">
+									{settings.templates_dir ?? "Not configured"}
+								</p>
+							</div>
+							<button
+								type="button"
+								className="btn btn-outline btn-sm"
+								onClick={pickTemplatesDir}
+							>
+								{settings.templates_dir ? "Change" : "Set"}{" "}
+								Templates Folder
+							</button>
+						</div>
+					</section>
+
+					{/* About */}
+					<section>
+						<SectionHeading className="mb-4">About</SectionHeading>
+						<div className="p-4 rounded-xl border border-base-300">
+							<div className="flex items-center gap-3">
+								<img
+									src="/lily-icon-trans.png"
+									alt=""
+									className="size-8 opacity-60"
+								/>
+								<div>
+									<p className="text-sm font-semibold">
+										Lily
+									</p>
+									<p className="text-xs text-base-content/40">
+										Document preparation for Carelaw
+										Colorado
+									</p>
+								</div>
+							</div>
+						</div>
+					</section>
+				</div>
+			</div>
+		</div>
+	);
+}

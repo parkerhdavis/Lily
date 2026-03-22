@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import AppSwitcher from "@/components/ui/AppSwitcher";
 
 interface PageHeaderProps {
 	title: string;
@@ -6,11 +7,14 @@ interface PageHeaderProps {
 	onBack?: () => void;
 	backLabel?: string;
 	children?: ReactNode;
+	/** Show the app switcher in the header. Defaults to true. */
+	showAppSwitcher?: boolean;
 }
 
 /**
  * Consistent header bar used across all workflow screens.
- * Provides back navigation, title/subtitle, and a slot for right-side actions.
+ * Provides back navigation, title/subtitle, a slot for right-side actions,
+ * and the app switcher for branch navigation.
  */
 export default function PageHeader({
 	title,
@@ -18,6 +22,7 @@ export default function PageHeader({
 	onBack,
 	backLabel = "Back",
 	children,
+	showAppSwitcher = true,
 }: PageHeaderProps) {
 	return (
 		<header className="flex items-center gap-4 px-5 py-3 border-b border-base-300 bg-base-200/80">
@@ -56,6 +61,7 @@ export default function PageHeader({
 					{children}
 				</div>
 			)}
+			{showAppSwitcher && <AppSwitcher />}
 		</header>
 	);
 }

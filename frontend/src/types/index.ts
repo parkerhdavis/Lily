@@ -8,11 +8,13 @@ export interface AppSettings {
 }
 
 export type WorkflowStep =
-	| "select-directory"
+	| "hub"
 	| "client-hub"
 	| "questionnaire"
 	| "select-template"
-	| "edit-variables";
+	| "edit-variables"
+	| "app-settings"
+	| "pipeline";
 
 /** A per-document override for a contact role. */
 export interface RoleOverride {

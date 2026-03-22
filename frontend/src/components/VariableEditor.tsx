@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
-import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import StatusDot from "@/components/ui/StatusDot";
+import AppSwitcher from "@/components/ui/AppSwitcher";
 import type { VariableInfo, Contact } from "@/types";
 
 /**
@@ -678,6 +678,7 @@ export default function VariableEditor() {
 							"Save"
 						)}
 					</button>
+					<AppSwitcher />
 				</div>
 			</header>
 
