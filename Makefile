@@ -62,7 +62,7 @@ help:
 	@echo ""
 	@echo "Running (Development):"
 	@echo "  dev                - Start Tauri dev server (frontend + Rust hot-reload)"
-	@echo "  dev-frontend       - Start Vite dev server only (rapid UI iteration)"
+	@echo "  dev-frontend       - Start Bun dev server only (rapid UI iteration)"
 	@echo "  down               - Stop any running dev server"
 	@echo ""
 	@echo "Building:"
@@ -101,7 +101,7 @@ dev:
 	cd backend; $(TAURI) dev
 
 dev-frontend:
-	@echo "Starting Vite dev server only (rapid UI iteration)..."
+	@echo "Starting Bun dev server only (rapid UI iteration)..."
 	cd frontend; $(BUN) run dev
 
 down:
@@ -110,33 +110,33 @@ down:
 else
 dev:
 	@echo "Starting Tauri development server (frontend + Rust)..."
-	@# Kill any leftover Vite dev server on port 5173 (prevents cross-project conflicts)
+	@# Kill any leftover dev server on port 5173 (prevents cross-project conflicts)
 	@EXISTING_PID=$$(lsof -ti :5173 2>/dev/null); \
 	if [ -n "$$EXISTING_PID" ]; then \
 		echo "  -> Killing existing process on port 5173 (pid $$EXISTING_PID)..."; \
 		kill $$EXISTING_PID 2>/dev/null || true; \
 		sleep 1; \
 	fi
-	@echo "  -> Starting Vite dev server in background..."
-	@cd frontend && $(BUN) run dev > $(NULL) 2>&1 & echo $$! > .vite.pid
+	@echo "  -> Starting Bun dev server in background..."
+	@cd frontend && $(BUN) run dev > $(NULL) 2>&1 & echo $$! > .dev.pid
 	@sleep 2
 	@echo "  -> Starting Tauri..."
 	@cd backend && $(TAURI) dev; \
-	VITE_PID=$$(cat ../.vite.pid 2>/dev/null); \
-	if [ -n "$$VITE_PID" ]; then \
-		kill $$VITE_PID 2>/dev/null || true; \
+	DEV_PID=$$(cat ../.dev.pid 2>/dev/null); \
+	if [ -n "$$DEV_PID" ]; then \
+		kill $$DEV_PID 2>/dev/null || true; \
 	fi; \
-	rm -f ../.vite.pid
+	rm -f ../.dev.pid
 
 down:
 	@echo "Stopping Lily dev server..."
-	@VITE_PID=$$(cat .vite.pid 2>/dev/null); \
-	if [ -n "$$VITE_PID" ]; then \
-		kill $$VITE_PID 2>/dev/null || true; \
-		rm -f .vite.pid; \
-		echo "  -> Killed Vite dev server (pid $$VITE_PID)"; \
+	@DEV_PID=$$(cat .dev.pid 2>/dev/null); \
+	if [ -n "$$DEV_PID" ]; then \
+		kill $$DEV_PID 2>/dev/null || true; \
+		rm -f .dev.pid; \
+		echo "  -> Killed Bun dev server (pid $$DEV_PID)"; \
 	else \
-		echo "  -> No .vite.pid found, checking port 5173..."; \
+		echo "  -> No .dev.pid found, checking port 5173..."; \
 		PORT_PID=$$(lsof -ti :5173 2>/dev/null); \
 		if [ -n "$$PORT_PID" ]; then \
 			kill $$PORT_PID 2>/dev/null || true; \
@@ -147,7 +147,7 @@ down:
 	fi
 
 dev-frontend:
-	@echo "Starting Vite dev server only (rapid UI iteration)..."
+	@echo "Starting Bun dev server only (rapid UI iteration)..."
 	@cd frontend && $(BUN) run dev
 endif
 
