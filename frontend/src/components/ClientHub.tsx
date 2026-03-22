@@ -4,6 +4,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { questionnaireDef } from "@/data/questionnaireDef";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
+import { useLilyIcon } from "@/hooks/useLilyIcon";
 
 /** Format an ISO date string to a readable local format. */
 function formatDate(iso: string): string {
@@ -54,6 +55,7 @@ export default function ClientHub() {
 		reset,
 	} = useWorkflowStore();
 	const { settings } = useSettingsStore();
+	const lilyIcon = useLilyIcon();
 
 	// Build client documents list from .lily file, sorted by modification date
 	const allDocs = useMemo(() => {
@@ -107,7 +109,7 @@ export default function ClientHub() {
 		return (
 			<div className="flex flex-col items-center justify-center h-full gap-3">
 				<img
-					src="/lily-icon-trans.png"
+					src={lilyIcon}
 					alt="Loading..."
 					className="size-12 animate-lily-spin"
 				/>
@@ -148,7 +150,7 @@ export default function ClientHub() {
 					>
 						<div className="flex items-center gap-4">
 							<img
-								src="/lily-icon-trans.png"
+								src={lilyIcon}
 								alt=""
 								className="size-9 opacity-60"
 							/>

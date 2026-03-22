@@ -3,10 +3,12 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
+import { useLilyIcon } from "@/hooks/useLilyIcon";
 
 export default function AppSettings() {
 	const { settings, save, zoomIn, zoomOut, zoomReset } = useSettingsStore();
 	const goToHub = useWorkflowStore((s) => s.goToHub);
+	const lilyIcon = useLilyIcon();
 	const theme = settings.theme;
 	const isDark = theme === "dark";
 	const zoom = settings.zoom ?? 100;
@@ -179,7 +181,7 @@ export default function AppSettings() {
 						<div className="p-4 rounded-xl border border-base-300 bg-base-100">
 							<div className="flex items-center gap-3">
 								<img
-									src="/lily-icon-trans.png"
+									src={lilyIcon}
 									alt=""
 									className="size-8 opacity-60"
 								/>

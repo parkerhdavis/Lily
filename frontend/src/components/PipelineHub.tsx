@@ -6,6 +6,7 @@ import { useWorkflowStore } from "@/stores/workflowStore";
 import type { TemplateTreeNode, VariableInfo } from "@/types";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
+import { useLilyIcon } from "@/hooks/useLilyIcon";
 
 // ─── Tree building (reused from TemplatePicker) ─────────────────────────────
 
@@ -563,10 +564,11 @@ function PlaceholderTab({
 	title: string;
 	description: string;
 }) {
+	const lilyIcon = useLilyIcon();
 	return (
 		<div className="flex flex-col items-center justify-center h-full gap-4 p-8">
 			<img
-				src="/lily-icon-trans.png"
+				src={lilyIcon}
 				alt=""
 				className="size-16 opacity-20"
 			/>

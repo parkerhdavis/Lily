@@ -3,10 +3,12 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import SectionHeading from "@/components/ui/SectionHeading";
 import AppSwitcher from "@/components/ui/AppSwitcher";
+import { useLilyIcon } from "@/hooks/useLilyIcon";
 
 export default function LilyHub() {
 	const { settings, save, addRecentDirectory, removeRecentDirectory } =
 		useSettingsStore();
+	const lilyIcon = useLilyIcon();
 	const { setWorkingDir, loadTemplates, goToSettings, goToPipeline } =
 		useWorkflowStore();
 
@@ -43,7 +45,7 @@ export default function LilyHub() {
 			{/* Header bar */}
 			<header className="flex items-center gap-4 px-6 py-4 border-b border-base-300 bg-base-100">
 				<img
-					src="/lily-icon-trans.png"
+					src={lilyIcon}
 					alt="Lily"
 					className="size-9 drop-shadow-sm"
 				/>

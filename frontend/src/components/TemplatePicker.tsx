@@ -5,6 +5,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import type { TemplateTreeNode, LilyFile } from "@/types";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
+import { useLilyIcon } from "@/hooks/useLilyIcon";
 
 // ─── Tree building ──────────────────────────────────────────────────────────
 
@@ -256,6 +257,7 @@ function TemplateTreeItem({
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export default function TemplatePicker() {
+	const lilyIcon = useLilyIcon();
 	const {
 		templates,
 		lilyFile,
@@ -330,7 +332,7 @@ export default function TemplatePicker() {
 		return (
 			<div className="flex flex-col items-center justify-center h-full gap-3">
 				<img
-					src="/lily-icon-trans.png"
+					src={lilyIcon}
 					alt="Loading..."
 					className="size-12 animate-lily-spin"
 				/>

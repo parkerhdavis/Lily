@@ -9,6 +9,7 @@ import Questionnaire from "@/components/Questionnaire";
 import AppSettings from "@/components/AppSettings";
 import PipelineHub from "@/components/PipelineHub";
 import StatusBar from "@/components/ui/StatusBar";
+import { useLilyIcon } from "@/hooks/useLilyIcon";
 
 export default function App() {
 	const { loaded, load, zoomIn, zoomOut, zoomReset } = useSettingsStore();
@@ -16,6 +17,7 @@ export default function App() {
 	const step = useWorkflowStore((s) => s.step);
 	const [splashDone, setSplashDone] = useState(false);
 	const [fadeOut, setFadeOut] = useState(false);
+	const lilyIcon = useLilyIcon();
 
 	useEffect(() => {
 		load();
@@ -57,7 +59,7 @@ export default function App() {
 				className={`flex flex-col items-center justify-center min-h-screen gap-3 transition-opacity duration-300 ${fadeOut ? "opacity-0" : "opacity-100"}`}
 			>
 				<img
-					src="/lily-icon-trans.png"
+					src={lilyIcon}
 					alt="Loading Lily..."
 					className="size-16 animate-lily-spin"
 				/>
