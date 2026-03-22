@@ -86,11 +86,18 @@ interface WorkflowState {
 	startAddDocument: () => void;
 	/** Return to the Client Hub, clearing document-specific state. */
 	returnToHub: () => void;
+	/** Navigate to the Lily Hub, preserving client state. */
+	goToHub: () => void;
+	/** Navigate to App Settings, preserving client state. */
+	goToSettings: () => void;
+	/** Navigate to Pipeline Management, preserving client state. */
+	goToPipeline: () => void;
+	/** Full reset: clear all client state and return to the Lily Hub. */
 	reset: () => void;
 }
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
-	step: "select-directory",
+	step: "hub",
 	workingDir: null,
 	documentPath: null,
 	documentHtml: "",
@@ -660,9 +667,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		get().reloadLilyFile();
 	},
 
+	goToHub: () => set({ step: "hub" }),
+	goToSettings: () => set({ step: "app-settings" }),
+	goToPipeline: () => set({ step: "pipeline" }),
+
 	reset: () =>
 		set({
-			step: "select-directory",
+			step: "hub",
 			workingDir: null,
 			documentPath: null,
 			documentHtml: "",

@@ -20,6 +20,12 @@ pub struct AppSettings {
     /// UI theme: "light" or "dark".
     #[serde(default)]
     pub theme: Option<String>,
+    /// UI zoom level as a percentage (100 = normal). Persisted across sessions.
+    #[serde(default)]
+    pub zoom: Option<u32>,
+    /// Status bar size: "small", "medium", or "large".
+    #[serde(default)]
+    pub footer_size: Option<String>,
 }
 
 fn settings_path() -> Result<PathBuf, String> {

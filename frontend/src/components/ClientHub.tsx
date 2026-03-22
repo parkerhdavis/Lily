@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { questionnaireDef } from "@/data/questionnaireDef";
-import ContactManager from "@/components/ContactManager";
+import PageHeader from "@/components/ui/PageHeader";
+import SectionHeading from "@/components/ui/SectionHeading";
 
 /** Format an ISO date string to a readable local format. */
 function formatDate(iso: string): string {
@@ -30,27 +31,6 @@ function getFolderName(dirPath: string): string {
 	return segments[segments.length - 1] || dirPath;
 }
 
-/**
- * Fuzzy-filter a list of [name, value] variable entries by a search query.
- * The query is split into whitespace-separated tokens. A variable matches
- * if every token appears (case-insensitive) in either the variable name
- * or its current value.
- */
-function fuzzyFilterEntries(
-	entries: [string, string][],
-	query: string,
-): [string, string][] {
-	const trimmed = query.trim().toLowerCase();
-	if (!trimmed) return entries;
-
-	const tokens = trimmed.split(/\s+/);
-	return entries.filter(([name, value]) => {
-		const lName = name.toLowerCase();
-		const lValue = value.toLowerCase();
-		return tokens.every((t) => lName.includes(t) || lValue.includes(t));
-	});
-}
-
 interface ClientDoc {
 	filename: string;
 	templateRelPath: string;
@@ -66,9 +46,6 @@ export default function ClientHub() {
 		openDocument,
 		startAddDocument,
 		openQuestionnaire,
-		saveClientVariable,
-		addClientVariable,
-		removeClientVariable,
 		deleteDocument,
 		newVersionDocument,
 		openTemplateFile,
@@ -77,12 +54,6 @@ export default function ClientHub() {
 		reset,
 	} = useWorkflowStore();
 	const { settings } = useSettingsStore();
-
-	const [newVarName, setNewVarName] = useState("");
-	const [addingVar, setAddingVar] = useState(false);
-	const [varSearch, setVarSearch] = useState("");
-	const [showContacts, setShowContacts] = useState(false);
-	const newVarInputRef = useRef<HTMLInputElement>(null);
 
 	// Build client documents list from .lily file, sorted by modification date
 	const allDocs = useMemo(() => {
@@ -122,59 +93,6 @@ export default function ClientHub() {
 		return { total, filled };
 	}, [lilyFile]);
 
-	// Build a set of conditional variable names from the .lily file
-	const conditionalVarNames = useMemo(() => {
-		return new Set(lilyFile?.conditional_variables ?? []);
-	}, [lilyFile]);
-
-	// Sort variables alphabetically for display
-	const sortedVariables = useMemo(() => {
-		if (!lilyFile?.variables) return [];
-		return Object.entries(lilyFile.variables).sort(([a], [b]) =>
-			a.localeCompare(b),
-		);
-	}, [lilyFile]);
-
-	// Apply fuzzy search filter
-	const filteredVariables = useMemo(
-		() => fuzzyFilterEntries(sortedVariables, varSearch),
-		[sortedVariables, varSearch],
-	);
-
-	const handleVariableBlur = (name: string, value: string) => {
-		const currentValue = lilyFile?.variables[name] ?? "";
-		if (value !== currentValue) {
-			saveClientVariable(name, value);
-		}
-	};
-
-	const handleAddVariable = async () => {
-		const trimmed = newVarName.trim();
-		if (!trimmed) return;
-
-		try {
-			await addClientVariable(trimmed);
-			setNewVarName("");
-			setAddingVar(false);
-		} catch (err) {
-			console.error("Failed to add variable:", err);
-		}
-	};
-
-	const handleAddVarKeyDown = (e: React.KeyboardEvent) => {
-		if (e.key === "Enter") {
-			handleAddVariable();
-		} else if (e.key === "Escape") {
-			setNewVarName("");
-			setAddingVar(false);
-		}
-	};
-
-	const handleStartAddVar = () => {
-		setAddingVar(true);
-		setTimeout(() => newVarInputRef.current?.focus(), 0);
-	};
-
 	const handleAddDocument = () => {
 		if (settings.templates_dir) {
 			loadTemplates(settings.templates_dir);
@@ -183,80 +101,72 @@ export default function ClientHub() {
 	};
 
 	const folderName = workingDir ? getFolderName(workingDir) : "Client";
+	const contactCount = lilyFile?.contacts?.length ?? 0;
 
 	if (loading) {
 		return (
-			<div className="flex items-center justify-center min-h-screen">
-				<span className="loading loading-spinner loading-lg" />
+			<div className="flex flex-col items-center justify-center h-full gap-3">
+				<img
+					src="/lily-icon-trans.png"
+					alt="Loading..."
+					className="size-12 animate-lily-spin"
+				/>
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex flex-col h-screen">
-			{/* Header */}
-			<div className="flex items-center gap-4 p-4 border-b border-base-300 bg-base-200">
+		<div className="flex flex-col h-full">
+			<PageHeader
+				title={folderName}
+				subtitle={workingDir ?? undefined}
+				onBack={reset}
+			>
 				<button
 					type="button"
-					className="btn btn-ghost btn-sm"
-					onClick={reset}
+					className="btn btn-primary btn-sm"
+					onClick={handleAddDocument}
 				>
-					&larr; Back
+					+ New Document
 				</button>
-				<div className="flex-1 min-w-0">
-					<h2 className="text-xl font-bold truncate">{folderName}</h2>
-					{workingDir && (
-						<p className="text-xs text-base-content/40 truncate">
-							{workingDir}
-						</p>
-					)}
-				</div>
-			</div>
+			</PageHeader>
 
 			{error && (
-				<div className="alert alert-error m-2">
+				<div className="alert alert-error m-4">
 					<span>{error}</span>
 				</div>
 			)}
 
-			{/* Two-panel layout: documents (main) + variables (sidebar) */}
-			<div className="flex flex-1 overflow-hidden">
-				{/* Main panel: Documents */}
-				<div className="flex-1 overflow-y-auto p-4 border-r border-base-300">
-					<div className="flex items-center justify-between mb-4">
-						<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50">
-							Documents
-						</h3>
-						<button
-							type="button"
-							className="btn btn-primary btn-xs"
-							onClick={handleAddDocument}
-						>
-							+ New Document
-						</button>
-					</div>
-
+			{/* Main content area — full width, padded */}
+			<div className="flex-1 overflow-y-auto p-6">
+				<div className="max-w-3xl mx-auto space-y-6">
 					{/* Questionnaire card */}
 					<button
 						type="button"
-						className="w-full text-left p-4 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors mb-4"
+						className="w-full text-left p-5 rounded-xl border-2 border-primary/40 bg-base-100 shadow-sm hover:shadow-md transition-shadow"
 						onClick={openQuestionnaire}
 					>
-						<div className="flex items-center gap-3">
-							<div className="text-2xl">&#128203;</div>
+						<div className="flex items-center gap-4">
+							<img
+								src="/lily-icon-trans.png"
+								alt=""
+								className="size-9 opacity-60"
+							/>
 							<div className="flex-1 min-w-0">
-								<div className="font-semibold">
+								<div className="font-semibold text-base">
 									Client Questionnaire
 								</div>
-								<div className="text-xs text-base-content/50 mt-0.5">
+								<div className="text-sm text-base-content/50 mt-0.5">
 									{questionnaireStats.total > 0
 										? `${questionnaireStats.filled} of ${questionnaireStats.total} fields filled`
 										: "Fill out client information"}
+									{contactCount > 0 &&
+										` \u00B7 ${contactCount} contact${contactCount !== 1 ? "s" : ""}`}
 								</div>
 							</div>
 							{questionnaireStats.total > 0 && (
 								<div
-									className="radial-progress text-primary text-xs"
+									className="radial-progress text-primary text-sm"
 									style={
 										{
 											"--value":
@@ -267,166 +177,54 @@ export default function ClientHub() {
 																100,
 														)
 													: 0,
-											"--size": "2.5rem",
+											"--size": "3rem",
 											"--thickness": "3px",
 										} as React.CSSProperties
 									}
 									role="progressbar"
 								>
-									{questionnaireStats.filled}/{questionnaireStats.total}
+									{questionnaireStats.filled}/
+									{questionnaireStats.total}
 								</div>
 							)}
 						</div>
 					</button>
 
-					{/* Documents list */}
-					{allDocs.length === 0 ? (
-						<div className="text-sm text-base-content/50 space-y-3">
-							<p>No documents in this folder yet.</p>
-							<button
-								type="button"
-								className="btn btn-primary btn-sm"
-								onClick={handleAddDocument}
-							>
-								Add New Document
-							</button>
-						</div>
-					) : (
-						<div className="flex flex-col gap-1">
-							{allDocs.map((doc) => (
-								<DocumentRow
-									key={doc.filename}
-									doc={doc}
-									onOpen={openDocument}
-									onDelete={deleteDocument}
-									onNewVersion={newVersionDocument}
-									onOpenTemplate={openTemplateFile}
-									onReload={reloadLilyFile}
-								/>
-							))}
-						</div>
-					)}
-				</div>
+					{/* Documents section */}
+					<div>
+						<SectionHeading className="mb-3">
+							Documents
+						</SectionHeading>
 
-				{/* Right sidebar */}
-				<div className="w-80 shrink-0 overflow-y-auto bg-base-100">
-					{showContacts ? (
-						<ContactManager
-							onClose={() => setShowContacts(false)}
-						/>
-					) : (
-						<div className="p-4">
-							{/* Contacts button */}
-							<button
-								type="button"
-								className="btn btn-outline btn-sm w-full mb-4"
-								onClick={() => setShowContacts(true)}
-							>
-								Manage Contacts
-								{(lilyFile?.contacts?.length ?? 0) > 0 && (
-									<span className="badge badge-sm badge-neutral ml-1">
-										{lilyFile?.contacts?.length}
-									</span>
-								)}
-							</button>
-
-							<div className="flex items-center justify-between mb-3">
-								<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50">
-									Client Variables
-								</h3>
+						{allDocs.length === 0 ? (
+							<div className="rounded-xl border border-base-300 bg-base-100 p-8 text-center text-base-content/50">
+								<p className="text-base">
+									No documents in this folder yet.
+								</p>
 								<button
 									type="button"
-									className="btn btn-ghost btn-xs"
-									onClick={handleStartAddVar}
+									className="btn btn-primary btn-sm mt-4"
+									onClick={handleAddDocument}
 								>
-									+ Add
+									Add New Document
 								</button>
 							</div>
-
-							{sortedVariables.length > 0 && (
-								<div className="pb-3 mb-3 border-b border-base-300">
-									<input
-										type="text"
-										className="input input-bordered input-sm w-full"
-										placeholder="Search variables..."
-										value={varSearch}
-										onChange={(e) =>
-											setVarSearch(e.target.value)
-										}
+						) : (
+							<div className="rounded-xl border border-base-300 bg-base-100 shadow-sm divide-y divide-base-200 overflow-hidden">
+								{allDocs.map((doc) => (
+									<DocumentRow
+										key={doc.filename}
+										doc={doc}
+										onOpen={openDocument}
+										onDelete={deleteDocument}
+										onNewVersion={newVersionDocument}
+										onOpenTemplate={openTemplateFile}
+										onReload={reloadLilyFile}
 									/>
-								</div>
-							)}
-
-							{sortedVariables.length === 0 && !addingVar ? (
-								<div className="text-sm text-base-content/50 space-y-2">
-									<p>No variables defined yet.</p>
-									<p>
-										Add a document to automatically populate
-										variables, or add them manually.
-									</p>
-								</div>
-							) : filteredVariables.length === 0 && varSearch ? (
-								<p className="text-sm text-base-content/50">
-									No variables match your search.
-								</p>
-							) : (
-								<div className="flex flex-col divide-y divide-base-200">
-									{filteredVariables.map(([name, value]) => (
-										<VariableField
-											key={name}
-											name={name}
-											value={value}
-											isConditional={conditionalVarNames.has(
-												name,
-											)}
-											onBlur={handleVariableBlur}
-											onRemove={removeClientVariable}
-										/>
-									))}
-								</div>
-							)}
-
-							{/* Add variable inline form */}
-							{addingVar && (
-								<div className="mt-3 flex gap-2">
-									<input
-										ref={newVarInputRef}
-										type="text"
-										className="input input-bordered input-sm flex-1"
-										placeholder="Variable Name"
-										value={newVarName}
-										onChange={(e) =>
-											setNewVarName(e.target.value)
-										}
-										onKeyDown={handleAddVarKeyDown}
-										onBlur={() => {
-											if (!newVarName.trim()) {
-												setAddingVar(false);
-											}
-										}}
-									/>
-									<button
-										type="button"
-										className="btn btn-primary btn-sm"
-										onClick={handleAddVariable}
-										disabled={!newVarName.trim()}
-									>
-										Add
-									</button>
-									<button
-										type="button"
-										className="btn btn-ghost btn-sm"
-										onClick={() => {
-											setNewVarName("");
-											setAddingVar(false);
-										}}
-									>
-										Cancel
-									</button>
-								</div>
-							)}
-						</div>
-					)}
+								))}
+							</div>
+						)}
+					</div>
 				</div>
 			</div>
 		</div>
@@ -517,15 +315,15 @@ function DocumentRow({
 		<>
 			<button
 				type="button"
-				className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal"
+				className="w-full text-left px-5 py-4 hover:bg-base-200/60 transition-colors"
 				onClick={() => onOpen(doc.filename, doc.templateRelPath)}
 				onContextMenu={handleContextMenu}
 			>
-				<div className="flex flex-col items-start gap-0.5 min-w-0">
-					<span className="font-medium truncate w-full">
+				<div className="flex flex-col gap-0.5">
+					<span className="font-medium text-base">
 						{stripDocx(doc.filename)}
 					</span>
-					<span className="text-xs text-base-content/40 truncate w-full">
+					<span className="text-sm text-base-content/40">
 						from{" "}
 						{stripDocx(
 							doc.templateRelPath.split("/").pop() ??
@@ -541,7 +339,7 @@ function DocumentRow({
 			{menuPos && (
 				<div
 					ref={menuRef}
-					className="fixed z-50 menu bg-base-200 rounded-box shadow-lg border border-base-300 w-48 p-1"
+					className="fixed z-50 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-1"
 					style={{ left: menuPos.x, top: menuPos.y }}
 				>
 					<li>
@@ -615,101 +413,5 @@ function DocumentRow({
 				</dialog>
 			)}
 		</>
-	);
-}
-
-function VariableField({
-	name,
-	value,
-	isConditional,
-	onBlur,
-	onRemove,
-}: {
-	name: string;
-	value: string;
-	isConditional: boolean;
-	onBlur: (name: string, value: string) => void;
-	onRemove: (name: string) => void;
-}) {
-	const [localValue, setLocalValue] = useState(value);
-
-	if (isConditional) {
-		const isTrue = localValue === "true";
-		return (
-			<div className="py-3 w-full group">
-				<div className="flex items-center justify-between mb-1.5">
-					<span className="label-text text-sm font-medium">
-						{name}
-					</span>
-					<button
-						type="button"
-						className="btn btn-ghost btn-xs opacity-0 group-hover:opacity-50 hover:!opacity-100 text-error"
-						onClick={() => onRemove(name)}
-						title={`Remove ${name}`}
-					>
-						&times;
-					</button>
-				</div>
-				<div className="flex rounded-lg overflow-hidden border border-base-300">
-					<button
-						type="button"
-						className={`flex-1 text-xs font-semibold py-1.5 transition-colors ${
-							isTrue
-								? "bg-success text-success-content"
-								: "bg-base-200 text-base-content/40 hover:bg-base-300"
-						}`}
-						onClick={() => {
-							setLocalValue("true");
-							onBlur(name, "true");
-						}}
-					>
-						True
-					</button>
-					<button
-						type="button"
-						className={`flex-1 text-xs font-semibold py-1.5 transition-colors ${
-							!isTrue
-								? "bg-error text-error-content"
-								: "bg-base-200 text-base-content/40 hover:bg-base-300"
-						}`}
-						onClick={() => {
-							setLocalValue("false");
-							onBlur(name, "false");
-						}}
-					>
-						False
-					</button>
-				</div>
-			</div>
-		);
-	}
-
-	return (
-		<div className="py-3 w-full group">
-			<div className="flex items-center justify-between mb-1">
-				<span className="label-text text-sm font-medium flex items-center gap-1.5">
-					<span
-						className={`inline-block size-2 shrink-0 rounded-full ${localValue ? "bg-success" : "bg-base-300"}`}
-					/>
-					{name}
-				</span>
-				<button
-					type="button"
-					className="btn btn-ghost btn-xs opacity-0 group-hover:opacity-50 hover:!opacity-100 text-error"
-					onClick={() => onRemove(name)}
-					title={`Remove ${name}`}
-				>
-					&times;
-				</button>
-			</div>
-			<input
-				type="text"
-				className="input input-bordered input-sm w-full"
-				placeholder={`Enter ${name}`}
-				value={localValue}
-				onChange={(e) => setLocalValue(e.target.value)}
-				onBlur={() => onBlur(name, localValue)}
-			/>
-		</div>
 	);
 }
