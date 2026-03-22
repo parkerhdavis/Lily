@@ -5,6 +5,7 @@ import DirectoryPicker from "@/components/DirectoryPicker";
 import ClientHub from "@/components/ClientHub";
 import TemplatePicker from "@/components/TemplatePicker";
 import VariableEditor from "@/components/VariableEditor";
+import Questionnaire from "@/components/Questionnaire";
 import ThemeToggle from "@/components/ThemeToggle";
 
 export default function App() {
@@ -29,6 +30,8 @@ export default function App() {
 				return <DirectoryPicker />;
 			case "client-hub":
 				return <ClientHub />;
+			case "questionnaire":
+				return <Questionnaire />;
 			case "select-template":
 				return <TemplatePicker />;
 			case "edit-variables":

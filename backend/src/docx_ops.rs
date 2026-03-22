@@ -1417,10 +1417,8 @@ fn is_conditional_variable(raw_content: &str) -> bool {
 /// (`"`) to left/right curly quotes (\u{201C} / \u{201D}).  This helper
 /// ensures the conditional parser accepts both forms.
 fn normalize_quotes(s: &str) -> String {
-    s.replace('\u{201C}', "\"")
-        .replace('\u{201D}', "\"")
-        .replace('\u{2018}', "'")
-        .replace('\u{2019}', "'")
+    s.replace(['\u{201C}', '\u{201D}'], "\"")
+        .replace(['\u{2018}', '\u{2019}'], "'")
 }
 
 /// Parse a conditional variable's raw content into (label, true_text, false_text).

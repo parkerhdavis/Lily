@@ -10,6 +10,7 @@ export interface AppSettings {
 export type WorkflowStep =
 	| "select-directory"
 	| "client-hub"
+	| "questionnaire"
 	| "select-template"
 	| "edit-variables";
 

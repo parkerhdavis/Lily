@@ -2,8 +2,6 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { WorkflowStep, LilyFile, VariableInfo } from "@/types";
 
-const QUESTIONNAIRE_FILENAME = "ClientQuestionnaire.docx";
-
 interface WorkflowState {
 	step: WorkflowStep;
 	workingDir: string | null;
@@ -50,6 +48,8 @@ interface WorkflowState {
 	openTemplateFile: (templateRelPath: string) => Promise<void>;
 	/** Reload the .lily file from disk into the store. */
 	reloadLilyFile: () => Promise<void>;
+	/** Navigate to the interactive questionnaire view. */
+	openQuestionnaire: () => void;
 	/** Navigate to Add New Document (template selection). */
 	startAddDocument: () => void;
 	/** Return to the Client Hub, clearing document-specific state. */
@@ -446,6 +446,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		} catch (err) {
 			console.error("Failed to reload .lily file:", err);
 		}
+	},
+
+	openQuestionnaire: () => {
+		set({ step: "questionnaire" });
 	},
 
 	startAddDocument: () => {

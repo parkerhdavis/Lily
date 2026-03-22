@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-
-const QUESTIONNAIRE_FILENAME = "ClientQuestionnaire.docx";
+import { questionnaireDef } from "@/data/questionnaireDef";
 
 /** Format an ISO date string to a readable local format. */
 function formatDate(iso: string): string {
@@ -65,6 +64,7 @@ export default function ClientHub() {
 		error,
 		openDocument,
 		startAddDocument,
+		openQuestionnaire,
 		saveClientVariable,
 		addClientVariable,
 		removeClientVariable,
@@ -98,21 +98,21 @@ export default function ClientHub() {
 			);
 	}, [lilyFile]);
 
-	// Separate the questionnaire from other documents
-	const questionnaireDocs = useMemo(
-		() =>
-			allDocs.filter(
-				(d) => d.templateRelPath === QUESTIONNAIRE_FILENAME,
-			),
-		[allDocs],
-	);
-	const otherDocs = useMemo(
-		() =>
-			allDocs.filter(
-				(d) => d.templateRelPath !== QUESTIONNAIRE_FILENAME,
-			),
-		[allDocs],
-	);
+	// Compute questionnaire completion stats from the definition + variables
+	const questionnaireStats = useMemo(() => {
+		const vars = lilyFile?.variables ?? {};
+		let total = 0;
+		let filled = 0;
+		for (const section of questionnaireDef) {
+			for (const q of section.questions) {
+				if (q.kind === "text") {
+					total++;
+					if (vars[q.variable]?.trim()) filled++;
+				}
+			}
+		}
+		return { total, filled };
+	}, [lilyFile]);
 
 	// Build a set of conditional variable names from the .lily file
 	const conditionalVarNames = useMemo(() => {
@@ -228,6 +228,50 @@ export default function ClientHub() {
 						</button>
 					</div>
 
+					{/* Questionnaire card */}
+					<button
+						type="button"
+						className="w-full text-left p-4 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors mb-4"
+						onClick={openQuestionnaire}
+					>
+						<div className="flex items-center gap-3">
+							<div className="text-2xl">&#128203;</div>
+							<div className="flex-1 min-w-0">
+								<div className="font-semibold">
+									Client Questionnaire
+								</div>
+								<div className="text-xs text-base-content/50 mt-0.5">
+									{questionnaireStats.total > 0
+										? `${questionnaireStats.filled} of ${questionnaireStats.total} fields filled`
+										: "Fill out client information"}
+								</div>
+							</div>
+							{questionnaireStats.total > 0 && (
+								<div
+									className="radial-progress text-primary text-xs"
+									style={
+										{
+											"--value":
+												questionnaireStats.total > 0
+													? Math.round(
+															(questionnaireStats.filled /
+																questionnaireStats.total) *
+																100,
+														)
+													: 0,
+											"--size": "2.5rem",
+											"--thickness": "3px",
+										} as React.CSSProperties
+									}
+									role="progressbar"
+								>
+									{questionnaireStats.filled}/{questionnaireStats.total}
+								</div>
+							)}
+						</div>
+					</button>
+
+					{/* Documents list */}
 					{allDocs.length === 0 ? (
 						<div className="text-sm text-base-content/50 space-y-3">
 							<p>No documents in this folder yet.</p>
@@ -241,35 +285,7 @@ export default function ClientHub() {
 						</div>
 					) : (
 						<div className="flex flex-col gap-1">
-							{/* Info Documents section (questionnaire) */}
-							{questionnaireDocs.length > 0 && (
-								<>
-									<div className="divider my-2 text-xs text-base-content/30">
-										Info Documents
-									</div>
-									{questionnaireDocs.map((doc) => (
-										<DocumentRow
-											key={doc.filename}
-											doc={doc}
-											onOpen={openDocument}
-											onDelete={deleteDocument}
-											onNewVersion={newVersionDocument}
-											onOpenTemplate={openTemplateFile}
-											onReload={reloadLilyFile}
-										/>
-									))}
-								</>
-							)}
-
-							{/* Legal Documents section */}
-							{otherDocs.length > 0 && (
-								<div className="divider my-2 text-xs text-base-content/30">
-									Legal Documents
-								</div>
-							)}
-
-							{/* Other documents */}
-							{otherDocs.map((doc) => (
+							{allDocs.map((doc) => (
 								<DocumentRow
 									key={doc.filename}
 									doc={doc}
