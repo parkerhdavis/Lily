@@ -12,6 +12,7 @@ import StatusBar from "@/components/ui/StatusBar";
 
 export default function App() {
 	const { loaded, load, zoomIn, zoomOut, zoomReset } = useSettingsStore();
+	const zoom = useSettingsStore((s) => s.settings.zoom) ?? 100;
 	const step = useWorkflowStore((s) => s.step);
 	const [splashDone, setSplashDone] = useState(false);
 	const [fadeOut, setFadeOut] = useState(false);
@@ -66,8 +67,6 @@ export default function App() {
 			</div>
 		);
 	}
-
-	const zoom = useSettingsStore((s) => s.settings.zoom) ?? 100;
 
 	const page = (() => {
 		switch (step) {
