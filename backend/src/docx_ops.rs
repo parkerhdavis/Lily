@@ -208,7 +208,14 @@ fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
                                         // variables found inside the true/false branches
                                         for branch in [&true_text, &false_text] {
                                             for nested in extract_nested_variables(branch) {
-                                                let nkey = nested.to_lowercase();
+                                                let nkey = if let Some((role, property)) =
+                                                    parse_contact_role_ref(&nested)
+                                                {
+                                                    contact_role_to_flat_name(&role, &property)
+                                                        .to_lowercase()
+                                                } else {
+                                                    nested.to_lowercase()
+                                                };
                                                 if !groups.contains_key(&nkey) {
                                                     keys_in_order.push(nkey.clone());
                                                 }
@@ -1580,8 +1587,12 @@ fn resolve_nested_variables(text: &str, variables: &HashMap<String, String>) -> 
             }
             if found_close && !inner.is_empty() && !inner.contains('{') {
                 let trimmed = inner.trim();
-                // Look up value by case-insensitive key
-                let key = trimmed.to_lowercase();
+                // Map contact-role dot notation to flat key if applicable
+                let key = if let Some((role, property)) = parse_contact_role_ref(trimmed) {
+                    contact_role_to_flat_name(&role, &property).to_lowercase()
+                } else {
+                    trimmed.to_lowercase()
+                };
                 let resolved = variables
                     .iter()
                     .find(|(k, _)| k.to_lowercase() == key)
@@ -3667,6 +3678,32 @@ mod tests {
             html.contains("data-variable=\"healthcare poa agent full name\""),
             "Expected flat canonical key in data-variable, got: {}",
             html
+        );
+    }
+
+    #[test]
+    fn test_resolve_nested_contact_role_dot_notation() {
+        let mut vars = HashMap::new();
+        vars.insert(
+            "Healthcare POA Alternate Agent Full Name".to_string(),
+            "Jane Doe".to_string(),
+        );
+        let text = "{Healthcare POA Alternate Agent.full_name}";
+        let result = resolve_nested_variables(text, &vars);
+        assert_eq!(result, "Jane Doe");
+    }
+
+    #[test]
+    fn test_find_nested_contact_role_in_conditional() {
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{Has Alt ?? "{Alt Agent.full_name}" :: ""}</w:t></w:r></w:p></w:body></w:document>"#;
+        let vars = find_all_variables(xml);
+        // Should find the conditional AND the nested contact-role variable
+        let names: Vec<&str> = vars.iter().map(|v| v.display_name.as_str()).collect();
+        assert!(names.contains(&"Has Alt"), "Expected 'Has Alt', got: {:?}", names);
+        assert!(
+            names.contains(&"Alt Agent Full Name"),
+            "Expected 'Alt Agent Full Name', got: {:?}",
+            names
         );
     }
 }
