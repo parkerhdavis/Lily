@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
-import type { VariableInfo } from "@/types";
+import type { VariableInfo, Contact } from "@/types";
 
 /**
  * Fuzzy-filter a list of variables by a search query.
@@ -136,13 +136,71 @@ function resolveNestedVariables(
 ): string {
 	return text.replace(/\{([^}]+)\}/g, (_match, innerName: string) => {
 		const trimmed = innerName.trim();
-		const canonical = trimmed.toLowerCase();
+		// Map contact-role dot notation to flat canonical key
+		const parsed = parseContactRoleVariant(trimmed);
+		const canonical = parsed
+			? `${parsed.role} ${PROPERTY_LABELS[parsed.property] ?? parsed.property}`.toLowerCase()
+			: trimmed.toLowerCase();
 		const displayName = canonicalToDisplay[canonical];
 		if (!displayName) return _match;
 		const value = variableValues[displayName] ?? "";
 		if (!value) return _match;
 		return applyCasing(value, trimmed);
 	});
+}
+
+/** Known contact property keys matching the Rust Contact struct. */
+const CONTACT_PROPERTIES = new Set([
+	"full_name",
+	"first_name",
+	"last_name",
+	"relationship",
+	"phone",
+	"email",
+	"address",
+	"city",
+	"state",
+	"zip",
+]);
+
+/** Property key → human label. */
+const PROPERTY_LABELS: Record<string, string> = {
+	full_name: "Full Name",
+	first_name: "First Name",
+	last_name: "Last Name",
+	relationship: "Relationship",
+	phone: "Phone",
+	email: "Email",
+	address: "Address",
+	city: "City",
+	state: "State",
+	zip: "ZIP",
+};
+
+/**
+ * Try to parse a variable variant as contact-role dot notation.
+ * Returns { role, property } if the variant matches `Role.property`.
+ */
+function parseContactRoleVariant(
+	variant: string,
+): { role: string; property: string } | null {
+	const dotIdx = variant.lastIndexOf(".");
+	if (dotIdx < 0) return null;
+	const role = variant.substring(0, dotIdx).trim();
+	const property = variant.substring(dotIdx + 1).trim().toLowerCase();
+	if (!role || !CONTACT_PROPERTIES.has(property)) return null;
+	return { role, property };
+}
+
+/** Read a contact property by key. */
+function getContactProperty(contact: Contact, key: string): string {
+	return (contact as unknown as Record<string, string>)[key] ?? "";
+}
+
+/** Info about a contact-role group (all variables sharing a role). */
+interface ContactRoleGroup {
+	role: string;
+	properties: { displayName: string; property: string }[];
 }
 
 export default function VariableEditor() {
@@ -158,8 +216,30 @@ export default function VariableEditor() {
 		updateVariable,
 		renameDocument,
 		saveDocument,
+		setContactBinding,
+		clearContactBinding,
+		setRoleOverride,
 		returnToHub,
 	} = useWorkflowStore();
+
+	// Current document filename (for looking up per-document overrides)
+	const currentFilename = useMemo(() => {
+		if (!documentPath) return null;
+		return (
+			documentPath.split("/").pop() ??
+			documentPath.split("\\").pop() ??
+			null
+		);
+	}, [documentPath]);
+
+	// Per-document role overrides for the current document
+	const roleOverrides = useMemo(() => {
+		if (!currentFilename || !lilyFile?.documents[currentFilename])
+			return {};
+		return (
+			lilyFile.documents[currentFilename].role_overrides ?? {}
+		);
+	}, [lilyFile, currentFilename]);
 
 	const [selectedVariable, setSelectedVariable] = useState<string | null>(
 		null,
@@ -184,6 +264,48 @@ export default function VariableEditor() {
 		}
 		return map;
 	}, [variables]);
+
+	// Detect contact-role variables from dot notation in variants.
+	// Maps display_name → { role, property } for contact-role variables.
+	const contactRoleVarMap = useMemo(() => {
+		const map: Record<string, { role: string; property: string }> = {};
+		for (const v of variables) {
+			for (const variant of v.variants) {
+				const parsed = parseContactRoleVariant(variant);
+				if (parsed) {
+					map[v.display_name] = parsed;
+					break;
+				}
+			}
+		}
+		return map;
+	}, [variables]);
+
+	// Group contact-role variables by role, preserving document order.
+	const contactRoleGroups = useMemo(() => {
+		const groups: ContactRoleGroup[] = [];
+		const seen = new Set<string>();
+		for (const v of variables) {
+			const info = contactRoleVarMap[v.display_name];
+			if (!info) continue;
+			if (!seen.has(info.role)) {
+				seen.add(info.role);
+				groups.push({ role: info.role, properties: [] });
+			}
+			const group = groups.find((g) => g.role === info.role);
+			group?.properties.push({
+				displayName: v.display_name,
+				property: info.property,
+			});
+		}
+		return groups;
+	}, [variables, contactRoleVarMap]);
+
+	// Set of display_names that belong to a contact-role group
+	const contactRoleVarNames = useMemo(
+		() => new Set(Object.keys(contactRoleVarMap)),
+		[contactRoleVarMap],
+	);
 
 	// Focus the title input when entering edit mode
 	useEffect(() => {
@@ -581,9 +703,12 @@ export default function VariableEditor() {
 					</p>
 				) : (
 				<div className="flex flex-col divide-y divide-base-200">
-					{filteredVariables.map((varInfo) => {
+					{(() => {
+						const renderedRoles = new Set<string>();
+						return filteredVariables.map((varInfo) => {
 						const name = varInfo.display_name;
 
+						// ── Conditional variable ──
 						if (varInfo.is_conditional) {
 							const isTrue =
 								variableValues[name] === "true";
@@ -684,6 +809,81 @@ export default function VariableEditor() {
 							);
 						}
 
+						// ── Contact-role variable ──
+						const crInfo = contactRoleVarMap[name];
+						if (crInfo) {
+							// Render the group once at the first property
+							if (renderedRoles.has(crInfo.role)) return null;
+							renderedRoles.add(crInfo.role);
+							const group = contactRoleGroups.find(
+								(g) => g.role === crInfo.role,
+							);
+							if (!group) return null;
+							return (
+								<ContactRoleField
+									key={`role:${group.role}`}
+									group={group}
+									contacts={lilyFile?.contacts ?? []}
+									bindings={lilyFile?.contact_bindings ?? {}}
+									variableValues={variableValues}
+									isOverridden={group.role in roleOverrides}
+									onToggleOverride={async (overriding) => {
+										if (overriding) {
+											// Snapshot current values as the override
+											const values: Record<string, string> = {};
+											for (const p of group.properties) {
+												values[p.displayName] = variableValues[p.displayName] ?? "";
+											}
+											const binding = lilyFile?.contact_bindings?.[group.role];
+											await setRoleOverride(group.role, {
+												contact_id: binding?.contact_id ?? null,
+												values,
+											});
+										} else {
+											// Remove override — revert to questionnaire
+											await setRoleOverride(group.role, null);
+											// Restore questionnaire values into variableValues
+											const savedVars = lilyFile?.variables ?? {};
+											for (const p of group.properties) {
+												handleVariableChange(p.displayName, savedVars[p.displayName] ?? "");
+											}
+										}
+									}}
+									onSelectContact={async (contactId) => {
+										// Save as per-document override
+										const values: Record<string, string> = {};
+										const contact = contactId
+											? (lilyFile?.contacts ?? []).find((c) => c.id === contactId)
+											: null;
+										for (const p of group.properties) {
+											values[p.displayName] = contact
+												? getContactProperty(contact, p.property)
+												: "";
+										}
+										await setRoleOverride(group.role, {
+											contact_id: contactId,
+											values,
+										});
+										// Update live preview
+										for (const [varName, value] of Object.entries(values)) {
+											handleVariableChange(varName, value);
+										}
+									}}
+									onManualChange={(varName, value) => {
+										handleVariableChange(varName, value);
+									}}
+									onSelect={(varName) =>
+										setSelectedVariable(varName)
+									}
+									onDeselect={() =>
+										setSelectedVariable(null)
+									}
+									scrollToOccurrence={scrollToOccurrence}
+								/>
+							);
+						}
+
+						// ── Regular replacement variable ──
 						const isFilled = Boolean(variableValues[name]);
 						return (
 							<div
@@ -747,7 +947,8 @@ export default function VariableEditor() {
 								/>
 							</div>
 						);
-					})}
+					});
+					})()}
 				</div>
 				)}
 				</div>
@@ -768,6 +969,286 @@ export default function VariableEditor() {
 					/>
 				</div>
 			</div>
+		</div>
+	);
+}
+
+// ─── Icons ──────────────────────────────────────────────────────────────────
+
+function LinkIcon({ className }: { className?: string }) {
+	return (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			viewBox="0 0 20 20"
+			fill="currentColor"
+			className={className ?? "size-4"}
+		>
+			<title>Linked</title>
+			<path d="M12.232 4.232a2.5 2.5 0 0 1 3.536 3.536l-1.225 1.224a.75.75 0 0 0 1.061 1.06l1.224-1.224a4 4 0 0 0-5.656-5.656l-3 3a4 4 0 0 0 .225 5.865.75.75 0 0 0 .977-1.138 2.5 2.5 0 0 1-.142-3.667l3-3Z" />
+			<path d="M11.603 7.963a.75.75 0 0 0-.977 1.138 2.5 2.5 0 0 1 .142 3.667l-3 3a2.5 2.5 0 0 1-3.536-3.536l1.225-1.224a.75.75 0 0 0-1.061-1.06l-1.224 1.224a4 4 0 1 0 5.656 5.656l3-3a4 4 0 0 0-.225-5.865Z" />
+		</svg>
+	);
+}
+
+function LinkSlashIcon({ className }: { className?: string }) {
+	return (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			viewBox="0 0 20 20"
+			fill="currentColor"
+			className={className ?? "size-4"}
+		>
+			<title>Unlinked</title>
+			<path d="M.172 2.172a.586.586 0 0 1 .828 0l16.828 16.828a.586.586 0 0 1-.828.828L.172 3a.586.586 0 0 1 0-.828Z" />
+			<path d="M12.232 4.232a2.5 2.5 0 0 1 3.536 3.536l-1.225 1.224a.75.75 0 0 0 1.061 1.06l1.224-1.224a4 4 0 0 0-5.656-5.656l-3 3a4 4 0 0 0-.036 5.612.75.75 0 1 0 1.06-1.06 2.5 2.5 0 0 1 .023-3.51l3.013-2.982Z" />
+			<path d="M7.768 15.768a2.5 2.5 0 0 1-3.536-3.536l1.225-1.224a.75.75 0 0 0-1.061-1.06l-1.224 1.224a4 4 0 0 0 5.656 5.656l3-3a4 4 0 0 0 .036-5.612.75.75 0 0 0-1.06 1.06 2.5 2.5 0 0 1-.023 3.51l-3.013 2.982Z" />
+		</svg>
+	);
+}
+
+// ─── Contact-role field ─────────────────────────────────────────────────────
+
+function ContactRoleField({
+	group,
+	contacts,
+	bindings,
+	variableValues,
+	isOverridden,
+	onToggleOverride,
+	onSelectContact,
+	onManualChange,
+	onSelect,
+	onDeselect,
+	scrollToOccurrence,
+}: {
+	group: ContactRoleGroup;
+	contacts: Contact[];
+	bindings: Record<string, import("@/types").ContactBinding>;
+	variableValues: Record<string, string>;
+	isOverridden: boolean;
+	onToggleOverride: (overriding: boolean) => Promise<void>;
+	onSelectContact: (contactId: string | null) => Promise<void>;
+	onManualChange: (varName: string, value: string) => void;
+	onSelect: (varName: string) => void;
+	onDeselect: () => void;
+	scrollToOccurrence: (varName: string, direction: "prev" | "next") => void;
+}) {
+	// Questionnaire binding (source of truth when linked)
+	const qBinding = bindings[group.role];
+	const qContactId = qBinding?.contact_id ?? null;
+	const qContact = contacts.find((c) => c.id === qContactId) ?? null;
+
+	// Determine the effective display state
+	const allFilled = group.properties.every((p) =>
+		variableValues[p.displayName]?.trim(),
+	);
+
+	// When overridden, figure out what the override looks like
+	// (could be a different contact or custom values)
+	const overrideHasContact = isOverridden && variableValues[group.properties[0]?.displayName];
+
+	return (
+		<div
+			className="py-3 w-full"
+			data-var-entry={group.properties[0]?.displayName}
+		>
+			{/* Role header */}
+			<div className="flex items-center justify-between mb-1.5">
+				<span className="label-text text-sm font-medium flex items-center gap-1.5">
+					<span
+						className={`inline-block size-2 shrink-0 rounded-full ${allFilled ? "bg-success" : "bg-error"}`}
+					/>
+					{group.role}
+				</span>
+				<div className="join">
+					<button
+						type="button"
+						className="join-item btn btn-ghost btn-xs px-1"
+						onClick={() =>
+							scrollToOccurrence(
+								group.properties[0]?.displayName,
+								"prev",
+							)
+						}
+						title="Previous occurrence"
+					>
+						&lsaquo;
+					</button>
+					<button
+						type="button"
+						className="join-item btn btn-ghost btn-xs px-1"
+						onClick={() =>
+							scrollToOccurrence(
+								group.properties[0]?.displayName,
+								"next",
+							)
+						}
+						title="Next occurrence"
+					>
+						&rsaquo;
+					</button>
+				</div>
+			</div>
+
+			{/* Override toggle */}
+			<div className="flex items-center gap-2 mb-1.5">
+				<button
+					type="button"
+					className={`flex items-center gap-1.5 text-xs transition-colors ${
+						isOverridden
+							? "text-warning hover:text-warning/80"
+							: "text-primary/60 hover:text-primary/80"
+					}`}
+					onClick={() => onToggleOverride(!isOverridden)}
+					title={
+						isOverridden
+							? "Click to re-link to questionnaire"
+							: "Click to override for this document"
+					}
+				>
+					{isOverridden ? (
+						<LinkSlashIcon className="size-3.5" />
+					) : (
+						<LinkIcon className="size-3.5" />
+					)}
+					<span>
+						{isOverridden
+							? "Overridden for this document"
+							: "Linked to questionnaire"}
+					</span>
+				</button>
+			</div>
+
+			{/* ── Linked state: greyed-out, shows questionnaire value ── */}
+			{!isOverridden && (
+				<>
+					<select
+						className="select select-bordered select-sm w-full opacity-50 pointer-events-none"
+						value={qContact ? qContact.id : ""}
+						disabled
+						tabIndex={-1}
+					>
+						<option value="">Not assigned</option>
+						{contacts.map((c) => (
+							<option key={c.id} value={c.id}>
+								{c.full_name}
+								{c.relationship
+									? ` (${c.relationship})`
+									: ""}
+							</option>
+						))}
+					</select>
+					{qContact && (
+						<div className="mt-2 pl-3 border-l-2 border-primary/30 opacity-75">
+							<div className="space-y-1">
+								{group.properties.map(
+									({ displayName, property }) => {
+										const value = getContactProperty(
+											qContact,
+											property,
+										);
+										return (
+											<div
+												key={displayName}
+												className="flex items-center gap-2 text-xs"
+											>
+												<span className="text-base-content/50 min-w-20">
+													{PROPERTY_LABELS[
+														property
+													] ?? property}
+													:
+												</span>
+												<span
+													className={
+														value
+															? "text-base-content"
+															: "text-base-content/30 italic"
+													}
+												>
+													{value || "empty"}
+												</span>
+											</div>
+										);
+									},
+								)}
+							</div>
+						</div>
+					)}
+				</>
+			)}
+
+			{/* ── Overridden state: editable dropdown + manual fallback ── */}
+			{isOverridden && (
+				<>
+					<select
+						className="select select-bordered select-sm w-full select-warning"
+						value={
+							// Find if current values match any contact
+							contacts.find((c) =>
+								group.properties.every(
+									(p) =>
+										getContactProperty(c, p.property) ===
+										(variableValues[p.displayName] ?? ""),
+								),
+							)?.id ?? "__manual__"
+						}
+						onChange={(e) => {
+							const val = e.target.value;
+							if (val === "__manual__") {
+								onSelectContact(null);
+							} else {
+								onSelectContact(val);
+							}
+						}}
+						onFocus={() =>
+							onSelect(group.properties[0]?.displayName)
+						}
+						onBlur={onDeselect}
+					>
+						{contacts.map((c) => (
+							<option key={c.id} value={c.id}>
+								{c.full_name}
+								{c.relationship
+									? ` (${c.relationship})`
+									: ""}
+							</option>
+						))}
+						<option value="__manual__">Custom values...</option>
+					</select>
+
+					{/* Editable fields for the override */}
+					<div className="mt-2 pl-3 border-l-2 border-warning/30 space-y-2">
+						{group.properties.map(
+							({ displayName, property }) => (
+								<div key={displayName}>
+									<label className="label pb-0.5">
+										<span className="label-text text-xs text-base-content/60">
+											{PROPERTY_LABELS[property] ??
+												property}
+										</span>
+									</label>
+									<input
+										type="text"
+										className="input input-bordered input-xs w-full"
+										placeholder={`Enter ${PROPERTY_LABELS[property] ?? property}`}
+										value={
+											variableValues[displayName] ?? ""
+										}
+										onChange={(e) =>
+											onManualChange(
+												displayName,
+												e.target.value,
+											)
+										}
+										onFocus={() => onSelect(displayName)}
+										onBlur={onDeselect}
+									/>
+								</div>
+							),
+						)}
+					</div>
+				</>
+			)}
 		</div>
 	);
 }

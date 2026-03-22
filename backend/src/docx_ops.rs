@@ -208,7 +208,14 @@ fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
                                         // variables found inside the true/false branches
                                         for branch in [&true_text, &false_text] {
                                             for nested in extract_nested_variables(branch) {
-                                                let nkey = nested.to_lowercase();
+                                                let nkey = if let Some((role, property)) =
+                                                    parse_contact_role_ref(&nested)
+                                                {
+                                                    contact_role_to_flat_name(&role, &property)
+                                                        .to_lowercase()
+                                                } else {
+                                                    nested.to_lowercase()
+                                                };
                                                 if !groups.contains_key(&nkey) {
                                                     keys_in_order.push(nkey.clone());
                                                 }
@@ -220,8 +227,15 @@ fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
                                         }
                                     }
                                 } else if !trimmed.contains('{') {
-                                    // Simple replacement variable (no nested braces)
-                                    let key = trimmed.to_lowercase();
+                                    // Check for contact-role dot notation
+                                    // (e.g., "Healthcare POA Agent.full_name")
+                                    let key = if let Some((role, property)) =
+                                        parse_contact_role_ref(&trimmed)
+                                    {
+                                        contact_role_to_flat_name(&role, &property).to_lowercase()
+                                    } else {
+                                        trimmed.to_lowercase()
+                                    };
                                     if !groups.contains_key(&key) {
                                         keys_in_order.push(key.clone());
                                     }
@@ -250,6 +264,12 @@ fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
                     parse_conditional_variable(raw)
                         .map(|(label, _, _)| label)
                         .unwrap_or_else(|| pick_display_name(&variants))
+                } else if let Some((role, property)) = variants
+                    .iter()
+                    .find_map(|v| parse_contact_role_ref(v))
+                {
+                    // Contact-role dot notation → flat display name
+                    contact_role_to_flat_name(&role, &property)
                 } else {
                     pick_display_name(&variants)
                 };
@@ -1364,6 +1384,62 @@ fn pick_display_name(variants: &[String]) -> String {
     variants[0].clone()
 }
 
+/// Known contact property keys that can appear in `{Role.property}` syntax.
+const CONTACT_PROPERTIES: &[&str] = &[
+    "full_name",
+    "first_name",
+    "last_name",
+    "relationship",
+    "phone",
+    "email",
+    "address",
+    "city",
+    "state",
+    "zip",
+];
+
+/// Try to parse `"Role.property"` contact-role dot notation.
+/// Returns `Some((role, property))` if the text contains a dot followed by a
+/// known contact property key (case-insensitive).
+fn parse_contact_role_ref(text: &str) -> Option<(String, String)> {
+    let dot_pos = text.rfind('.')?;
+    let role = text[..dot_pos].trim();
+    let property = text[dot_pos + 1..].trim();
+    if role.is_empty() || property.is_empty() {
+        return None;
+    }
+    let prop_lower = property.to_lowercase();
+    if CONTACT_PROPERTIES.contains(&prop_lower.as_str()) {
+        Some((role.to_string(), prop_lower))
+    } else {
+        None
+    }
+}
+
+/// Convert a contact property key like `"full_name"` to title-case words: `"Full Name"`.
+fn property_to_title(property: &str) -> String {
+    property
+        .split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(c) => {
+                    let upper: String = c.to_uppercase().collect();
+                    format!("{}{}", upper, chars.collect::<String>())
+                }
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Convert `"Role.property"` dot notation to a flat canonical variable name.
+/// e.g., `"Healthcare POA Agent.full_name"` → `"Healthcare POA Agent Full Name"`.
+fn contact_role_to_flat_name(role: &str, property: &str) -> String {
+    format!("{} {}", role, property_to_title(property))
+}
+
 fn is_title_case(s: &str) -> bool {
     for word in s.split_whitespace() {
         let mut chars = word.chars();
@@ -1417,10 +1493,8 @@ fn is_conditional_variable(raw_content: &str) -> bool {
 /// (`"`) to left/right curly quotes (\u{201C} / \u{201D}).  This helper
 /// ensures the conditional parser accepts both forms.
 fn normalize_quotes(s: &str) -> String {
-    s.replace('\u{201C}', "\"")
-        .replace('\u{201D}', "\"")
-        .replace('\u{2018}', "'")
-        .replace('\u{2019}', "'")
+    s.replace(['\u{201C}', '\u{201D}'], "\"")
+        .replace(['\u{2018}', '\u{2019}'], "'")
 }
 
 /// Parse a conditional variable's raw content into (label, true_text, false_text).
@@ -1513,8 +1587,12 @@ fn resolve_nested_variables(text: &str, variables: &HashMap<String, String>) -> 
             }
             if found_close && !inner.is_empty() && !inner.contains('{') {
                 let trimmed = inner.trim();
-                // Look up value by case-insensitive key
-                let key = trimmed.to_lowercase();
+                // Map contact-role dot notation to flat key if applicable
+                let key = if let Some((role, property)) = parse_contact_role_ref(trimmed) {
+                    contact_role_to_flat_name(&role, &property).to_lowercase()
+                } else {
+                    trimmed.to_lowercase()
+                };
                 let resolved = variables
                     .iter()
                     .find(|(k, _)| k.to_lowercase() == key)
@@ -2715,8 +2793,14 @@ fn highlight_variables(text: &str) -> String {
                         result.push('}');
                     }
                 } else if !trimmed.contains('{') {
-                    // Simple replacement variable
-                    let canonical = trimmed.to_lowercase();
+                    // Simple replacement variable (may use contact-role dot notation)
+                    let canonical = if let Some((role, property)) =
+                        parse_contact_role_ref(trimmed)
+                    {
+                        contact_role_to_flat_name(&role, &property).to_lowercase()
+                    } else {
+                        trimmed.to_lowercase()
+                    };
                     result.push_str(&format!(
                         "<span class=\"variable-highlight\" data-variable=\"{}\" data-original-case=\"{}\">{{{}}}</span>",
                         canonical, var_content, var_content
@@ -3537,5 +3621,89 @@ mod tests {
         let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Title</w:t></w:r></w:p></w:body></w:document>"#;
         let html = xml_to_preview_html(xml, &empty_num, &empty_styles);
         assert!(html.contains("<h1"), "Expected h1 element, got: {}", html);
+    }
+
+    // ─── Contact-role dot notation tests ─────────────────────────────────
+
+    #[test]
+    fn test_parse_contact_role_ref() {
+        let (role, prop) = parse_contact_role_ref("Healthcare POA Agent.full_name").unwrap();
+        assert_eq!(role, "Healthcare POA Agent");
+        assert_eq!(prop, "full_name");
+    }
+
+    #[test]
+    fn test_parse_contact_role_ref_unknown_property() {
+        assert!(parse_contact_role_ref("Agent.unknown_prop").is_none());
+    }
+
+    #[test]
+    fn test_parse_contact_role_ref_no_dot() {
+        assert!(parse_contact_role_ref("Client Full Name").is_none());
+    }
+
+    #[test]
+    fn test_property_to_title() {
+        assert_eq!(property_to_title("full_name"), "Full Name");
+        assert_eq!(property_to_title("phone"), "Phone");
+        assert_eq!(property_to_title("first_name"), "First Name");
+    }
+
+    #[test]
+    fn test_contact_role_to_flat_name() {
+        assert_eq!(
+            contact_role_to_flat_name("Healthcare POA Agent", "full_name"),
+            "Healthcare POA Agent Full Name"
+        );
+        assert_eq!(
+            contact_role_to_flat_name("Financial POA Agent", "phone"),
+            "Financial POA Agent Phone"
+        );
+    }
+
+    #[test]
+    fn test_find_variables_contact_role_dot_notation() {
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{Healthcare POA Agent.full_name}</w:t></w:r></w:p></w:body></w:document>"#;
+        let vars = find_all_variables(xml);
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].display_name, "Healthcare POA Agent Full Name");
+        assert!(vars[0].variants.contains(&"Healthcare POA Agent.full_name".to_string()));
+    }
+
+    #[test]
+    fn test_highlight_contact_role_dot_notation() {
+        let text = "{Healthcare POA Agent.full_name}";
+        let html = highlight_variables(text);
+        assert!(
+            html.contains("data-variable=\"healthcare poa agent full name\""),
+            "Expected flat canonical key in data-variable, got: {}",
+            html
+        );
+    }
+
+    #[test]
+    fn test_resolve_nested_contact_role_dot_notation() {
+        let mut vars = HashMap::new();
+        vars.insert(
+            "Healthcare POA Alternate Agent Full Name".to_string(),
+            "Jane Doe".to_string(),
+        );
+        let text = "{Healthcare POA Alternate Agent.full_name}";
+        let result = resolve_nested_variables(text, &vars);
+        assert_eq!(result, "Jane Doe");
+    }
+
+    #[test]
+    fn test_find_nested_contact_role_in_conditional() {
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{Has Alt ?? "{Alt Agent.full_name}" :: ""}</w:t></w:r></w:p></w:body></w:document>"#;
+        let vars = find_all_variables(xml);
+        // Should find the conditional AND the nested contact-role variable
+        let names: Vec<&str> = vars.iter().map(|v| v.display_name.as_str()).collect();
+        assert!(names.contains(&"Has Alt"), "Expected 'Has Alt', got: {:?}", names);
+        assert!(
+            names.contains(&"Alt Agent Full Name"),
+            "Expected 'Alt Agent Full Name', got: {:?}",
+            names
+        );
     }
 }

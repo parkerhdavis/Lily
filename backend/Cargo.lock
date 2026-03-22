@@ -1932,6 +1932,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
+ "uuid",
  "xml-rs",
  "zip 2.4.2",
 ]

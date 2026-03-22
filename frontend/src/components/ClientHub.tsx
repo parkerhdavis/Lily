@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-
-const QUESTIONNAIRE_FILENAME = "ClientQuestionnaire.docx";
+import { questionnaireDef } from "@/data/questionnaireDef";
+import ContactManager from "@/components/ContactManager";
 
 /** Format an ISO date string to a readable local format. */
 function formatDate(iso: string): string {
@@ -65,6 +65,7 @@ export default function ClientHub() {
 		error,
 		openDocument,
 		startAddDocument,
+		openQuestionnaire,
 		saveClientVariable,
 		addClientVariable,
 		removeClientVariable,
@@ -80,6 +81,7 @@ export default function ClientHub() {
 	const [newVarName, setNewVarName] = useState("");
 	const [addingVar, setAddingVar] = useState(false);
 	const [varSearch, setVarSearch] = useState("");
+	const [showContacts, setShowContacts] = useState(false);
 	const newVarInputRef = useRef<HTMLInputElement>(null);
 
 	// Build client documents list from .lily file, sorted by modification date
@@ -98,21 +100,27 @@ export default function ClientHub() {
 			);
 	}, [lilyFile]);
 
-	// Separate the questionnaire from other documents
-	const questionnaireDocs = useMemo(
-		() =>
-			allDocs.filter(
-				(d) => d.templateRelPath === QUESTIONNAIRE_FILENAME,
-			),
-		[allDocs],
-	);
-	const otherDocs = useMemo(
-		() =>
-			allDocs.filter(
-				(d) => d.templateRelPath !== QUESTIONNAIRE_FILENAME,
-			),
-		[allDocs],
-	);
+	// Compute questionnaire completion stats from the definition + variables
+	const questionnaireStats = useMemo(() => {
+		const vars = lilyFile?.variables ?? {};
+		const contactCount = lilyFile?.contacts?.length ?? 0;
+		let total = 0;
+		let filled = 0;
+		for (const section of questionnaireDef) {
+			if (section.kind === "contacts") {
+				total++;
+				if (contactCount > 0) filled++;
+				continue;
+			}
+			for (const q of section.questions) {
+				if (q.kind === "text") {
+					total++;
+					if (vars[q.variable]?.trim()) filled++;
+				}
+			}
+		}
+		return { total, filled };
+	}, [lilyFile]);
 
 	// Build a set of conditional variable names from the .lily file
 	const conditionalVarNames = useMemo(() => {
@@ -228,6 +236,50 @@ export default function ClientHub() {
 						</button>
 					</div>
 
+					{/* Questionnaire card */}
+					<button
+						type="button"
+						className="w-full text-left p-4 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors mb-4"
+						onClick={openQuestionnaire}
+					>
+						<div className="flex items-center gap-3">
+							<div className="text-2xl">&#128203;</div>
+							<div className="flex-1 min-w-0">
+								<div className="font-semibold">
+									Client Questionnaire
+								</div>
+								<div className="text-xs text-base-content/50 mt-0.5">
+									{questionnaireStats.total > 0
+										? `${questionnaireStats.filled} of ${questionnaireStats.total} fields filled`
+										: "Fill out client information"}
+								</div>
+							</div>
+							{questionnaireStats.total > 0 && (
+								<div
+									className="radial-progress text-primary text-xs"
+									style={
+										{
+											"--value":
+												questionnaireStats.total > 0
+													? Math.round(
+															(questionnaireStats.filled /
+																questionnaireStats.total) *
+																100,
+														)
+													: 0,
+											"--size": "2.5rem",
+											"--thickness": "3px",
+										} as React.CSSProperties
+									}
+									role="progressbar"
+								>
+									{questionnaireStats.filled}/{questionnaireStats.total}
+								</div>
+							)}
+						</div>
+					</button>
+
+					{/* Documents list */}
 					{allDocs.length === 0 ? (
 						<div className="text-sm text-base-content/50 space-y-3">
 							<p>No documents in this folder yet.</p>
@@ -241,35 +293,7 @@ export default function ClientHub() {
 						</div>
 					) : (
 						<div className="flex flex-col gap-1">
-							{/* Info Documents section (questionnaire) */}
-							{questionnaireDocs.length > 0 && (
-								<>
-									<div className="divider my-2 text-xs text-base-content/30">
-										Info Documents
-									</div>
-									{questionnaireDocs.map((doc) => (
-										<DocumentRow
-											key={doc.filename}
-											doc={doc}
-											onOpen={openDocument}
-											onDelete={deleteDocument}
-											onNewVersion={newVersionDocument}
-											onOpenTemplate={openTemplateFile}
-											onReload={reloadLilyFile}
-										/>
-									))}
-								</>
-							)}
-
-							{/* Legal Documents section */}
-							{otherDocs.length > 0 && (
-								<div className="divider my-2 text-xs text-base-content/30">
-									Legal Documents
-								</div>
-							)}
-
-							{/* Other documents */}
-							{otherDocs.map((doc) => (
+							{allDocs.map((doc) => (
 								<DocumentRow
 									key={doc.filename}
 									doc={doc}
@@ -284,97 +308,123 @@ export default function ClientHub() {
 					)}
 				</div>
 
-				{/* Right sidebar: Client Variables */}
-				<div className="w-80 shrink-0 overflow-y-auto p-4 bg-base-100">
-					<div className="flex items-center justify-between mb-3">
-						<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50">
-							Client Variables
-						</h3>
-						<button
-							type="button"
-							className="btn btn-ghost btn-xs"
-							onClick={handleStartAddVar}
-						>
-							+ Add
-						</button>
-					</div>
-
-				{sortedVariables.length > 0 && (
-					<div className="pb-3 mb-3 border-b border-base-300">
-						<input
-							type="text"
-							className="input input-bordered input-sm w-full"
-							placeholder="Search variables..."
-							value={varSearch}
-							onChange={(e) => setVarSearch(e.target.value)}
+				{/* Right sidebar */}
+				<div className="w-80 shrink-0 overflow-y-auto bg-base-100">
+					{showContacts ? (
+						<ContactManager
+							onClose={() => setShowContacts(false)}
 						/>
-					</div>
-				)}
-
-					{sortedVariables.length === 0 && !addingVar ? (
-						<div className="text-sm text-base-content/50 space-y-2">
-							<p>No variables defined yet.</p>
-							<p>
-								Add a document to automatically populate
-								variables, or add them manually.
-							</p>
-						</div>
-					) : filteredVariables.length === 0 && varSearch ? (
-						<p className="text-sm text-base-content/50">
-							No variables match your search.
-						</p>
 					) : (
-					<div className="flex flex-col divide-y divide-base-200">
-					{filteredVariables.map(([name, value]) => (
-						<VariableField
-							key={name}
-							name={name}
-							value={value}
-							isConditional={conditionalVarNames.has(
-								name,
-							)}
-							onBlur={handleVariableBlur}
-							onRemove={removeClientVariable}
-						/>
-					))}
-					</div>
-					)}
+						<div className="p-4">
+							{/* Contacts button */}
+							<button
+								type="button"
+								className="btn btn-outline btn-sm w-full mb-4"
+								onClick={() => setShowContacts(true)}
+							>
+								Manage Contacts
+								{(lilyFile?.contacts?.length ?? 0) > 0 && (
+									<span className="badge badge-sm badge-neutral ml-1">
+										{lilyFile?.contacts?.length}
+									</span>
+								)}
+							</button>
 
-					{/* Add variable inline form */}
-					{addingVar && (
-						<div className="mt-3 flex gap-2">
-							<input
-								ref={newVarInputRef}
-								type="text"
-								className="input input-bordered input-sm flex-1"
-								placeholder="Variable Name"
-								value={newVarName}
-								onChange={(e) => setNewVarName(e.target.value)}
-								onKeyDown={handleAddVarKeyDown}
-								onBlur={() => {
-									if (!newVarName.trim()) {
-										setAddingVar(false);
-									}
-								}}
-							/>
-							<button
-								type="button"
-								className="btn btn-primary btn-sm"
-								onClick={handleAddVariable}
-								disabled={!newVarName.trim()}
-							>
-								Add
-							</button>
-							<button
-								type="button"
-								className="btn btn-ghost btn-sm"
-								onClick={() => {
-									setNewVarName("");
-									setAddingVar(false);
-								}}
-							>
-								Cancel
-							</button>
+							<div className="flex items-center justify-between mb-3">
+								<h3 className="text-sm font-semibold uppercase tracking-wider text-base-content/50">
+									Client Variables
+								</h3>
+								<button
+									type="button"
+									className="btn btn-ghost btn-xs"
+									onClick={handleStartAddVar}
+								>
+									+ Add
+								</button>
+							</div>
+
+							{sortedVariables.length > 0 && (
+								<div className="pb-3 mb-3 border-b border-base-300">
+									<input
+										type="text"
+										className="input input-bordered input-sm w-full"
+										placeholder="Search variables..."
+										value={varSearch}
+										onChange={(e) =>
+											setVarSearch(e.target.value)
+										}
+									/>
+								</div>
+							)}
+
+							{sortedVariables.length === 0 && !addingVar ? (
+								<div className="text-sm text-base-content/50 space-y-2">
+									<p>No variables defined yet.</p>
+									<p>
+										Add a document to automatically populate
+										variables, or add them manually.
+									</p>
+								</div>
+							) : filteredVariables.length === 0 && varSearch ? (
+								<p className="text-sm text-base-content/50">
+									No variables match your search.
+								</p>
+							) : (
+								<div className="flex flex-col divide-y divide-base-200">
+									{filteredVariables.map(([name, value]) => (
+										<VariableField
+											key={name}
+											name={name}
+											value={value}
+											isConditional={conditionalVarNames.has(
+												name,
+											)}
+											onBlur={handleVariableBlur}
+											onRemove={removeClientVariable}
+										/>
+									))}
+								</div>
+							)}
+
+							{/* Add variable inline form */}
+							{addingVar && (
+								<div className="mt-3 flex gap-2">
+									<input
+										ref={newVarInputRef}
+										type="text"
+										className="input input-bordered input-sm flex-1"
+										placeholder="Variable Name"
+										value={newVarName}
+										onChange={(e) =>
+											setNewVarName(e.target.value)
+										}
+										onKeyDown={handleAddVarKeyDown}
+										onBlur={() => {
+											if (!newVarName.trim()) {
+												setAddingVar(false);
+											}
+										}}
+									/>
+									<button
+										type="button"
+										className="btn btn-primary btn-sm"
+										onClick={handleAddVariable}
+										disabled={!newVarName.trim()}
+									>
+										Add
+									</button>
+									<button
+										type="button"
+										className="btn btn-ghost btn-sm"
+										onClick={() => {
+											setNewVarName("");
+											setAddingVar(false);
+										}}
+									>
+										Cancel
+									</button>
+								</div>
+							)}
 						</div>
 					)}
 				</div>
