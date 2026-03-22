@@ -26,6 +26,9 @@ pub struct AppSettings {
     /// Status bar size: "small", "medium", or "large".
     #[serde(default)]
     pub footer_size: Option<String>,
+    /// Last workflow step the user was on (for "pick up where you left off").
+    #[serde(default)]
+    pub last_step: Option<String>,
 }
 
 fn settings_path() -> Result<PathBuf, String> {

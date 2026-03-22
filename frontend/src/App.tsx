@@ -23,6 +23,13 @@ export default function App() {
 		load();
 	}, [load]);
 
+	// Track the current step in settings so LilyHub can offer "pick up where you left off"
+	// Only save non-hub steps — landing on hub at startup should not clear the previous value.
+	useEffect(() => {
+		if (!loaded || step === "hub") return;
+		useSettingsStore.getState().save({ last_step: step });
+	}, [step, loaded]);
+
 	// Global zoom keyboard shortcuts: Ctrl+= / Ctrl+- / Ctrl+0
 	useEffect(() => {
 		const handleZoom = (e: KeyboardEvent) => {

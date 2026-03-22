@@ -5,6 +5,20 @@ import SectionHeading from "@/components/ui/SectionHeading";
 import AppSwitcher from "@/components/ui/AppSwitcher";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
 
+const CLIENT_STEPS = new Set([
+	"client-hub",
+	"questionnaire",
+	"select-template",
+	"edit-variables",
+]);
+
+function describeLastStep(step: string, dirName: string | null): string {
+	if (CLIENT_STEPS.has(step) && dirName) return dirName;
+	if (step === "pipeline") return "Pipeline";
+	if (step === "app-settings") return "Settings";
+	return "";
+}
+
 export default function LilyHub() {
 	const { settings, save, addRecentDirectory, removeRecentDirectory } =
 		useSettingsStore();
@@ -31,6 +45,19 @@ export default function LilyHub() {
 		});
 		if (selected) {
 			await selectClient(selected);
+		}
+	};
+
+	const resumeLastSession = async () => {
+		const { last_step, last_working_dir } = settings;
+		if (!last_step) return;
+
+		if (CLIENT_STEPS.has(last_step) && last_working_dir) {
+			await selectClient(last_working_dir);
+		} else if (last_step === "pipeline") {
+			goToPipeline();
+		} else if (last_step === "app-settings") {
+			goToSettings();
 		}
 	};
 
@@ -147,6 +174,53 @@ export default function LilyHub() {
 
 					{/* Right column: secondary cards */}
 					<div className="w-72 shrink-0 flex flex-col gap-4">
+						{/* Resume card */}
+						{settings.last_step &&
+							describeLastStep(
+								settings.last_step,
+								settings.last_working_dir
+									? dirName(settings.last_working_dir)
+									: null,
+							) && (
+								<button
+									type="button"
+									className="card bg-primary/10 border border-primary/20 shadow-sm hover:shadow-md transition-shadow text-left"
+									onClick={resumeLastSession}
+								>
+									<div className="card-body p-5 gap-2">
+										<div className="flex items-center gap-2.5">
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												viewBox="0 0 20 20"
+												fill="currentColor"
+												className="size-5 text-primary"
+											>
+												<title>Resume</title>
+												<path
+													fillRule="evenodd"
+													d="M2 10a8 8 0 1 1 16 0 8 8 0 0 1-16 0Zm6.39-2.908a.75.75 0 0 1 .766.027l3.5 2.25a.75.75 0 0 1 0 1.262l-3.5 2.25A.75.75 0 0 1 8 12.25v-4.5a.75.75 0 0 1 .39-.658Z"
+													clipRule="evenodd"
+												/>
+											</svg>
+											<span className="font-semibold text-base text-primary">
+												Pick up where you left
+												off
+											</span>
+										</div>
+										<p className="text-sm text-base-content/50">
+											{describeLastStep(
+												settings.last_step,
+												settings.last_working_dir
+													? dirName(
+															settings.last_working_dir,
+														)
+													: null,
+											)}
+										</p>
+									</div>
+								</button>
+							)}
+
 						{/* Pipeline card */}
 						<button
 							type="button"
