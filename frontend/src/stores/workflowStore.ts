@@ -514,6 +514,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		// Resolve the binding into the variables pool
 		await invoke("resolve_contact_variables", { workingDir });
 		await get().reloadLilyFile();
+
+		// Sync resolved values into variableValues for live preview
+		const { lilyFile: updatedLily, variableValues } = get();
+		if (updatedLily) {
+			const merged = { ...variableValues };
+			for (const varName of Object.keys(binding.variable_mappings)) {
+				if (updatedLily.variables[varName] !== undefined) {
+					merged[varName] = updatedLily.variables[varName];
+				}
+			}
+			set({ variableValues: merged, dirty: true });
+		}
 	},
 
 	resolveContactBindings: async () => {
