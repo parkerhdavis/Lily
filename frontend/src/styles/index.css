@@ -8,8 +8,8 @@
 	default: true;
 	color-scheme: light;
 	--color-base-100: oklch(0.993 0.002 90);
-	--color-base-200: oklch(0.955 0.005 85);
-	--color-base-300: oklch(0.895 0.010 85);
+	--color-base-200: oklch(0.945 0.006 85);
+	--color-base-300: oklch(0.850 0.015 85);
 	--color-base-content: oklch(0.240 0.015 260);
 	--color-primary: oklch(0.760 0.155 85);
 	--color-primary-content: oklch(0.993 0.002 90);
