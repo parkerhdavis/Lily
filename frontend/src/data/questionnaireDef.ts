@@ -3,17 +3,18 @@ import type { QuestionnaireDef } from "@/types/questionnaire";
 /**
  * Questionnaire definition.
  *
- * Each section contains questions that map to client-level variables in the
- * .lily file. The "Client Contacts" section uses `kind: "contacts"` to render
- * an inline contact management list. All other sections are standard question
- * lists with text inputs, conditional toggles, and contact-role pickers.
+ * Sections are grouped into tabs: "client-info", "contacts", "assignments".
+ * The "Client Contacts" section uses `kind: "contacts"` to render an inline
+ * contact management list. All other sections are standard question lists.
  *
- * Each section automatically gets Client Notes and Internal Notes text areas
- * appended by the Questionnaire component — those are not defined here.
+ * Each section automatically gets collapsible Client Notes and Internal Notes
+ * text areas appended by the Questionnaire component.
  */
 export const questionnaireDef: QuestionnaireDef = [
+	// ── Tab: Client Info ─────────────────────────────────────────────────
 	{
 		title: "Client Information",
+		tab: "client-info",
 		description: "Basic information about the client.",
 		questions: [
 			{
@@ -26,22 +27,26 @@ export const questionnaireDef: QuestionnaireDef = [
 				kind: "text",
 				variable: "Client First Name",
 				label: "First Name",
+				half: true,
 			},
 			{
 				kind: "text",
 				variable: "Client Last Name",
 				label: "Last Name",
+				half: true,
 			},
 			{
 				kind: "text",
 				variable: "Client Phone",
 				label: "Phone Number",
 				placeholder: "e.g. (303) 555-1234",
+				half: true,
 			},
 			{
 				kind: "text",
 				variable: "Client Email",
 				label: "Email Address",
+				half: true,
 			},
 			{
 				kind: "text",
@@ -52,17 +57,20 @@ export const questionnaireDef: QuestionnaireDef = [
 				kind: "text",
 				variable: "Client City",
 				label: "City",
+				third: true,
 			},
 			{
 				kind: "text",
 				variable: "Client State",
 				label: "State",
 				placeholder: "e.g. CO",
+				third: true,
 			},
 			{
 				kind: "text",
 				variable: "Client Zip",
 				label: "ZIP Code",
+				third: true,
 			},
 			{
 				kind: "text",
@@ -72,16 +80,22 @@ export const questionnaireDef: QuestionnaireDef = [
 			},
 		],
 	},
+
+	// ── Tab: Contacts ────────────────────────────────────────────────────
 	{
 		title: "Client Contacts",
+		tab: "contacts",
 		kind: "contacts",
 		description:
 			"Add family members, agents, and other contacts associated with the client. " +
-			"These contacts can then be selected for roles in the sections below.",
+			"These contacts can then be selected for roles in the Assignments tab.",
 		questions: [],
 	},
+
+	// ── Tab: Assignments & Decisions ─────────────────────────────────────
 	{
 		title: "Healthcare Power of Attorney",
+		tab: "assignments",
 		description:
 			"Designate agents to make healthcare decisions on behalf of the client. " +
 			"Used for HPOA and HIPAA documents.",
@@ -116,6 +130,7 @@ export const questionnaireDef: QuestionnaireDef = [
 	},
 	{
 		title: "Financial Power of Attorney",
+		tab: "assignments",
 		description:
 			"Designate agents to manage financial matters on behalf of the client. " +
 			"Used for General POA (GPOA) documents.",
@@ -150,6 +165,7 @@ export const questionnaireDef: QuestionnaireDef = [
 	},
 	{
 		title: "Personal Representatives",
+		tab: "assignments",
 		description:
 			"Designate personal representatives for the client's will.",
 		questions: [
@@ -183,6 +199,7 @@ export const questionnaireDef: QuestionnaireDef = [
 	},
 	{
 		title: "Beneficiaries",
+		tab: "assignments",
 		description: "Designate beneficiaries for the client's will.",
 		questions: [
 			{
@@ -205,4 +222,11 @@ export const questionnaireDef: QuestionnaireDef = [
 			},
 		],
 	},
+];
+
+/** Tab definitions for the questionnaire. */
+export const questionnaireTabs = [
+	{ id: "client-info" as const, label: "Client Info" },
+	{ id: "contacts" as const, label: "Client Contacts" },
+	{ id: "assignments" as const, label: "Assignments & Decisions" },
 ];
