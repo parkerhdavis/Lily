@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import type { WorkflowStep } from "@/types";
+import { useLilyIcon } from "@/hooks/useLilyIcon";
 
 /** Steps that belong to the client management branch. */
 const CLIENT_STEPS = new Set<WorkflowStep>([
@@ -24,6 +25,7 @@ function getFolderName(dirPath: string): string {
 export default function AppSwitcher({
 	className,
 }: { className?: string }) {
+	const lilyIcon = useLilyIcon();
 	const step = useWorkflowStore((s) => s.step);
 	const workingDir = useWorkflowStore((s) => s.workingDir);
 	const goToHub = useWorkflowStore((s) => s.goToHub);
@@ -77,7 +79,7 @@ export default function AppSwitcher({
 						onClick={() => navigate(goToHub)}
 					>
 						<img
-							src="/lily-icon-trans.png"
+							src={lilyIcon}
 							alt=""
 							className="size-4"
 						/>
