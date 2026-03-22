@@ -935,6 +935,39 @@ export default function VariableEditor() {
 	);
 }
 
+// ─── Icons ──────────────────────────────────────────────────────────────────
+
+function LinkIcon({ className }: { className?: string }) {
+	return (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			viewBox="0 0 20 20"
+			fill="currentColor"
+			className={className ?? "size-4"}
+		>
+			<title>Linked</title>
+			<path d="M12.232 4.232a2.5 2.5 0 0 1 3.536 3.536l-1.225 1.224a.75.75 0 0 0 1.061 1.06l1.224-1.224a4 4 0 0 0-5.656-5.656l-3 3a4 4 0 0 0 .225 5.865.75.75 0 0 0 .977-1.138 2.5 2.5 0 0 1-.142-3.667l3-3Z" />
+			<path d="M11.603 7.963a.75.75 0 0 0-.977 1.138 2.5 2.5 0 0 1 .142 3.667l-3 3a2.5 2.5 0 0 1-3.536-3.536l1.225-1.224a.75.75 0 0 0-1.061-1.06l-1.224 1.224a4 4 0 1 0 5.656 5.656l3-3a4 4 0 0 0-.225-5.865Z" />
+		</svg>
+	);
+}
+
+function LinkSlashIcon({ className }: { className?: string }) {
+	return (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			viewBox="0 0 20 20"
+			fill="currentColor"
+			className={className ?? "size-4"}
+		>
+			<title>Unlinked</title>
+			<path d="M.172 2.172a.586.586 0 0 1 .828 0l16.828 16.828a.586.586 0 0 1-.828.828L.172 3a.586.586 0 0 1 0-.828Z" />
+			<path d="M12.232 4.232a2.5 2.5 0 0 1 3.536 3.536l-1.225 1.224a.75.75 0 0 0 1.061 1.06l1.224-1.224a4 4 0 0 0-5.656-5.656l-3 3a4 4 0 0 0-.036 5.612.75.75 0 1 0 1.06-1.06 2.5 2.5 0 0 1 .023-3.51l3.013-2.982Z" />
+			<path d="M7.768 15.768a2.5 2.5 0 0 1-3.536-3.536l1.225-1.224a.75.75 0 0 0-1.061-1.06l-1.224 1.224a4 4 0 0 0 5.656 5.656l3-3a4 4 0 0 0 .036-5.612.75.75 0 0 0-1.06 1.06 2.5 2.5 0 0 1-.023 3.51l-3.013 2.982Z" />
+		</svg>
+	);
+}
+
 // ─── Contact-role field ─────────────────────────────────────────────────────
 
 function ContactRoleField({
@@ -966,11 +999,8 @@ function ContactRoleField({
 		contacts.find((c) => c.id === boundContactId) ?? null;
 	const isManual = binding !== undefined && boundContactId === null;
 
-	// Determine which tier is active
-	// Tier 1: contact selected (from questionnaire or override)
-	// Tier 2: manual entry ("Other")
-	// Tier 3: unset (no binding)
-	const hasContact = selectedContact !== null;
+	const isLinked = selectedContact !== null;
+	const isUnlinked = isManual;
 	const allFilled = group.properties.every((p) =>
 		variableValues[p.displayName]?.trim(),
 	);
@@ -980,13 +1010,29 @@ function ContactRoleField({
 			className="py-3 w-full"
 			data-var-entry={group.properties[0]?.displayName}
 		>
-			{/* Role header */}
+			{/* Role header with link status */}
 			<div className="flex items-center justify-between mb-1.5">
 				<span className="label-text text-sm font-medium flex items-center gap-1.5">
 					<span
 						className={`inline-block size-2 shrink-0 rounded-full ${allFilled ? "bg-success" : "bg-error"}`}
 					/>
 					{group.role}
+					{isLinked && (
+						<span
+							className="text-primary/60"
+							title={`Linked to ${selectedContact.full_name}`}
+						>
+							<LinkIcon className="size-3.5" />
+						</span>
+					)}
+					{isUnlinked && (
+						<span
+							className="text-warning/60"
+							title="Using custom values (unlinked from contacts)"
+						>
+							<LinkSlashIcon className="size-3.5" />
+						</span>
+					)}
 				</span>
 				<div className="join">
 					<button
@@ -1018,13 +1064,13 @@ function ContactRoleField({
 				</div>
 			</div>
 
-			{/* Tier 1: Contact selection (from questionnaire or override) */}
+			{/* Contact selection dropdown */}
 			<select
-				className="select select-bordered select-sm w-full"
+				className={`select select-bordered select-sm w-full ${isLinked ? "select-primary" : isUnlinked ? "select-warning" : ""}`}
 				value={
-					hasContact
+					isLinked
 						? selectedContact.id
-						: isManual
+						: isUnlinked
 							? "__manual__"
 							: ""
 				}
@@ -1051,8 +1097,8 @@ function ContactRoleField({
 				<option value="__manual__">Custom values...</option>
 			</select>
 
-			{/* Show resolved properties when a contact is selected */}
-			{hasContact && (
+			{/* Linked: read-only property summary from the contact */}
+			{isLinked && (
 				<div className="mt-2 pl-3 border-l-2 border-primary/30">
 					<div className="space-y-1">
 						{group.properties.map(
@@ -1088,8 +1134,8 @@ function ContactRoleField({
 				</div>
 			)}
 
-			{/* Tier 2/3: Manual entry when "Custom values" is selected */}
-			{isManual && (
+			{/* Unlinked: editable manual entry fields */}
+			{isUnlinked && (
 				<div className="mt-2 pl-3 border-l-2 border-warning/30 space-y-2">
 					{group.properties.map(({ displayName, property }) => (
 						<div key={displayName}>
