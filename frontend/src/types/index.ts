@@ -25,6 +25,30 @@ export interface DocumentMeta {
 	variable_names: string[];
 }
 
+/** A contact associated with a client (family member, agent, trustee, etc.). */
+export interface Contact {
+	id: string;
+	full_name: string;
+	first_name: string;
+	last_name: string;
+	relationship: string;
+	phone: string;
+	email: string;
+	address: string;
+	city: string;
+	state: string;
+	zip: string;
+}
+
+/** Maps a role (e.g., "Healthcare POA Agent") to a contact and defines which
+ *  variables auto-fill from which contact properties. */
+export interface ContactBinding {
+	/** The contact ID bound to this role, or null for manual ("Other") entry. */
+	contact_id: string | null;
+	/** Map from variable display name to contact property key. */
+	variable_mappings: Record<string, string>;
+}
+
 /** The .lily project file stored in each client/working directory. */
 export interface LilyFile {
 	lily_version: number;
@@ -39,6 +63,10 @@ export interface LilyFile {
 	conditional_definitions: Record<string, string[]>;
 	/** Map from document filename to its metadata. */
 	documents: Record<string, DocumentMeta>;
+	/** Contacts associated with this client. */
+	contacts: Contact[];
+	/** Contact-to-role bindings, keyed by role name. */
+	contact_bindings: Record<string, ContactBinding>;
 }
 
 /** Info about a single logical variable, with case-variant grouping. */
