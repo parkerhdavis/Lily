@@ -129,4 +129,70 @@ export const questionnaireDef: QuestionnaireDef = [
 			},
 		],
 	},
+	{
+		title: "Healthcare Power of Attorney",
+		description:
+			"Designate agents to make healthcare decisions on behalf of the client.",
+		questions: [
+			{
+				kind: "contact-role",
+				role: "Healthcare POA Agent",
+				label: "Primary Healthcare POA Agent",
+				variableMappings: {
+					"Healthcare POA Agent Full Name": "full_name",
+					"Healthcare POA Agent Phone": "phone",
+					"Healthcare POA Agent Address": "address",
+					"Healthcare POA Agent City": "city",
+					"Healthcare POA Agent State": "state",
+					"Healthcare POA Agent Zip": "zip",
+				},
+			},
+			{
+				kind: "contact-role",
+				role: "Healthcare POA Alternate Agent",
+				label: "Alternate Healthcare POA Agent",
+				variableMappings: {
+					"Healthcare POA Alternate Full Name": "full_name",
+					"Healthcare POA Alternate Phone": "phone",
+					"Healthcare POA Alternate Address": "address",
+					"Healthcare POA Alternate City": "city",
+					"Healthcare POA Alternate State": "state",
+					"Healthcare POA Alternate Zip": "zip",
+				},
+			},
+		],
+	},
+	{
+		title: "Financial Power of Attorney",
+		description:
+			"Designate agents to manage financial matters on behalf of the client.",
+		questions: [
+			{
+				kind: "contact-role",
+				role: "Financial POA Agent",
+				label: "Primary Financial POA Agent",
+				variableMappings: {
+					"Financial POA Agent Full Name": "full_name",
+					"Financial POA Agent Phone": "phone",
+					"Financial POA Agent Address": "address",
+					"Financial POA Agent City": "city",
+					"Financial POA Agent State": "state",
+					"Financial POA Agent Zip": "zip",
+				},
+			},
+			{
+				kind: "contact-role",
+				role: "Financial POA Alternate Agent",
+				label: "Alternate Financial POA Agent",
+				variableMappings: {
+					"Financial POA Alternate Full Name": "full_name",
+					"Financial POA Alternate Phone": "phone",
+					"Financial POA Alternate Address": "address",
+					"Financial POA Alternate City": "city",
+					"Financial POA Alternate State": "state",
+					"Financial POA Alternate Zip": "zip",
+				},
+			},
+		],
+	},
 ];

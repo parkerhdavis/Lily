@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { questionnaireDef } from "@/data/questionnaireDef";
 import ContactManager from "@/components/ContactManager";
+import ContactPicker from "@/components/ContactPicker";
 import type { QuestionDef } from "@/types/questionnaire";
 
 /** Extract just the folder name from a full directory path. */
@@ -163,6 +164,9 @@ export default function Questionnaire() {
 															] ?? "")
 												}
 												onSave={saveClientVariable}
+												onAddContact={() =>
+													setShowContacts(true)
+												}
 											/>
 										))}
 									</div>
@@ -192,10 +196,12 @@ function QuestionField({
 	question,
 	value,
 	onSave,
+	onAddContact,
 }: {
 	question: QuestionDef;
 	value: string;
 	onSave: (name: string, value: string) => Promise<void>;
+	onAddContact?: () => void;
 }) {
 	switch (question.kind) {
 		case "text":
@@ -215,11 +221,11 @@ function QuestionField({
 				/>
 			);
 		case "contact-role":
-			// Placeholder — will be implemented in Phase 4
 			return (
-				<div className="text-sm text-base-content/40 italic">
-					Contact role: {question.label} (coming soon)
-				</div>
+				<ContactPicker
+					question={question}
+					onAddContact={onAddContact}
+				/>
 			);
 	}
 }
