@@ -10,8 +10,17 @@ export interface AppSettings {
 export type WorkflowStep =
 	| "select-directory"
 	| "client-hub"
+	| "questionnaire"
 	| "select-template"
 	| "edit-variables";
+
+/** A per-document override for a contact role. */
+export interface RoleOverride {
+	/** The contact ID for this override, or null for custom manual values. */
+	contact_id: string | null;
+	/** The specific variable values for this override. */
+	values: Record<string, string>;
+}
 
 /** Metadata for a single document tracked in the .lily project file. */
 export interface DocumentMeta {
@@ -22,6 +31,32 @@ export interface DocumentMeta {
 	 *  template is first processed so the variable list survives after
 	 *  placeholders are replaced with real values in the docx. */
 	variable_names: string[];
+	/** Per-document role overrides (roles that diverge from the questionnaire). */
+	role_overrides: Record<string, RoleOverride>;
+}
+
+/** A contact associated with a client (family member, agent, trustee, etc.). */
+export interface Contact {
+	id: string;
+	full_name: string;
+	first_name: string;
+	last_name: string;
+	relationship: string;
+	phone: string;
+	email: string;
+	address: string;
+	city: string;
+	state: string;
+	zip: string;
+}
+
+/** Maps a role (e.g., "Healthcare POA Agent") to a contact and defines which
+ *  variables auto-fill from which contact properties. */
+export interface ContactBinding {
+	/** The contact ID bound to this role, or null for manual ("Other") entry. */
+	contact_id: string | null;
+	/** Map from variable display name to contact property key. */
+	variable_mappings: Record<string, string>;
 }
 
 /** The .lily project file stored in each client/working directory. */
@@ -38,6 +73,20 @@ export interface LilyFile {
 	conditional_definitions: Record<string, string[]>;
 	/** Map from document filename to its metadata. */
 	documents: Record<string, DocumentMeta>;
+	/** Contacts associated with this client. */
+	contacts: Contact[];
+	/** Contact-to-role bindings, keyed by role name. */
+	contact_bindings: Record<string, ContactBinding>;
+	/** Questionnaire notes keyed by section title. */
+	questionnaire_notes: Record<string, SectionNotes>;
+}
+
+/** Notes attached to a questionnaire section. */
+export interface SectionNotes {
+	/** Notes from/for the client (visible in client-facing tools). */
+	client: string;
+	/** Internal notes for the legal team (not visible to clients). */
+	internal: string;
 }
 
 /** Info about a single logical variable, with case-variant grouping. */

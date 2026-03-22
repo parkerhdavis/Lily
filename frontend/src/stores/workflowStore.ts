@@ -1,8 +1,12 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type { WorkflowStep, LilyFile, VariableInfo } from "@/types";
-
-const QUESTIONNAIRE_FILENAME = "ClientQuestionnaire.docx";
+import type {
+	WorkflowStep,
+	LilyFile,
+	VariableInfo,
+	Contact,
+	ContactBinding,
+} from "@/types";
 
 interface WorkflowState {
 	step: WorkflowStep;
@@ -50,6 +54,34 @@ interface WorkflowState {
 	openTemplateFile: (templateRelPath: string) => Promise<void>;
 	/** Reload the .lily file from disk into the store. */
 	reloadLilyFile: () => Promise<void>;
+	/** Add a new contact to the client's .lily file. */
+	addContact: (contact: Omit<Contact, "id">) => Promise<Contact>;
+	/** Update an existing contact. */
+	updateContact: (contact: Contact) => Promise<void>;
+	/** Delete a contact by ID. */
+	deleteContact: (contactId: string) => Promise<void>;
+	/** Set or clear a contact binding for a role. */
+	setContactBinding: (
+		role: string,
+		binding: ContactBinding,
+	) => Promise<void>;
+	/** Clear a contact binding for a role (remove it entirely). */
+	clearContactBinding: (role: string) => Promise<void>;
+	/** Resolve all contact bindings into the variable pool. */
+	resolveContactBindings: () => Promise<void>;
+	/** Set or remove a per-document role override. */
+	setRoleOverride: (
+		role: string,
+		overrideData: import("@/types").RoleOverride | null,
+	) => Promise<void>;
+	/** Save a questionnaire note for a section. */
+	saveQuestionnaireNote: (
+		section: string,
+		noteKind: "client" | "internal",
+		value: string,
+	) => Promise<void>;
+	/** Navigate to the interactive questionnaire view. */
+	openQuestionnaire: () => void;
 	/** Navigate to Add New Document (template selection). */
 	startAddDocument: () => void;
 	/** Return to the Client Hub, clearing document-specific state. */
@@ -246,6 +278,16 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 					savedVars[v.display_name] ?? defaultVal;
 			}
 
+			// Apply per-document role overrides (override questionnaire values)
+			const docMeta = lilyFile?.documents[filename];
+			if (docMeta?.role_overrides) {
+				for (const override of Object.values(docMeta.role_overrides)) {
+					for (const [varName, value] of Object.entries(override.values)) {
+						variableValues[varName] = value;
+					}
+				}
+			}
+
 			set({
 				documentPath: docPath,
 				templateRelPath,
@@ -288,6 +330,34 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				variables: variableValues,
 				conditionalDefinitions: lilyFile?.conditional_definitions ?? {},
 			});
+
+			// Update per-document role override values with current variableValues
+			const filename =
+				documentPath.split("/").pop() ??
+				documentPath.split("\\").pop() ??
+				"";
+			const docMeta = lilyFile?.documents[filename];
+			if (docMeta?.role_overrides && workingDir) {
+				for (const [role, override] of Object.entries(
+					docMeta.role_overrides,
+				)) {
+					const updatedValues = { ...override.values };
+					for (const varName of Object.keys(updatedValues)) {
+						if (variableValues[varName] !== undefined) {
+							updatedValues[varName] = variableValues[varName];
+						}
+					}
+					await invoke("set_role_override", {
+						workingDir,
+						filename,
+						role,
+						overrideData: {
+							contact_id: override.contact_id,
+							values: updatedValues,
+						},
+					});
+				}
+			}
 
 			// Reload .lily file to reflect updated variable values and timestamp
 			if (workingDir) {
@@ -446,6 +516,128 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		} catch (err) {
 			console.error("Failed to reload .lily file:", err);
 		}
+	},
+
+	addContact: async (contact) => {
+		const { workingDir } = get();
+		if (!workingDir) throw new Error("No working directory");
+
+		const created = await invoke<Contact>("add_contact", {
+			workingDir,
+			contact: { id: "", ...contact },
+		});
+		await get().reloadLilyFile();
+		return created;
+	},
+
+	updateContact: async (contact) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		await invoke("update_contact", { workingDir, contact });
+		await get().reloadLilyFile();
+	},
+
+	deleteContact: async (contactId) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		await invoke("delete_contact", { workingDir, contactId });
+		await get().reloadLilyFile();
+	},
+
+	setContactBinding: async (role, binding) => {
+		const { workingDir, lilyFile } = get();
+		if (!workingDir) return;
+
+		const bindings = { ...(lilyFile?.contact_bindings ?? {}) };
+		bindings[role] = binding;
+		await invoke("save_contact_bindings", {
+			workingDir,
+			contactBindings: bindings,
+		});
+		// Resolve the binding into the variables pool
+		await invoke("resolve_contact_variables", { workingDir });
+		await get().reloadLilyFile();
+
+		// Sync resolved values into variableValues for live preview
+		const { lilyFile: updatedLily, variableValues } = get();
+		if (updatedLily) {
+			const merged = { ...variableValues };
+			for (const varName of Object.keys(binding.variable_mappings)) {
+				if (updatedLily.variables[varName] !== undefined) {
+					merged[varName] = updatedLily.variables[varName];
+				}
+			}
+			set({ variableValues: merged, dirty: true });
+		}
+	},
+
+	clearContactBinding: async (role) => {
+		const { workingDir, lilyFile } = get();
+		if (!workingDir) return;
+
+		const bindings = { ...(lilyFile?.contact_bindings ?? {}) };
+		delete bindings[role];
+		await invoke("save_contact_bindings", {
+			workingDir,
+			contactBindings: bindings,
+		});
+		await get().reloadLilyFile();
+	},
+
+	setRoleOverride: async (role, overrideData) => {
+		const { workingDir, documentPath } = get();
+		if (!workingDir || !documentPath) return;
+
+		const filename =
+			documentPath.split("/").pop() ??
+			documentPath.split("\\").pop() ??
+			"";
+		await invoke("set_role_override", {
+			workingDir,
+			filename,
+			role,
+			overrideData,
+		});
+		await get().reloadLilyFile();
+	},
+
+	resolveContactBindings: async () => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		await invoke("resolve_contact_variables", { workingDir });
+		await get().reloadLilyFile();
+	},
+
+	saveQuestionnaireNote: async (section, noteKind, value) => {
+		const { workingDir } = get();
+		if (!workingDir) return;
+
+		await invoke("save_questionnaire_note", {
+			workingDir,
+			section,
+			noteKind,
+			value,
+		});
+		// Update local state without full reload
+		const { lilyFile } = get();
+		if (lilyFile) {
+			const notes = { ...(lilyFile.questionnaire_notes ?? {}) };
+			const sectionNotes = notes[section] ?? {
+				client: "",
+				internal: "",
+			};
+			notes[section] = { ...sectionNotes, [noteKind]: value };
+			set({
+				lilyFile: { ...lilyFile, questionnaire_notes: notes },
+			});
+		}
+	},
+
+	openQuestionnaire: () => {
+		set({ step: "questionnaire" });
 	},
 
 	startAddDocument: () => {

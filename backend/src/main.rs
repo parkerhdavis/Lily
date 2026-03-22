@@ -9,9 +9,10 @@ use docx_ops::{
     copy_template, extract_variables, get_document_html, rename_document, replace_variables,
 };
 use lily_file::{
-    add_client_variable, delete_document, load_lily_file_cmd, new_version_document,
-    open_file_in_os, remove_client_variable, save_client_variables, save_variables,
-    set_document_variables,
+    add_client_variable, add_contact, delete_contact, delete_document, load_lily_file_cmd,
+    new_version_document, open_file_in_os, remove_client_variable, resolve_contact_variables,
+    save_client_variables, save_contact_bindings, save_questionnaire_note, save_variables,
+    set_document_variables, set_role_override, update_contact,
 };
 use settings::{load_settings, save_settings};
 use tauri::Manager;
@@ -66,6 +67,13 @@ fn main() {
             delete_document,
             new_version_document,
             open_file_in_os,
+            add_contact,
+            update_contact,
+            delete_contact,
+            save_contact_bindings,
+            resolve_contact_variables,
+            save_questionnaire_note,
+            set_role_override,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
