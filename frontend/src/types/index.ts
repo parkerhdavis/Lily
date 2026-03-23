@@ -9,6 +9,8 @@ export interface AppSettings {
 	footer_size: string | null;
 	last_step: string | null;
 	autosave: boolean | null;
+	questionnaires_dir: string | null;
+	active_questionnaire_id: string | null;
 }
 
 export type WorkflowStep =

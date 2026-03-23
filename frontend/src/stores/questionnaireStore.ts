@@ -25,6 +25,8 @@ interface QuestionnaireState {
 	setActiveQuestionnaire: (id: string) => Promise<void>;
 	/** Get the active questionnaire definition for use by the client questionnaire view. */
 	loadActiveQuestionnaire: () => Promise<QuestionnaireDefFile | null>;
+	/** Migrate questionnaires from the old config-dir storage to the configured folder. */
+	migrateQuestionnaires: () => Promise<number>;
 }
 
 export const useQuestionnaireStore = create<QuestionnaireState>((set, get) => ({
@@ -118,6 +120,12 @@ export const useQuestionnaireStore = create<QuestionnaireState>((set, get) => ({
 		const index =
 			await invoke<QuestionnaireIndex>("load_questionnaire_index");
 		set({ index });
+	},
+
+	migrateQuestionnaires: async () => {
+		const count = await invoke<number>("migrate_questionnaires");
+		await get().loadIndex();
+		return count;
 	},
 
 	loadActiveQuestionnaire: async () => {

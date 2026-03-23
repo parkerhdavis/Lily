@@ -1,6 +1,8 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { useQuestionnaireStore } from "@/stores/questionnaireStore";
+import { useToastStore } from "@/stores/toastStore";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
@@ -27,6 +29,34 @@ export default function AppSettings() {
 		});
 		if (selected) {
 			save({ templates_dir: selected });
+		}
+	};
+
+	const pickQuestionnairesDir = async () => {
+		const selected = await open({
+			directory: true,
+			title: "Select Questionnaires Folder",
+			defaultPath: settings.questionnaires_dir ?? undefined,
+		});
+		if (selected) {
+			await save({ questionnaires_dir: selected });
+			// Migrate any existing questionnaires from old config-dir storage
+			try {
+				const count =
+					await useQuestionnaireStore
+						.getState()
+						.migrateQuestionnaires();
+				if (count > 0) {
+					useToastStore
+						.getState()
+						.addToast(
+							"success",
+							`Migrated ${count} questionnaire${count > 1 ? "s" : ""} to new folder`,
+						);
+				}
+			} catch {
+				// Migration is best-effort — folder is still set
+			}
 		}
 	};
 
@@ -196,6 +226,26 @@ export default function AppSettings() {
 							>
 								{settings.templates_dir ? "Change" : "Set"}{" "}
 								Templates Folder
+							</button>
+							<div className="border-t border-base-300 my-3" />
+							<div>
+								<p className="text-sm font-medium mb-1">
+									Questionnaires Folder
+								</p>
+								<p className="text-xs text-base-content/40 font-mono break-all">
+									{settings.questionnaires_dir ??
+										"Not configured"}
+								</p>
+							</div>
+							<button
+								type="button"
+								className="btn btn-outline btn-sm"
+								onClick={pickQuestionnairesDir}
+							>
+								{settings.questionnaires_dir
+									? "Change"
+									: "Set"}{" "}
+								Questionnaires Folder
 							</button>
 						</div>
 					</section>
