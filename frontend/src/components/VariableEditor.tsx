@@ -1238,56 +1238,41 @@ function ContactRoleField({
 				</div>
 			</div>
 
-			{/* Override toggle + Apply to Questionnaire */}
-			<div className="mb-1.5 space-y-0.5">
-				<button
-					type="button"
-					className={`flex items-center gap-1.5 text-xs transition-colors ${
-						isOverridden
-							? "text-warning hover:text-warning/80"
-							: "text-base-content/50 hover:text-base-content/70"
-					}`}
-					onClick={() => onToggleOverride(!isOverridden)}
-					title={
-						isOverridden
-							? "Re-link this role to the questionnaire value and discard the document-specific override"
-							: "Unlink from the questionnaire so you can set a different value for this document only"
-					}
-				>
-					{isOverridden ? (
-						<LinkSlashIcon className="size-3.5" />
-					) : (
-						<LinkIcon className="size-3.5" />
-					)}
-					<span>
-						{isOverridden
-							? "Overridden for this document"
-							: "Linked to questionnaire"}
-					</span>
-				</button>
-				{isOverridden && (
+			{/* Override toggle + Apply Override */}
+			<div className="mb-1.5">
+				<div className="join">
 					<button
 						type="button"
-						className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors ml-5"
-						onClick={onApplyToQuestionnaire}
-						title="Save this document's current values back to the questionnaire as the new default for all documents, then re-link"
+						className={`join-item btn btn-xs gap-1.5 ${
+							isOverridden
+								? "btn-warning btn-outline"
+								: "btn-ghost text-base-content/50"
+						}`}
+						onClick={() => onToggleOverride(!isOverridden)}
+						title={
+							isOverridden
+								? "Re-link this role to the questionnaire value and discard the document-specific override"
+								: "Unlink from the questionnaire so you can set a different value for this document only"
+						}
 					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							viewBox="0 0 16 16"
-							fill="currentColor"
-							className="size-3"
-						>
-							<title>Apply</title>
-							<path
-								fillRule="evenodd"
-								d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z"
-								clipRule="evenodd"
-							/>
-						</svg>
-						Apply to Questionnaire
+						{isOverridden ? (
+							<LinkSlashIcon className="size-3" />
+						) : (
+							<LinkIcon className="size-3" />
+						)}
+						{isOverridden ? "Unlinked" : "Linked"}
 					</button>
-				)}
+					{isOverridden && (
+						<button
+							type="button"
+							className="join-item btn btn-xs btn-primary btn-outline gap-1"
+							onClick={onApplyToQuestionnaire}
+							title="Save this document's current values back to the questionnaire as the new default for all documents, then re-link"
+						>
+							Apply Override
+						</button>
+					)}
+				</div>
 			</div>
 
 			{/* ── Linked state: greyed-out, shows questionnaire value ── */}
