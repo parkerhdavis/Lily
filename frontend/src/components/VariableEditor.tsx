@@ -808,7 +808,7 @@ export default function VariableEditor() {
 						No variables match your search.
 					</p>
 				) : (
-				<div className="flex flex-col gap-2">
+				<div className="flex flex-col gap-3">
 					{(() => {
 						const renderedRoles = new Set<string>();
 						return filteredVariables.map((varInfo) => {
@@ -1283,40 +1283,38 @@ function ContactRoleField({
 			</div>
 
 			{/* Link/override controls */}
-			<div className="px-3 py-2 border-b border-base-300">
-				<div className="join">
+			<div className="border-b border-base-300 flex">
+				{!isOverridden ? (
 					<button
 						type="button"
-						className={`join-item btn btn-xs gap-1.5 ${
-							isOverridden
-								? "btn-warning btn-outline"
-								: "btn-ghost text-base-content/50"
-						}`}
-						onClick={() => onToggleOverride(!isOverridden)}
-						title={
-							isOverridden
-								? "Re-link this role to the questionnaire value and discard the document-specific override"
-								: "Unlink from the questionnaire so you can set a different value for this document only"
-						}
+						className="flex-1 btn btn-ghost btn-sm rounded-none border-0 gap-1.5 text-base-content/50 border-r border-base-300"
+						onClick={() => onToggleOverride(true)}
+						title="Unlink from the questionnaire so you can set a different value for this document only"
 					>
-						{isOverridden ? (
-							<LinkSlashIcon className="size-3" />
-						) : (
-							<LinkIcon className="size-3" />
-						)}
-						{isOverridden ? "Unlinked" : "Linked"}
+						<LinkIcon className="size-3" />
+						Linked
 					</button>
-					{isOverridden && (
+				) : (
+					<>
 						<button
 							type="button"
-							className="join-item btn btn-xs btn-primary btn-outline gap-1"
+							className="flex-1 btn btn-sm rounded-none border-0 gap-1.5 btn-warning btn-outline border-r border-base-300"
+							onClick={() => onToggleOverride(false)}
+							title="Re-link this role to the questionnaire value and discard the document-specific override"
+						>
+							<LinkSlashIcon className="size-3" />
+							Unlinked
+						</button>
+						<button
+							type="button"
+							className="flex-1 btn btn-sm rounded-none border-0 gap-1 text-base-content/50 hover:bg-success/10 hover:text-success"
 							onClick={onApplyToQuestionnaire}
 							title="Save this document's current values back to the questionnaire as the new default for all documents, then re-link"
 						>
 							Apply Override
 						</button>
-					)}
-				</div>
+					</>
+				)}
 			</div>
 
 			{/* ── Linked state: greyed-out, shows questionnaire value ── */}
