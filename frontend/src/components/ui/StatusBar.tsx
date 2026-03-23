@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { useNavigationStore } from "@/stores/navigationStore";
 
 /**
  * Persistent status bar at the bottom of the app window.
- * Provides quick access to settings, folder shortcuts, theme, and zoom.
+ * Three-section layout: [Left: settings + folder] [Center: <- Page ->] [Right: theme + zoom]
  */
 export default function StatusBar() {
 	const { settings, toggleTheme, zoomIn, zoomOut, zoomReset } =
@@ -12,22 +13,36 @@ export default function StatusBar() {
 	const step = useWorkflowStore((s) => s.step);
 	const workingDir = useWorkflowStore((s) => s.workingDir);
 	const goToSettings = useWorkflowStore((s) => s.goToSettings);
+	const restoreNavigationEntry = useWorkflowStore(
+		(s) => s.restoreNavigationEntry,
+	);
+
+	const canGoBack = useNavigationStore((s) => s.canGoBack);
+	const canGoForward = useNavigationStore((s) => s.canGoForward);
+	const goBack = useNavigationStore((s) => s.goBack);
+	const goForward = useNavigationStore((s) => s.goForward);
 
 	const isDark = settings.theme === "dark";
 	const zoom = settings.zoom ?? 100;
 	const footerSize = settings.footer_size ?? "medium";
 	const sizeClasses =
 		footerSize === "small"
-			? "h-6 text-[10px]"
+			? "h-10 text-xs"
 			: footerSize === "large"
-				? "h-9 text-xs"
-				: "h-7 text-[11px]";
+				? "h-16 text-base"
+				: "h-12 text-sm";
 	const iconSize =
 		footerSize === "small"
-			? "size-2.5"
+			? "size-3.5"
 			: footerSize === "large"
-				? "size-3.5"
-				: "size-3";
+				? "size-5"
+				: "size-4";
+	const navArrowSize =
+		footerSize === "small"
+			? "size-3"
+			: footerSize === "large"
+				? "size-4.5"
+				: "size-3.5";
 
 	const openFolder = async (path: string) => {
 		try {
@@ -35,6 +50,16 @@ export default function StatusBar() {
 		} catch (err) {
 			console.error("Failed to open folder:", err);
 		}
+	};
+
+	const handleGoBack = () => {
+		const entry = goBack();
+		if (entry) restoreNavigationEntry(entry);
+	};
+
+	const handleGoForward = () => {
+		const entry = goForward();
+		if (entry) restoreNavigationEntry(entry);
 	};
 
 	// Determine which folder to open based on context
@@ -45,14 +70,20 @@ export default function StatusBar() {
 			? "Open templates folder"
 			: null;
 
+	const btnClass =
+		"flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-white/10 hover:text-white/90 transition-colors";
+
 	return (
-		<footer className={`flex items-center justify-between px-2 border-t border-[#1a1e24] shrink-0 select-none ${sizeClasses}`} style={{ backgroundColor: "#111418", color: "oklch(0.7 0 0)" }}>
+		<footer
+			className={`flex items-center px-2 border-t border-[#1a1e24] shrink-0 select-none ${sizeClasses}`}
+			style={{ backgroundColor: "#111418", color: "oklch(0.7 0 0)" }}
+		>
 			{/* Left side */}
-			<div className="flex items-center gap-0.5">
+			<div className="flex items-center gap-0.5 flex-none">
 				{/* Settings */}
 				<button
 					type="button"
-					className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-white/10 hover:text-white/90 transition-colors"
+					className={btnClass}
 					onClick={goToSettings}
 					title="Settings"
 				>
@@ -75,7 +106,7 @@ export default function StatusBar() {
 				{folderPath && (
 					<button
 						type="button"
-						className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-white/10 hover:text-white/90 transition-colors"
+						className={btnClass}
 						onClick={() => openFolder(folderPath)}
 						title={folderLabel ?? "Open folder"}
 					>
@@ -90,24 +121,65 @@ export default function StatusBar() {
 						</svg>
 					</button>
 				)}
+			</div>
 
-				{/* Divider + context breadcrumb */}
-				{step !== "hub" && (
-					<>
-						<span className="mx-1 text-white/15">|</span>
-						<span className="text-white/40 truncate max-w-64">
-							{getStepLabel(step, workingDir)}
-						</span>
-					</>
-				)}
+			{/* Center: back / page title / forward */}
+			<div className="flex-1 flex items-center justify-center gap-1 min-w-0">
+				<button
+					type="button"
+					className={`${btnClass} ${canGoBack ? "" : "opacity-25 pointer-events-none"}`}
+					onClick={handleGoBack}
+					title="Go back (Alt+Left)"
+					disabled={!canGoBack}
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						viewBox="0 0 16 16"
+						fill="currentColor"
+						className={navArrowSize}
+					>
+						<title>Back</title>
+						<path
+							fillRule="evenodd"
+							d="M11.78 4.22a.75.75 0 0 1 0 1.06L8.56 8.5l3.22 3.22a.75.75 0 1 1-1.06 1.06l-3.75-3.75a.75.75 0 0 1 0-1.06l3.75-3.75a.75.75 0 0 1 1.06 0Z"
+							clipRule="evenodd"
+						/>
+					</svg>
+				</button>
+
+				<span className="text-white/50 truncate max-w-64">
+					{getStepLabel(step, workingDir)}
+				</span>
+
+				<button
+					type="button"
+					className={`${btnClass} ${canGoForward ? "" : "opacity-25 pointer-events-none"}`}
+					onClick={handleGoForward}
+					title="Go forward (Alt+Right)"
+					disabled={!canGoForward}
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						viewBox="0 0 16 16"
+						fill="currentColor"
+						className={navArrowSize}
+					>
+						<title>Forward</title>
+						<path
+							fillRule="evenodd"
+							d="M4.22 4.22a.75.75 0 0 1 1.06 0l3.75 3.75a.75.75 0 0 1 0 1.06l-3.75 3.75a.75.75 0 0 1-1.06-1.06L7.44 8.5 4.22 5.28a.75.75 0 0 1 0-1.06Z"
+							clipRule="evenodd"
+						/>
+					</svg>
+				</button>
 			</div>
 
 			{/* Right side */}
-			<div className="flex items-center gap-0.5">
+			<div className="flex items-center gap-0.5 flex-none">
 				{/* Theme toggle */}
 				<button
 					type="button"
-					className="flex items-center px-1.5 py-0.5 rounded hover:bg-white/10 hover:text-white/90 transition-colors"
+					className={btnClass}
 					onClick={toggleTheme}
 					title={
 						isDark ? "Switch to light mode" : "Switch to dark mode"
@@ -176,8 +248,10 @@ function getStepLabel(
 		: "";
 
 	switch (step) {
+		case "hub":
+			return "Lily Hub";
 		case "client-hub":
-			return folderName;
+			return folderName || "Client Hub";
 		case "questionnaire":
 			return `${folderName} \u203A Questionnaire`;
 		case "select-template":
@@ -188,6 +262,8 @@ function getStepLabel(
 			return "Settings";
 		case "pipeline":
 			return "Pipeline";
+		case "questionnaire-editor":
+			return "Pipeline \u203A Questionnaire Editor";
 		default:
 			return "";
 	}

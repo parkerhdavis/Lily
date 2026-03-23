@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { useNavigationStore } from "@/stores/navigationStore";
+import { useUndoStore } from "@/stores/undoStore";
 import LilyHub from "@/components/LilyHub";
 import ClientHub from "@/components/ClientHub";
 import TemplatePicker from "@/components/TemplatePicker";
@@ -8,6 +10,7 @@ import VariableEditor from "@/components/VariableEditor";
 import Questionnaire from "@/components/Questionnaire";
 import AppSettings from "@/components/AppSettings";
 import PipelineHub from "@/components/PipelineHub";
+import QuestionnaireEditor from "@/components/QuestionnaireEditor";
 import StatusBar from "@/components/ui/StatusBar";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
 
@@ -48,6 +51,50 @@ export default function App() {
 		window.addEventListener("keydown", handleZoom);
 		return () => window.removeEventListener("keydown", handleZoom);
 	}, [zoomIn, zoomOut, zoomReset]);
+
+	// Global navigation shortcuts: Alt+Left / Alt+Right
+	useEffect(() => {
+		const handleNav = (e: KeyboardEvent) => {
+			if (!e.altKey) return;
+			if (e.key === "ArrowLeft") {
+				e.preventDefault();
+				const entry = useNavigationStore.getState().goBack();
+				if (entry)
+					useWorkflowStore.getState().restoreNavigationEntry(entry);
+			} else if (e.key === "ArrowRight") {
+				e.preventDefault();
+				const entry = useNavigationStore.getState().goForward();
+				if (entry)
+					useWorkflowStore.getState().restoreNavigationEntry(entry);
+			}
+		};
+		window.addEventListener("keydown", handleNav);
+		return () => window.removeEventListener("keydown", handleNav);
+	}, []);
+
+	// Global undo/redo shortcuts: Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z
+	useEffect(() => {
+		const handleUndo = (e: KeyboardEvent) => {
+			if (!(e.ctrlKey || e.metaKey)) return;
+			// Don't intercept when focus is in a text input (let browser handle it)
+			const tag = (e.target as HTMLElement)?.tagName;
+			if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+			if (e.key === "z" && !e.shiftKey) {
+				e.preventDefault();
+				useUndoStore.getState().undo();
+			} else if (
+				e.key === "y" ||
+				(e.key === "z" && e.shiftKey) ||
+				(e.key === "Z" && e.shiftKey)
+			) {
+				e.preventDefault();
+				useUndoStore.getState().redo();
+			}
+		};
+		window.addEventListener("keydown", handleUndo);
+		return () => window.removeEventListener("keydown", handleUndo);
+	}, []);
 
 	// Splash: wait for settings to load + minimum display time, then fade out
 	useEffect(() => {
@@ -93,6 +140,8 @@ export default function App() {
 				return <AppSettings />;
 			case "pipeline":
 				return <PipelineHub />;
+			case "questionnaire-editor":
+				return <QuestionnaireEditor />;
 		}
 	})();
 

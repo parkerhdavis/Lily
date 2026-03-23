@@ -3,6 +3,7 @@
 
 mod docx_ops;
 mod lily_file;
+mod questionnaire;
 mod settings;
 
 use docx_ops::{
@@ -12,7 +13,11 @@ use lily_file::{
     add_client_variable, add_contact, delete_contact, delete_document, load_lily_file_cmd,
     new_version_document, open_file_in_os, remove_client_variable, resolve_contact_variables,
     save_client_variables, save_contact_bindings, save_questionnaire_note, save_variables,
-    set_document_variables, set_role_override, update_contact,
+    set_client_questionnaire, set_document_variables, set_role_override, update_contact,
+};
+use questionnaire::{
+    create_questionnaire, delete_questionnaire, duplicate_questionnaire,
+    load_questionnaire, load_questionnaire_index, save_questionnaire, set_active_questionnaire,
 };
 use settings::{load_settings, save_settings};
 use tauri::Manager;
@@ -74,6 +79,14 @@ fn main() {
             resolve_contact_variables,
             save_questionnaire_note,
             set_role_override,
+            set_client_questionnaire,
+            load_questionnaire_index,
+            load_questionnaire,
+            save_questionnaire,
+            create_questionnaire,
+            duplicate_questionnaire,
+            delete_questionnaire,
+            set_active_questionnaire,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

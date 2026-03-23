@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useWorkflowStore } from "@/stores/workflowStore";
-import { questionnaireDef, questionnaireTabs } from "@/data/questionnaireDef";
+import { useQuestionnaireStore } from "@/stores/questionnaireStore";
+import {
+	questionnaireDef as fallbackDef,
+	questionnaireTabs as fallbackTabs,
+} from "@/data/questionnaireDef";
 import ContactPicker from "@/components/ContactPicker";
 import PageHeader from "@/components/ui/PageHeader";
 import StatusDot from "@/components/ui/StatusDot";
-import type { QuestionDef } from "@/types/questionnaire";
+import type { QuestionDef, QuestionnaireSectionDef } from "@/types/questionnaire";
 
 /** Extract just the folder name from a full directory path. */
 function getFolderName(dirPath: string): string {
 	const segments = dirPath.replace(/\\/g, "/").split("/");
 	return segments[segments.length - 1] || dirPath;
 }
-
-type TabId = (typeof questionnaireTabs)[number]["id"];
 
 export default function Questionnaire() {
 	const {
@@ -25,13 +28,70 @@ export default function Questionnaire() {
 		deleteContact,
 		returnToHub,
 	} = useWorkflowStore();
+	const { loadActiveQuestionnaire } = useQuestionnaireStore();
 
 	const variables = lilyFile?.variables ?? {};
 	const contacts = lilyFile?.contacts ?? [];
 	const notes = lilyFile?.questionnaire_notes ?? {};
 
+	// Dynamic questionnaire definition
+	const [questionnaireDef, setQuestionnaireDef] =
+		useState<QuestionnaireSectionDef[]>(fallbackDef);
+	const [questionnaireTabs, setQuestionnaireTabs] = useState(fallbackTabs);
+
+	// Load questionnaire definition on mount
+	useEffect(() => {
+		(async () => {
+			try {
+				let def = null;
+				if (lilyFile?.questionnaire_id) {
+					try {
+						def = await invoke<
+							import("@/types/questionnaire").QuestionnaireDefFile
+						>("load_questionnaire", {
+							id: lilyFile.questionnaire_id,
+						});
+					} catch {
+						// Fall through to active
+					}
+				}
+				if (!def) {
+					def = await loadActiveQuestionnaire();
+				}
+				if (def) {
+					setQuestionnaireDef(def.sections);
+					setQuestionnaireTabs(
+						def.tabs.map((t) => ({
+							id: t.id as (typeof fallbackTabs)[number]["id"],
+							label: t.label,
+						})),
+					);
+					// Stamp version into .lily file
+					if (
+						workingDir &&
+						(lilyFile?.questionnaire_id !== def.id ||
+							lilyFile?.questionnaire_version !== def.version)
+					) {
+						invoke("set_client_questionnaire", {
+							workingDir,
+							questionnaireId: def.id,
+							questionnaireVersion: def.version,
+						}).catch((err: unknown) =>
+							console.error(
+								"Failed to stamp questionnaire version:",
+								err,
+							),
+						);
+					}
+				}
+			} catch (err) {
+				console.error("Failed to load questionnaire definition:", err);
+			}
+		})();
+	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+
 	// Tab state
-	const [activeTab, setActiveTab] = useState<TabId>("client-info");
+	const [activeTab, setActiveTab] = useState<string>("client-info");
 
 	// Save-state indicator
 	const [saveStatus, setSaveStatus] = useState<

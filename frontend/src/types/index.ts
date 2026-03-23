@@ -17,7 +17,8 @@ export type WorkflowStep =
 	| "select-template"
 	| "edit-variables"
 	| "app-settings"
-	| "pipeline";
+	| "pipeline"
+	| "questionnaire-editor";
 
 /** A per-document override for a contact role. */
 export interface RoleOverride {
@@ -84,6 +85,10 @@ export interface LilyFile {
 	contact_bindings: Record<string, ContactBinding>;
 	/** Questionnaire notes keyed by section title. */
 	questionnaire_notes: Record<string, SectionNotes>;
+	/** ID of the questionnaire definition used for this client. */
+	questionnaire_id: string | null;
+	/** Version of the questionnaire definition when it was last applied. */
+	questionnaire_version: number | null;
 }
 
 /** Notes attached to a questionnaire section. */

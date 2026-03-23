@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 const LILY_EXT: &str = "lily";
 const OLD_SIDECAR_FILENAME: &str = ".lily.json";
-const CURRENT_VERSION: u32 = 3;
+const CURRENT_VERSION: u32 = 4;
 
 /// A contact associated with a client — a person referenced across documents
 /// (e.g., a family member, agent, or trustee).
@@ -84,6 +84,12 @@ pub struct LilyFile {
     /// Questionnaire notes keyed by section title.
     #[serde(default)]
     pub questionnaire_notes: HashMap<String, SectionNotes>,
+    /// ID of the questionnaire definition used for this client.
+    #[serde(default)]
+    pub questionnaire_id: Option<String>,
+    /// Version of the questionnaire definition when it was last applied.
+    #[serde(default)]
+    pub questionnaire_version: Option<u32>,
 }
 
 /// A per-document override for a contact role, allowing a document to use
@@ -132,6 +138,8 @@ impl Default for LilyFile {
             contacts: Vec::new(),
             contact_bindings: HashMap::new(),
             questionnaire_notes: HashMap::new(),
+            questionnaire_id: None,
+            questionnaire_version: None,
         }
     }
 }
@@ -701,5 +709,18 @@ pub fn save_questionnaire_note(
         "internal" => notes.internal = value,
         _ => return Err(format!("Invalid note kind: {}", note_kind)),
     }
+    write_lily_file(&working_dir, &lily)
+}
+
+/// Stamp the questionnaire ID and version into the .lily file for a client.
+#[tauri::command]
+pub fn set_client_questionnaire(
+    working_dir: String,
+    questionnaire_id: String,
+    questionnaire_version: u32,
+) -> Result<(), String> {
+    let mut lily = read_lily_file(&working_dir)?;
+    lily.questionnaire_id = Some(questionnaire_id);
+    lily.questionnaire_version = Some(questionnaire_version);
     write_lily_file(&working_dir, &lily)
 }
