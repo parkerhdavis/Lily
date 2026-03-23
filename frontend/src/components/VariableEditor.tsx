@@ -822,7 +822,7 @@ export default function VariableEditor() {
 								<div
 									key={name}
 									data-var-entry={name}
-									className={`w-full rounded-lg border bg-base-100 shadow ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+									className={`w-full rounded-lg border bg-base-100 shadow-md shadow-base-content/10 ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 								>
 									{/* Name header */}
 									<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300 rounded-t-lg">
@@ -1023,7 +1023,7 @@ export default function VariableEditor() {
 							<div
 								key={name}
 								data-var-entry={name}
-								className={`w-full rounded-lg border bg-base-100 shadow ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+								className={`w-full rounded-lg border bg-base-100 shadow-md shadow-base-content/10 ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 							>
 								{/* Name header */}
 								<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300 rounded-t-lg">
@@ -1243,7 +1243,7 @@ function ContactRoleField({
 
 	return (
 		<div
-			className={`w-full rounded-lg border bg-base-100 shadow ${isSelected ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+			className={`w-full rounded-lg border bg-base-100 shadow-md shadow-base-content/10 ${isSelected ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 			data-var-entry={group.properties[0]?.displayName}
 		>
 			{/* Name header */}
@@ -1307,7 +1307,7 @@ function ContactRoleField({
 						</button>
 						<button
 							type="button"
-							className="flex-1 btn btn-sm rounded-none border-0 gap-1 text-base-content/50 hover:bg-success/10 hover:text-success"
+							className="flex-1 btn btn-ghost btn-sm rounded-none border-0 gap-1 text-base-content/50 hover:bg-success/10 hover:text-success"
 							onClick={onApplyToQuestionnaire}
 							title="Save this document's current values back to the questionnaire as the new default for all documents, then re-link"
 						>
