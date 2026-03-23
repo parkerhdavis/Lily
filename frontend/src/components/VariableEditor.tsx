@@ -822,10 +822,10 @@ export default function VariableEditor() {
 								<div
 									key={name}
 									data-var-entry={name}
-									className={`w-full rounded-lg border bg-base-100 overflow-hidden shadow-sm ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+									className={`w-full rounded-lg border bg-base-100 shadow ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 								>
 									{/* Name header */}
-									<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300">
+									<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300 rounded-t-lg">
 										<button
 											type="button"
 											className="text-sm font-bold hover:text-primary transition-colors cursor-pointer"
@@ -1023,10 +1023,10 @@ export default function VariableEditor() {
 							<div
 								key={name}
 								data-var-entry={name}
-								className={`w-full rounded-lg border bg-base-100 overflow-hidden shadow-sm ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+								className={`w-full rounded-lg border bg-base-100 shadow ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 							>
 								{/* Name header */}
-								<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300">
+								<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300 rounded-t-lg">
 									<button
 										type="button"
 										className="text-sm font-bold flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer"
@@ -1243,11 +1243,11 @@ function ContactRoleField({
 
 	return (
 		<div
-			className={`w-full rounded-lg border bg-base-100 overflow-hidden shadow-sm ${isSelected ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+			className={`w-full rounded-lg border bg-base-100 shadow ${isSelected ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 			data-var-entry={group.properties[0]?.displayName}
 		>
 			{/* Name header */}
-			<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300">
+			<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300 rounded-t-lg">
 				<span className="text-sm font-bold flex items-center gap-1.5">
 					<StatusDot filled={allFilled} />
 					{group.role}
