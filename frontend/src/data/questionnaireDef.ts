@@ -286,6 +286,37 @@ export const questionnaireDef: QuestionnaireDef = [
 			},
 		],
 	},
+	{
+		title: "Trust & Trustees",
+		tab: "assignments",
+		description:
+			"Configure the family trust name and designate trustees to manage " +
+			"the trust upon the client's death or disability.",
+		questions: [
+			{
+				kind: "text",
+				variable: "Trust Name",
+				label: "Family Trust Name",
+				placeholder: "e.g. The Smith Family Trust",
+			},
+			{
+				kind: "contact-role",
+				role: "Trustee",
+				label: "Primary Trustee",
+				variableMappings: {
+					"Trustee Full Name": "full_name",
+				},
+			},
+			{
+				kind: "contact-role",
+				role: "Alternate Trustee",
+				label: "Alternate Trustee",
+				variableMappings: {
+					"Alternate Trustee Full Name": "full_name",
+				},
+			},
+		],
+	},
 ];
 
 /** Tab definitions for the questionnaire. */
