@@ -55,6 +55,7 @@ export type QuestionnaireDef = QuestionnaireSectionDef[];
 
 /** A complete questionnaire definition file stored on disk. */
 export interface QuestionnaireDefFile {
+	lily_type: string;
 	id: string;
 	name: string;
 	version: number;
@@ -62,13 +63,11 @@ export interface QuestionnaireDefFile {
 	sections: QuestionnaireSectionDef[];
 }
 
-/** An entry in the questionnaire index (metadata only). */
+/** An entry in the questionnaire index (derived from scanning the directory). */
 export interface QuestionnaireIndexEntry {
 	id: string;
 	name: string;
 	version: number;
-	created_at: string;
-	modified_at: string;
 }
 
 /** The questionnaire index — lists all definitions and which is active. */

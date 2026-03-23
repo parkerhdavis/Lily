@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::lily_file::atomic_write;
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct AppSettings {
     /// Path to the directory containing template .docx files.
@@ -32,6 +34,12 @@ pub struct AppSettings {
     /// Whether editors auto-save changes. Defaults to true when absent.
     #[serde(default)]
     pub autosave: Option<bool>,
+    /// Path to the directory containing questionnaire definition .lily files.
+    #[serde(default)]
+    pub questionnaires_dir: Option<String>,
+    /// UUID of the currently active questionnaire definition.
+    #[serde(default)]
+    pub active_questionnaire_id: Option<String>,
 }
 
 fn settings_path() -> Result<PathBuf, String> {
@@ -61,6 +69,6 @@ pub fn save_settings(settings: AppSettings) -> Result<(), String> {
     let path = settings_path()?;
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Failed to serialize settings: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write settings: {}", e))?;
+    atomic_write(&path, &content)?;
     Ok(())
 }

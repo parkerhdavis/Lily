@@ -2,6 +2,24 @@ import { useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import type { Contact } from "@/types";
 
+/** Basic format validation for contact fields. Returns an error message or null. */
+function validateContactField(
+	key: string,
+	value: string,
+): string | null {
+	if (!value.trim()) return null; // empty is ok
+	if (key === "email" && !value.includes("@")) {
+		return "Email should contain @";
+	}
+	if (key === "phone" && !/\d/.test(value)) {
+		return "Phone should contain digits";
+	}
+	if (key === "zip" && value.trim().length > 0 && !/\d/.test(value)) {
+		return "ZIP should contain digits";
+	}
+	return null;
+}
+
 /** The fields that make up a contact, in display order. */
 const CONTACT_FIELDS: { key: keyof Omit<Contact, "id">; label: string }[] = [
 	{ key: "full_name", label: "Full Name" },
@@ -96,6 +114,13 @@ export default function ContactManager({
 
 	const deleteName =
 		contacts.find((c) => c.id === confirmDeleteId)?.full_name ?? "";
+
+	// Find roles bound to the contact being deleted
+	const deleteRoles = confirmDeleteId
+		? Object.entries(lilyFile?.contact_bindings ?? {})
+				.filter(([_, b]) => b.contact_id === confirmDeleteId)
+				.map(([role]) => role)
+		: [];
 
 	return (
 		<div className="flex flex-col h-full">
@@ -206,8 +231,8 @@ export default function ContactManager({
 										</span>
 									</label>
 									<input
-										type="text"
-										className="input input-bordered input-sm w-full"
+										type={key === "email" ? "email" : key === "phone" ? "tel" : "text"}
+										className={`input input-bordered input-sm w-full ${validateContactField(key, editingContact[key as keyof Contact] ?? "") ? "input-warning" : ""}`}
 										value={
 											editingContact[
 												key as keyof Contact
@@ -220,6 +245,11 @@ export default function ContactManager({
 											)
 										}
 									/>
+									{validateContactField(key, editingContact[key as keyof Contact] ?? "") && (
+										<p className="text-xs text-warning mt-0.5">
+											{validateContactField(key, editingContact[key as keyof Contact] ?? "")}
+										</p>
+									)}
 								</div>
 							))}
 						</div>
@@ -267,6 +297,16 @@ export default function ContactManager({
 							<strong>{deleteName}</strong>? Any role bindings
 							referencing this contact will be cleared.
 						</p>
+						{deleteRoles.length > 0 && (
+							<div className="alert alert-warning text-sm mb-4">
+								<span>
+									Variables filled by this contact for{" "}
+									{deleteRoles.join(", ")} will be left
+									with their current values but may now
+									be stale.
+								</span>
+							</div>
+						)}
 						<div className="modal-action">
 							<button
 								type="button"

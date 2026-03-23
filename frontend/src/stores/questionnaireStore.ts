@@ -4,6 +4,7 @@ import type {
 	QuestionnaireDefFile,
 	QuestionnaireIndex,
 } from "@/types/questionnaire";
+import { useToastStore } from "@/stores/toastStore";
 
 interface QuestionnaireState {
 	index: QuestionnaireIndex | null;
@@ -24,6 +25,8 @@ interface QuestionnaireState {
 	setActiveQuestionnaire: (id: string) => Promise<void>;
 	/** Get the active questionnaire definition for use by the client questionnaire view. */
 	loadActiveQuestionnaire: () => Promise<QuestionnaireDefFile | null>;
+	/** Migrate questionnaires from the old config-dir storage to the configured folder. */
+	migrateQuestionnaires: () => Promise<number>;
 }
 
 export const useQuestionnaireStore = create<QuestionnaireState>((set, get) => ({
@@ -40,6 +43,7 @@ export const useQuestionnaireStore = create<QuestionnaireState>((set, get) => ({
 			set({ index, loading: false });
 		} catch (err) {
 			set({ error: String(err), loading: false });
+			useToastStore.getState().addToast("error", "Failed to load questionnaire index");
 		}
 	},
 
@@ -53,6 +57,7 @@ export const useQuestionnaireStore = create<QuestionnaireState>((set, get) => ({
 			set({ currentDef: def, loading: false });
 		} catch (err) {
 			set({ error: String(err), loading: false });
+			useToastStore.getState().addToast("error", "Failed to load questionnaire");
 		}
 	},
 
@@ -72,6 +77,7 @@ export const useQuestionnaireStore = create<QuestionnaireState>((set, get) => ({
 			set({ index });
 		} catch (err) {
 			set({ error: String(err), loading: false });
+			useToastStore.getState().addToast("error", "Failed to save questionnaire");
 		}
 	},
 
@@ -114,6 +120,12 @@ export const useQuestionnaireStore = create<QuestionnaireState>((set, get) => ({
 		const index =
 			await invoke<QuestionnaireIndex>("load_questionnaire_index");
 		set({ index });
+	},
+
+	migrateQuestionnaires: async () => {
+		const count = await invoke<number>("migrate_questionnaires");
+		await get().loadIndex();
+		return count;
 	},
 
 	loadActiveQuestionnaire: async () => {

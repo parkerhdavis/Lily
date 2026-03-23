@@ -12,6 +12,9 @@ import AppSettings from "@/components/AppSettings";
 import PipelineHub from "@/components/PipelineHub";
 import QuestionnaireEditor from "@/components/QuestionnaireEditor";
 import StatusBar from "@/components/ui/StatusBar";
+import ToastContainer from "@/components/ui/ToastContainer";
+import KeyboardShortcutsModal from "@/components/ui/KeyboardShortcutsModal";
+import ErrorBoundary from "@/components/ui/ErrorBoundary";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
 
 export default function App() {
@@ -20,6 +23,7 @@ export default function App() {
 	const step = useWorkflowStore((s) => s.step);
 	const [splashDone, setSplashDone] = useState(false);
 	const [fadeOut, setFadeOut] = useState(false);
+	const [showShortcuts, setShowShortcuts] = useState(false);
 	const lilyIcon = useLilyIcon();
 
 	useEffect(() => {
@@ -151,9 +155,14 @@ export default function App() {
 				className="flex-1 min-h-0"
 				style={zoom !== 100 ? { zoom: `${zoom}%` } : undefined}
 			>
-				{page}
+				<ErrorBoundary>{page}</ErrorBoundary>
 			</div>
-			<StatusBar />
+			<StatusBar onShowShortcuts={() => setShowShortcuts(true)} />
+			<ToastContainer />
+			<KeyboardShortcutsModal
+				open={showShortcuts}
+				onClose={() => setShowShortcuts(false)}
+			/>
 		</div>
 	);
 }
