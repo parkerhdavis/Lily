@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuestionnaireStore } from "@/stores/questionnaireStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import type {
@@ -17,6 +18,7 @@ export default function QuestionnaireEditor() {
 		useQuestionnaireStore();
 	const index = useQuestionnaireStore((s) => s.index);
 	const setActive = useQuestionnaireStore((s) => s.setActiveQuestionnaire);
+	const autosave = useSettingsStore((s) => s.settings.autosave) !== false;
 
 	const [def, setDef] = useState<QuestionnaireDefFile | null>(null);
 	const [activeTab, setActiveTab] = useState<string>("");
@@ -25,6 +27,7 @@ export default function QuestionnaireEditor() {
 	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
+	const [dirty, setDirty] = useState(false);
 
 	// Initialize from currentDef
 	useEffect(() => {
@@ -36,20 +39,30 @@ export default function QuestionnaireEditor() {
 		}
 	}, [currentDef]);
 
-	// Auto-save with debounce
-	const scheduleSave = useCallback(
-		(updated: QuestionnaireDefFile) => {
-			if (saveTimer.current) clearTimeout(saveTimer.current);
-			saveTimer.current = setTimeout(async () => {
-				setSaving(true);
-				setSaved(false);
-				await saveQuestionnaire(updated);
-				setSaving(false);
-				setSaved(true);
-				setTimeout(() => setSaved(false), 2000);
-			}, 600);
+	// Save with debounce (auto or manual trigger)
+	const doSave = useCallback(
+		async (updated: QuestionnaireDefFile) => {
+			setSaving(true);
+			setSaved(false);
+			await saveQuestionnaire(updated);
+			setSaving(false);
+			setSaved(true);
+			setDirty(false);
+			setTimeout(() => setSaved(false), 2000);
 		},
 		[saveQuestionnaire],
+	);
+
+	const scheduleSave = useCallback(
+		(updated: QuestionnaireDefFile) => {
+			if (!autosave) {
+				setDirty(true);
+				return;
+			}
+			if (saveTimer.current) clearTimeout(saveTimer.current);
+			saveTimer.current = setTimeout(() => doSave(updated), 600);
+		},
+		[autosave, doSave],
 	);
 
 	const updateDef = useCallback(
@@ -63,6 +76,28 @@ export default function QuestionnaireEditor() {
 		},
 		[scheduleSave],
 	);
+
+	// Ctrl+S manual save
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+				e.preventDefault();
+				if (def && dirty) doSave(def);
+			}
+		};
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [def, dirty, doSave]);
+
+	// Warn about unsaved changes when closing the window
+	useEffect(() => {
+		if (autosave || !dirty) return;
+		const handler = (e: BeforeUnloadEvent) => {
+			e.preventDefault();
+		};
+		window.addEventListener("beforeunload", handler);
+		return () => window.removeEventListener("beforeunload", handler);
+	}, [autosave, dirty]);
 
 	if (!def) {
 		return (
@@ -199,6 +234,22 @@ export default function QuestionnaireEditor() {
 				)}
 				{saved && !saving && (
 					<span className="text-xs text-success">Saved</span>
+				)}
+				{!autosave && dirty && !saving && (
+					<>
+						<span className="badge badge-warning badge-sm">
+							Unsaved
+						</span>
+						<button
+							type="button"
+							className="btn btn-primary btn-sm"
+							onClick={() => {
+								if (def) doSave(def);
+							}}
+						>
+							Save
+						</button>
+					</>
 				)}
 				{!isActive && (
 					<button

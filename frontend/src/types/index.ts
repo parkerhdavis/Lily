@@ -8,6 +8,7 @@ export interface AppSettings {
 	zoom: number | null;
 	footer_size: string | null;
 	last_step: string | null;
+	autosave: boolean | null;
 }
 
 export type WorkflowStep =

@@ -150,6 +150,31 @@ export default function AppSettings() {
 						</div>
 					</section>
 
+					{/* Autosave */}
+					<section>
+						<div className="flex items-center justify-between p-4 rounded-xl border border-base-300 bg-base-100">
+							<div>
+								<p className="text-sm font-medium">
+									Autosave
+								</p>
+								<p className="text-xs text-base-content/40 mt-0.5">
+									Automatically save changes as you
+									edit
+								</p>
+							</div>
+							<input
+								type="checkbox"
+								className="toggle toggle-primary"
+								checked={settings.autosave !== false}
+								onChange={(e) =>
+									save({
+										autosave: e.target.checked,
+									})
+								}
+							/>
+						</div>
+					</section>
+
 					{/* Workspace */}
 					<section>
 						<SectionHeading className="mb-4">
