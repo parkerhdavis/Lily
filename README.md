@@ -1,4 +1,4 @@
-![Lily Icon](./backend/icons/128x128.png)
+![Lily Icon](./resources/icons/128x128.png)
 # Lily
 
 Custom legal drafting and client info management toolset for an estate planning law firm.

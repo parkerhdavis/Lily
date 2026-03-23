@@ -128,13 +128,12 @@ function parseConditionalDef(
 }
 
 /**
- * Resolve `{Variable Name}` placeholders in a text string using the current
- * variable values and canonical-to-display name mapping. Used to fill in
- * nested replacement variables inside conditional text branches.
+ * Wrap `{Variable Name}` placeholders in a text string with variable-highlight
+ * spans so the third pass of getLivePreviewHtml can resolve values, apply
+ * selected/filled state, and make them individually clickable in the preview.
  */
 function resolveNestedVariables(
 	text: string,
-	variableValues: Record<string, string>,
 	canonicalToDisplay: Record<string, string>,
 ): string {
 	return text.replace(/\{([^}]+)\}/g, (_match, innerName: string) => {
@@ -146,9 +145,9 @@ function resolveNestedVariables(
 			: trimmed.toLowerCase();
 		const displayName = canonicalToDisplay[canonical];
 		if (!displayName) return _match;
-		const value = variableValues[displayName] ?? "";
-		if (!value) return _match;
-		return applyCasing(value, trimmed);
+		// Wrap in a variable-highlight span matching the VARIABLE_SPAN_RE
+		// format so the third pass handles value resolution and selection state.
+		return `<span class="variable-highlight" data-variable="${canonical}" data-original-case="${trimmed}">{${trimmed}}</span>`;
 	});
 }
 
@@ -337,14 +336,21 @@ export default function VariableEditor() {
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [loading, saveDocument]);
 
-	// Handle clicks on variable highlights in the document preview
+	// Handle clicks on variable highlights in the document preview.
+	// Clicking a variable span scrolls to and focuses its sidebar entry;
+	// the onFocus handler on the input/button sets selectedVariable,
+	// which triggers the yellow highlight in the preview.
+	// Clicking on a non-variable area clears the selection.
 	const handlePreviewClick = useCallback(
 		(e: React.MouseEvent) => {
 			const target = e.target as HTMLElement;
 			const span = target.closest<HTMLElement>(
 				"[data-variable]",
 			);
-			if (!span) return;
+			if (!span) {
+				setSelectedVariable(null);
+				return;
+			}
 
 			const canonical = span.dataset.variable;
 			if (!canonical) return;
@@ -352,8 +358,7 @@ export default function VariableEditor() {
 			const displayName = canonicalToDisplay[canonical];
 			if (!displayName) return;
 
-			// Select the variable and scroll its sidebar entry into view
-			setSelectedVariable(displayName);
+			// Scroll the sidebar entry into view
 			const sidebarEl = sidebarRef.current?.querySelector(
 				`[data-var-entry="${CSS.escape(displayName)}"]`,
 			);
@@ -362,13 +367,29 @@ export default function VariableEditor() {
 					behavior: "smooth",
 					block: "center",
 				});
-				// Focus the input inside the entry if it's a text variable
-				const input =
-					sidebarEl.querySelector<HTMLInputElement>(
-						"input[type=text]",
+				// Focus the first interactive element in the entry.
+				// Its onFocus handler will set selectedVariable and trigger the highlight.
+				const focusable =
+					sidebarEl.querySelector<HTMLElement>(
+						"input[type=text]:not([disabled])",
+					) ??
+					sidebarEl.querySelector<HTMLElement>(
+						"select:not([disabled])",
 					);
-				if (input) {
-					setTimeout(() => input.focus(), 100);
+				if (focusable) {
+					setTimeout(() => focusable.focus(), 100);
+				} else {
+					// Conditional variables: focus the active True/False button
+					const btns = sidebarEl.querySelectorAll<HTMLElement>(
+						"button:not(.join-item):not([title])",
+					);
+					const btn = btns[0];
+					if (btn) {
+						setTimeout(() => btn.focus(), 100);
+					} else {
+						// No focusable element — set directly as fallback
+						setSelectedVariable(displayName);
+					}
 				}
 			}
 		},
@@ -484,7 +505,6 @@ export default function VariableEditor() {
 				const branchText = isTrue ? trueText : falseText;
 				const resolvedText = resolveNestedVariables(
 					branchText,
-					variableValues,
 					canonicalToDisplay,
 				);
 				const isSelected = displayName === selectedVariable;
@@ -542,7 +562,6 @@ export default function VariableEditor() {
 				const branchText = isTrue ? trueText : falseText;
 				const resolvedText = resolveNestedVariables(
 					branchText,
-					variableValues,
 					canonicalToDisplay,
 				);
 				const isSelected = displayName === selectedVariable;
@@ -733,7 +752,7 @@ export default function VariableEditor() {
 								<div
 									key={name}
 									data-var-entry={name}
-									className="p-3 w-full rounded-lg border border-base-300 bg-base-100"
+									className={`p-3 w-full rounded-lg border bg-base-100 ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 								>
 									<div className="flex items-center justify-between mb-1.5">
 										<span className="label-text text-sm font-medium">
@@ -777,6 +796,7 @@ export default function VariableEditor() {
 													: "bg-base-200 text-base-content/40 hover:bg-base-300"
 											}`}
 											onClick={() => {
+												setSelectedVariable(name);
 												handleVariableChange(
 													name,
 													"true",
@@ -785,11 +805,6 @@ export default function VariableEditor() {
 											onFocus={() =>
 												setSelectedVariable(
 													name,
-												)
-											}
-											onBlur={() =>
-												setSelectedVariable(
-													null,
 												)
 											}
 										>
@@ -803,6 +818,7 @@ export default function VariableEditor() {
 													: "bg-base-200 text-base-content/40 hover:bg-base-300"
 											}`}
 											onClick={() => {
+												setSelectedVariable(name);
 												handleVariableChange(
 													name,
 													"false",
@@ -811,11 +827,6 @@ export default function VariableEditor() {
 											onFocus={() =>
 												setSelectedVariable(
 													name,
-												)
-											}
-											onBlur={() =>
-												setSelectedVariable(
-													null,
 												)
 											}
 										>
@@ -844,6 +855,9 @@ export default function VariableEditor() {
 									bindings={lilyFile?.contact_bindings ?? {}}
 									variableValues={variableValues}
 									isOverridden={group.role in roleOverrides}
+									isSelected={group.properties.some(
+										(p) => p.displayName === selectedVariable,
+									)}
 									onToggleOverride={async (overriding) => {
 										if (overriding) {
 											// Snapshot current values as the override
@@ -892,9 +906,6 @@ export default function VariableEditor() {
 									onSelect={(varName) =>
 										setSelectedVariable(varName)
 									}
-									onDeselect={() =>
-										setSelectedVariable(null)
-									}
 									scrollToOccurrence={scrollToOccurrence}
 								/>
 							);
@@ -906,7 +917,7 @@ export default function VariableEditor() {
 							<div
 								key={name}
 								data-var-entry={name}
-								className="p-3 w-full rounded-lg border border-base-300 bg-base-100"
+								className={`p-3 w-full rounded-lg border bg-base-100 ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 							>
 								<div className="flex items-center justify-between mb-1">
 									<span className="label-text text-sm font-medium flex items-center gap-1.5">
@@ -955,9 +966,6 @@ export default function VariableEditor() {
 									}
 									onFocus={() =>
 										setSelectedVariable(name)
-									}
-									onBlur={() =>
-										setSelectedVariable(null)
 									}
 								/>
 							</div>
@@ -1029,11 +1037,11 @@ function ContactRoleField({
 	bindings,
 	variableValues,
 	isOverridden,
+	isSelected,
 	onToggleOverride,
 	onSelectContact,
 	onManualChange,
 	onSelect,
-	onDeselect,
 	scrollToOccurrence,
 }: {
 	group: ContactRoleGroup;
@@ -1041,11 +1049,11 @@ function ContactRoleField({
 	bindings: Record<string, import("@/types").ContactBinding>;
 	variableValues: Record<string, string>;
 	isOverridden: boolean;
+	isSelected: boolean;
 	onToggleOverride: (overriding: boolean) => Promise<void>;
 	onSelectContact: (contactId: string | null) => Promise<void>;
 	onManualChange: (varName: string, value: string) => void;
 	onSelect: (varName: string) => void;
-	onDeselect: () => void;
 	scrollToOccurrence: (varName: string, direction: "prev" | "next") => void;
 }) {
 	// Questionnaire binding (source of truth when linked)
@@ -1064,7 +1072,7 @@ function ContactRoleField({
 
 	return (
 		<div
-			className="p-3 w-full rounded-lg border border-base-300 bg-base-100"
+			className={`p-3 w-full rounded-lg border bg-base-100 ${isSelected ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 			data-var-entry={group.properties[0]?.displayName}
 		>
 			{/* Role header */}
@@ -1216,7 +1224,6 @@ function ContactRoleField({
 						onFocus={() =>
 							onSelect(group.properties[0]?.displayName)
 						}
-						onBlur={onDeselect}
 					>
 						{contacts.map((c) => (
 							<option key={c.id} value={c.id}>
@@ -1254,7 +1261,6 @@ function ContactRoleField({
 											)
 										}
 										onFocus={() => onSelect(displayName)}
-										onBlur={onDeselect}
 									/>
 								</div>
 							),
