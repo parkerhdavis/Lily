@@ -4,6 +4,7 @@ import type {
 	QuestionnaireDefFile,
 	QuestionnaireIndex,
 } from "@/types/questionnaire";
+import { useToastStore } from "@/stores/toastStore";
 
 interface QuestionnaireState {
 	index: QuestionnaireIndex | null;
@@ -40,6 +41,7 @@ export const useQuestionnaireStore = create<QuestionnaireState>((set, get) => ({
 			set({ index, loading: false });
 		} catch (err) {
 			set({ error: String(err), loading: false });
+			useToastStore.getState().addToast("error", "Failed to load questionnaire index");
 		}
 	},
 
@@ -53,6 +55,7 @@ export const useQuestionnaireStore = create<QuestionnaireState>((set, get) => ({
 			set({ currentDef: def, loading: false });
 		} catch (err) {
 			set({ error: String(err), loading: false });
+			useToastStore.getState().addToast("error", "Failed to load questionnaire");
 		}
 	},
 
@@ -72,6 +75,7 @@ export const useQuestionnaireStore = create<QuestionnaireState>((set, get) => ({
 			set({ index });
 		} catch (err) {
 			set({ error: String(err), loading: false });
+			useToastStore.getState().addToast("error", "Failed to save questionnaire");
 		}
 	},
 

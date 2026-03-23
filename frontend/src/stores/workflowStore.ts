@@ -12,6 +12,8 @@ import {
 	type NavigationEntry,
 } from "@/stores/navigationStore";
 import { useUndoStore } from "@/stores/undoStore";
+import { extractFilename, extractFolderName } from "@/utils/path";
+import { useToastStore } from "@/stores/toastStore";
 
 interface WorkflowState {
 	step: WorkflowStep;
@@ -106,18 +108,23 @@ interface WorkflowState {
 	restoreNavigationEntry: (entry: NavigationEntry) => Promise<void>;
 }
 
+/** Show a toast error notification. */
+function toastError(message: string, err?: unknown) {
+	const detail = err ? `: ${String(err)}` : "";
+	useToastStore.getState().addToast("error", `${message}${detail}`);
+}
+
+/** Show a toast success notification. */
+function toastSuccess(message: string) {
+	useToastStore.getState().addToast("success", message);
+}
+
 /** Build a human-readable label for a given step + context. */
 function navLabel(
 	step: WorkflowStep,
 	workingDir: string | null,
 ): string {
-	const folderName = workingDir
-		? workingDir
-				.replace(/\\/g, "/")
-				.split("/")
-				.filter(Boolean)
-				.pop() ?? workingDir
-		: "";
+	const folderName = workingDir ? extractFolderName(workingDir) : "";
 	switch (step) {
 		case "hub":
 			return "Lily Hub";
@@ -191,6 +198,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			set({ templates, loading: false });
 		} catch (err) {
 			set({ error: String(err), loading: false });
+			toastError("Failed to load templates", err);
 		}
 	},
 
@@ -204,7 +212,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
 			// Use the relative path's filename as the destination filename,
 			// normalising .dotx templates to .docx since we produce documents.
-			let filename = templateRelPath.split("/").pop() || templateRelPath;
+			let filename = extractFilename(templateRelPath);
 			if (filename.toLowerCase().endsWith(".dotx")) {
 				filename = filename.slice(0, -5) + ".docx";
 			}
@@ -277,6 +285,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			});
 		} catch (err) {
 			set({ error: String(err), loading: false });
+			toastError("Failed to prepare document", err);
 		}
 	},
 
@@ -387,6 +396,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			});
 		} catch (err) {
 			set({ error: String(err), loading: false });
+			toastError("Failed to open document", err);
 		}
 	},
 
@@ -394,10 +404,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		const { documentPath } = get();
 		if (!documentPath) return;
 
-		const oldFilename =
-			documentPath.split("/").pop() ??
-			documentPath.split("\\").pop() ??
-			"";
+		const oldFilename = extractFilename(documentPath);
 		set({ loading: true, error: null });
 		try {
 			const newPath = await invoke<string>("rename_document", {
@@ -429,6 +436,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			});
 		} catch (err) {
 			set({ error: String(err), loading: false });
+			toastError("Failed to rename document", err);
 		}
 	},
 
@@ -445,10 +453,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			});
 
 			// Update per-document role override values with current variableValues
-			const filename =
-				documentPath.split("/").pop() ??
-				documentPath.split("\\").pop() ??
-				"";
+			const filename = extractFilename(documentPath);
 			const docMeta = lilyFile?.documents[filename];
 			if (docMeta?.role_overrides && workingDir) {
 				for (const [role, override] of Object.entries(
@@ -484,8 +489,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			// original placeholder spans remaining in the HTML so the
 			// client-side replacement continues to work after save.
 			set({ loading: false, dirty: false });
+			toastSuccess("Document saved");
 		} catch (err) {
 			set({ error: String(err), loading: false });
+			toastError("Failed to save document", err);
 		}
 	},
 
@@ -565,6 +572,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			});
 		} catch (err) {
 			console.error("Failed to save client variable:", err);
+			toastError("Failed to save variable", err);
 		}
 	},
 
@@ -682,6 +690,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			});
 		} catch (err) {
 			console.error("Failed to remove client variable:", err);
+			toastError("Failed to remove variable", err);
 		}
 	},
 
@@ -694,6 +703,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			await get().reloadLilyFile();
 		} catch (err) {
 			console.error("Failed to delete document:", err);
+			toastError("Failed to delete document", err);
 		}
 	},
 
@@ -709,6 +719,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			await get().reloadLilyFile();
 		} catch (err) {
 			console.error("Failed to create new version:", err);
+			toastError("Failed to create new version", err);
 		}
 	},
 
@@ -723,6 +734,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			await invoke("open_file_in_os", { filePath: fullPath });
 		} catch (err) {
 			console.error("Failed to open template file:", err);
+			toastError("Failed to open template file", err);
 		}
 	},
 
@@ -873,10 +885,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		const { workingDir, documentPath } = get();
 		if (!workingDir || !documentPath) return;
 
-		const filename =
-			documentPath.split("/").pop() ??
-			documentPath.split("\\").pop() ??
-			"";
+		const filename = extractFilename(documentPath);
 		await invoke("set_role_override", {
 			workingDir,
 			filename,
@@ -1088,8 +1097,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				}
 				// Fall back to stored variable names if no placeholders remain
 				if (variables.length === 0) {
-					const filename =
-						entry.documentPath?.split("/").pop() ?? "";
+					const filename = entry.documentPath
+						? extractFilename(entry.documentPath)
+						: "";
 					const storedNames =
 						lilyFile?.documents[filename]?.variable_names ?? [];
 					if (storedNames.length > 0) {

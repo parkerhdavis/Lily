@@ -5,6 +5,7 @@ import SectionHeading from "@/components/ui/SectionHeading";
 import StatusDot from "@/components/ui/StatusDot";
 import AppSwitcher from "@/components/ui/AppSwitcher";
 import type { VariableInfo, Contact } from "@/types";
+import { extractFilename } from "@/utils/path";
 
 /**
  * Fuzzy-filter a list of variables by a search query.
@@ -30,9 +31,7 @@ function fuzzyFilterVariables(
 
 /** Extract the display filename (without .docx extension) from a full path. */
 function getDisplayName(docPath: string): string {
-	const filename =
-		docPath.split("/").pop() ?? docPath.split("\\").pop() ?? docPath;
-	return filename.replace(/\.docx$/i, "");
+	return extractFilename(docPath).replace(/\.docx$/i, "");
 }
 
 /**
@@ -244,11 +243,7 @@ export default function VariableEditor() {
 	// Current document filename (for looking up per-document overrides)
 	const currentFilename = useMemo(() => {
 		if (!documentPath) return null;
-		return (
-			documentPath.split("/").pop() ??
-			documentPath.split("\\").pop() ??
-			null
-		);
+		return extractFilename(documentPath);
 	}, [documentPath]);
 
 	// Per-document role overrides for the current document
@@ -266,7 +261,7 @@ export default function VariableEditor() {
 	const [varSearch, setVarSearch] = useState("");
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
-	const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+	const unsavedDialogRef = useRef<HTMLDialogElement>(null);
 	const [sidebarWidth, setSidebarWidth] = useState(384);
 	const dragging = useRef(false);
 	const dragStartX = useRef(0);
@@ -681,9 +676,33 @@ export default function VariableEditor() {
 		return set;
 	}, [variables]);
 
+	// Detect variables that look like malformed conditionals (contain ?? or :: but
+	// weren't parsed as conditional by the backend — likely syntax errors in template)
+	const malformedConditionals = useMemo(() => {
+		const set = new Set<string>();
+		for (const v of variables) {
+			if (
+				!v.is_conditional &&
+				(v.display_name.includes("??") || v.display_name.includes("::"))
+			) {
+				set.add(v.display_name);
+			}
+		}
+		return set;
+	}, [variables]);
+
 	const filledCount = Object.entries(variableValues).filter(
 		([name, v]) => conditionalVarNames.has(name) || v.length > 0,
 	).length;
+
+	if (loading && !documentHtml) {
+		return (
+			<div className="flex flex-col items-center justify-center h-full gap-3">
+				<span className="loading loading-spinner loading-lg" />
+				<span className="text-base-content/50 text-sm">Loading document...</span>
+			</div>
+		);
+	}
 
 	return (
 		<div className="flex flex-col h-full">
@@ -694,7 +713,7 @@ export default function VariableEditor() {
 					className="btn btn-ghost btn-sm gap-1.5 text-base-content/70 hover:text-base-content"
 					onClick={() => {
 						if (dirty && !autosave) {
-							setShowUnsavedDialog(true);
+							unsavedDialogRef.current?.showModal();
 						} else {
 							returnToHub();
 						}
@@ -1019,11 +1038,12 @@ export default function VariableEditor() {
 
 						// ── Regular replacement variable ──
 						const isFilled = Boolean(variableValues[name]);
+						const isMalformed = malformedConditionals.has(name);
 						return (
 							<div
 								key={name}
 								data-var-entry={name}
-								className={`w-full rounded-lg border bg-base-100 shadow-md shadow-black/15 ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+								className={`w-full rounded-lg border bg-base-100 shadow-md shadow-black/15 ${selectedVariable === name ? "ring-2 ring-warning border-warning" : isMalformed ? "border-warning/50" : "border-base-300"}`}
 							>
 								{/* Name header */}
 								<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300 rounded-t-lg">
@@ -1031,10 +1051,13 @@ export default function VariableEditor() {
 										type="button"
 										className="text-sm font-bold flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer"
 										onClick={() => openQuestionnaire()}
-										title="Open in questionnaire"
+										title={isMalformed ? "Possible malformed conditional — check ?? and :: syntax in template" : "Open in questionnaire"}
 									>
 										<StatusDot filled={isFilled} />
 										{name}
+										{isMalformed && (
+											<span className="badge badge-warning badge-xs ml-1" title="This variable contains ?? or :: but wasn't parsed as a conditional. Check the template syntax.">!</span>
+										)}
 									</button>
 									<div className="join">
 										<button
@@ -1109,58 +1132,57 @@ export default function VariableEditor() {
 			</div>
 
 			{/* Unsaved changes confirmation dialog */}
-			{showUnsavedDialog && (
-				<dialog className="modal modal-open">
-					<div className="modal-box">
-						<h3 className="font-bold text-lg">
-							Unsaved Changes
-						</h3>
-						<p className="py-4 text-base-content/70">
-							You have unsaved changes to this document.
-							Would you like to save before leaving?
-						</p>
-						<div className="modal-action">
-							<button
-								type="button"
-								className="btn btn-ghost"
-								onClick={() => {
-									setShowUnsavedDialog(false);
-									returnToHub();
-								}}
-							>
-								Discard
-							</button>
-							<button
-								type="button"
-								className="btn btn-ghost"
-								onClick={() =>
-									setShowUnsavedDialog(false)
-								}
-							>
-								Cancel
-							</button>
-							<button
-								type="button"
-								className="btn btn-primary"
-								onClick={async () => {
-									await saveDocument();
-									setShowUnsavedDialog(false);
-									returnToHub();
-								}}
-							>
-								Save & Leave
-							</button>
-						</div>
+			{/* biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close */}
+			<dialog
+				ref={unsavedDialogRef}
+				className="modal"
+				onClick={(e) => {
+					if (e.target === unsavedDialogRef.current)
+						unsavedDialogRef.current?.close();
+				}}
+			>
+				<div className="modal-box">
+					<h3 className="font-bold text-lg">
+						Unsaved Changes
+					</h3>
+					<p className="py-4 text-base-content/70">
+						You have unsaved changes to this document.
+						Would you like to save before leaving?
+					</p>
+					<div className="modal-action">
+						<button
+							type="button"
+							className="btn btn-ghost"
+							onClick={() => {
+								unsavedDialogRef.current?.close();
+								returnToHub();
+							}}
+						>
+							Discard
+						</button>
+						<button
+							type="button"
+							className="btn btn-ghost"
+							onClick={() =>
+								unsavedDialogRef.current?.close()
+							}
+						>
+							Cancel
+						</button>
+						<button
+							type="button"
+							className="btn btn-primary"
+							onClick={async () => {
+								await saveDocument();
+								unsavedDialogRef.current?.close();
+								returnToHub();
+							}}
+						>
+							Save & Leave
+						</button>
 					</div>
-					{/* biome-ignore lint/a11y/useKeyWithClickEvents: modal backdrop */}
-					<div
-						className="modal-backdrop"
-						onClick={() =>
-							setShowUnsavedDialog(false)
-						}
-					/>
-				</dialog>
-			)}
+				</div>
+			</dialog>
 		</div>
 	);
 }

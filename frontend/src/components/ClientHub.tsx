@@ -8,6 +8,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
 import type { QuestionnaireSectionDef } from "@/types/questionnaire";
+import { extractFilename, extractFolderName } from "@/utils/path";
 
 /** Format an ISO date string to a readable local format. */
 function formatDate(iso: string): string {
@@ -29,11 +30,6 @@ function stripDocx(name: string): string {
 	return name.replace(/\.docx$/i, "");
 }
 
-/** Extract just the folder name from a full directory path. */
-function getFolderName(dirPath: string): string {
-	const segments = dirPath.replace(/\\/g, "/").split("/");
-	return segments[segments.length - 1] || dirPath;
-}
 
 interface ClientDoc {
 	filename: string;
@@ -135,7 +131,7 @@ export default function ClientHub() {
 		startAddDocument();
 	};
 
-	const folderName = workingDir ? getFolderName(workingDir) : "Client";
+	const folderName = workingDir ? extractFolderName(workingDir) : "Client";
 	const contactCount = lilyFile?.contacts?.length ?? 0;
 
 	if (loading) {
@@ -361,8 +357,7 @@ function DocumentRow({
 					<span className="text-sm text-base-content/40">
 						from{" "}
 						{stripDocx(
-							doc.templateRelPath.split("/").pop() ??
-								doc.templateRelPath,
+							extractFilename(doc.templateRelPath),
 						)}
 						{" \u00B7 "}
 						{formatDate(doc.modifiedAt)}

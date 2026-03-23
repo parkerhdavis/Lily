@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import type { WorkflowStep } from "@/types";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
+import { extractFolderName } from "@/utils/path";
 
 /** Steps that belong to the client management branch. */
 const CLIENT_STEPS = new Set<WorkflowStep>([
@@ -10,12 +11,6 @@ const CLIENT_STEPS = new Set<WorkflowStep>([
 	"select-template",
 	"edit-variables",
 ]);
-
-/** Extract just the folder name from a full directory path. */
-function getFolderName(dirPath: string): string {
-	const segments = dirPath.replace(/\\/g, "/").split("/");
-	return segments[segments.length - 1] || dirPath;
-}
 
 /**
  * App switcher dropdown (like Google's grid icon).
@@ -137,7 +132,7 @@ export default function AppSwitcher({
 										<title>Resume</title>
 										<path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H4.598a.75.75 0 0 0-.75.75v3.634a.75.75 0 0 0 1.5 0v-2.033l.312.311a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.06-7.358a.75.75 0 0 0-1.5 0v2.033l-.312-.31a7 7 0 0 0-11.712 3.137.75.75 0 0 0 1.449.39 5.5 5.5 0 0 1 9.201-2.466l.312.311H11.42a.75.75 0 1 0 0 1.5h3.634a.75.75 0 0 0 .75-.75V4.066Z" clipRule="evenodd" />
 									</svg>
-									Resume: {getFolderName(workingDir)}
+									Resume: {extractFolderName(workingDir)}
 								</button>
 							</li>
 						</>
