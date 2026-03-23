@@ -822,7 +822,7 @@ export default function VariableEditor() {
 								<div
 									key={name}
 									data-var-entry={name}
-									className={`w-full rounded-lg border bg-base-100 overflow-hidden ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+									className={`w-full rounded-lg border bg-base-100 overflow-hidden shadow-sm ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 								>
 									{/* Name header */}
 									<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300">
@@ -1023,7 +1023,7 @@ export default function VariableEditor() {
 							<div
 								key={name}
 								data-var-entry={name}
-								className={`w-full rounded-lg border bg-base-100 overflow-hidden ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+								className={`w-full rounded-lg border bg-base-100 overflow-hidden shadow-sm ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 							>
 								{/* Name header */}
 								<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300">
@@ -1243,7 +1243,7 @@ function ContactRoleField({
 
 	return (
 		<div
-			className={`w-full rounded-lg border bg-base-100 overflow-hidden ${isSelected ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+			className={`w-full rounded-lg border bg-base-100 overflow-hidden shadow-sm ${isSelected ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 			data-var-entry={group.properties[0]?.displayName}
 		>
 			{/* Name header */}
