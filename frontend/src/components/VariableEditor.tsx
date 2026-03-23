@@ -267,6 +267,10 @@ export default function VariableEditor() {
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
 	const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+	const [sidebarWidth, setSidebarWidth] = useState(384);
+	const dragging = useRef(false);
+	const dragStartX = useRef(0);
+	const dragStartWidth = useRef(0);
 	const titleInputRef = useRef<HTMLInputElement>(null);
 	const varSearchRef = useRef<HTMLInputElement>(null);
 	const previewRef = useRef<HTMLDivElement>(null);
@@ -325,6 +329,31 @@ export default function VariableEditor() {
 	const contactRoleVarNames = useMemo(
 		() => new Set(Object.keys(contactRoleVarMap)),
 		[contactRoleVarMap],
+	);
+
+	// Sidebar resize drag handlers
+	const handleDragStart = useCallback(
+		(e: React.MouseEvent) => {
+			e.preventDefault();
+			dragging.current = true;
+			dragStartX.current = e.clientX;
+			dragStartWidth.current = sidebarWidth;
+
+			const handleMove = (ev: MouseEvent) => {
+				if (!dragging.current) return;
+				const delta = ev.clientX - dragStartX.current;
+				const newWidth = Math.max(280, Math.min(600, dragStartWidth.current + delta));
+				setSidebarWidth(newWidth);
+			};
+			const handleUp = () => {
+				dragging.current = false;
+				document.removeEventListener("mousemove", handleMove);
+				document.removeEventListener("mouseup", handleUp);
+			};
+			document.addEventListener("mousemove", handleMove);
+			document.addEventListener("mouseup", handleUp);
+		},
+		[sidebarWidth],
 	);
 
 	// Focus the title input when entering edit mode
@@ -746,8 +775,15 @@ export default function VariableEditor() {
 				{/* Variable sidebar */}
 				<div
 					ref={sidebarRef}
-					className="w-80 shrink-0 border-r border-base-300 overflow-y-auto p-4 bg-base-100 shadow-2xl"
+					className="shrink-0 border-r border-base-300 overflow-y-auto p-4 bg-base-100 shadow-2xl relative"
+					style={{ width: sidebarWidth }}
 				>
+					{/* Resize handle */}
+					{/* biome-ignore lint/a11y/useKeyWithClickEvents: drag handle */}
+					<div
+						className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors z-10"
+						onMouseDown={handleDragStart}
+					/>
 					<SectionHeading className="mb-3">
 						Variables
 					</SectionHeading>
@@ -786,12 +822,13 @@ export default function VariableEditor() {
 								<div
 									key={name}
 									data-var-entry={name}
-									className={`p-3 w-full rounded-lg border bg-base-100 ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+									className={`w-full rounded-lg border bg-base-100 overflow-hidden ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 								>
-									<div className="flex items-center justify-between mb-1.5">
+									{/* Name header */}
+									<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300">
 										<button
 											type="button"
-											className="label-text text-sm font-medium hover:text-primary transition-colors cursor-pointer"
+											className="text-sm font-bold hover:text-primary transition-colors cursor-pointer"
 											onClick={() => openQuestionnaire()}
 											title="Open in questionnaire"
 										>
@@ -826,6 +863,8 @@ export default function VariableEditor() {
 											</button>
 										</div>
 									</div>
+									{/* Value toggle */}
+									<div className="p-3">
 									<div className="flex rounded-lg overflow-hidden border border-base-300">
 										<button
 											type="button"
@@ -871,6 +910,7 @@ export default function VariableEditor() {
 										>
 											False
 										</button>
+									</div>
 									</div>
 								</div>
 							);
@@ -983,12 +1023,13 @@ export default function VariableEditor() {
 							<div
 								key={name}
 								data-var-entry={name}
-								className={`p-3 w-full rounded-lg border bg-base-100 ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+								className={`w-full rounded-lg border bg-base-100 overflow-hidden ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 							>
-								<div className="flex items-center justify-between mb-1">
+								{/* Name header */}
+								<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300">
 									<button
 										type="button"
-										className="label-text text-sm font-medium flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer"
+										className="text-sm font-bold flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer"
 										onClick={() => openQuestionnaire()}
 										title="Open in questionnaire"
 									>
@@ -1024,21 +1065,24 @@ export default function VariableEditor() {
 										</button>
 									</div>
 								</div>
-								<input
-									type="text"
-									className="input input-bordered input-sm w-full"
-									placeholder={`Enter ${name}`}
-									value={variableValues[name] ?? ""}
-									onChange={(e) =>
-										handleVariableChange(
-											name,
-											e.target.value,
-										)
-									}
-									onFocus={() =>
-										setSelectedVariable(name)
-									}
-								/>
+								{/* Value input */}
+								<div className="p-3">
+									<input
+										type="text"
+										className="input input-bordered input-sm w-full"
+										placeholder={`Enter ${name}`}
+										value={variableValues[name] ?? ""}
+										onChange={(e) =>
+											handleVariableChange(
+												name,
+												e.target.value,
+											)
+										}
+										onFocus={() =>
+											setSelectedVariable(name)
+										}
+									/>
+								</div>
 							</div>
 						);
 					});
@@ -1199,12 +1243,12 @@ function ContactRoleField({
 
 	return (
 		<div
-			className={`p-3 w-full rounded-lg border bg-base-100 ${isSelected ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+			className={`w-full rounded-lg border bg-base-100 overflow-hidden ${isSelected ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 			data-var-entry={group.properties[0]?.displayName}
 		>
-			{/* Role header */}
-			<div className="flex items-center justify-between mb-1.5">
-				<span className="label-text text-sm font-medium flex items-center gap-1.5">
+			{/* Name header */}
+			<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300">
+				<span className="text-sm font-bold flex items-center gap-1.5">
 					<StatusDot filled={allFilled} />
 					{group.role}
 				</span>
@@ -1238,8 +1282,8 @@ function ContactRoleField({
 				</div>
 			</div>
 
-			{/* Override toggle + Apply Override */}
-			<div className="mb-1.5">
+			{/* Link/override controls */}
+			<div className="px-3 py-2 border-b border-base-300">
 				<div className="join">
 					<button
 						type="button"
@@ -1277,7 +1321,7 @@ function ContactRoleField({
 
 			{/* ── Linked state: greyed-out, shows questionnaire value ── */}
 			{!isOverridden && (
-				<>
+				<div className="p-3">
 					<select
 						className="select select-bordered select-sm w-full opacity-50 pointer-events-none"
 						value={qContact ? qContact.id : ""}
@@ -1330,12 +1374,12 @@ function ContactRoleField({
 							</div>
 						</div>
 					)}
-				</>
+				</div>
 			)}
 
 			{/* ── Overridden state: editable dropdown + manual fallback ── */}
 			{isOverridden && (
-				<>
+				<div className="p-3">
 					<select
 						className="select select-bordered select-sm w-full select-warning"
 						value={
@@ -1411,7 +1455,7 @@ function ContactRoleField({
 							),
 						)}
 					</div>
-				</>
+				</div>
 			)}
 		</div>
 	);
