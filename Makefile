@@ -296,6 +296,8 @@ typecheck:
 	@echo "Type check passed"
 
 test:
+	@echo "Running frontend tests..."
+	cd frontend; $(BUN) test
 	@echo "Running Rust tests..."
 	cd backend; cargo test
 	@echo "Tests complete"
@@ -325,6 +327,8 @@ typecheck:
 	@echo "Type check passed"
 
 test:
+	@echo "Running frontend tests..."
+	@cd frontend && $(BUN) test
 	@echo "Running Rust tests..."
 	@cd backend && cargo test
 	@echo "Tests complete"

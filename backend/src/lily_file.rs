@@ -772,3 +772,51 @@ pub fn set_client_questionnaire(
     lily.questionnaire_version = Some(questionnaire_version);
     write_lily_file(&working_dir, &lily)
 }
+
+/// Export client data as a JSON file to the given path.
+#[tauri::command]
+pub fn export_client_data(working_dir: String, export_path: String) -> Result<(), String> {
+    let lily = read_lily_file(&working_dir)?;
+    let content = serde_json::to_string_pretty(&lily)
+        .map_err(|e| format!("Failed to serialize client data: {}", e))?;
+    atomic_write(Path::new(&export_path), &content)
+}
+
+/// Import client data from a JSON file, merging into the existing .lily file.
+/// Variables, contacts, and contact bindings from the import are merged (import wins on conflict).
+#[tauri::command]
+pub fn import_client_data(working_dir: String, import_path: String) -> Result<LilyFile, String> {
+    let content = fs::read_to_string(&import_path)
+        .map_err(|e| format!("Failed to read import file: {}", e))?;
+    let imported: LilyFile = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse import file: {}", e))?;
+
+    let mut lily = read_lily_file(&working_dir)?;
+
+    // Merge variables (import wins on conflict)
+    for (key, value) in imported.variables {
+        lily.variables.insert(key, value);
+    }
+
+    // Merge contacts (skip duplicates by id)
+    let existing_ids: std::collections::HashSet<String> =
+        lily.contacts.iter().map(|c| c.id.clone()).collect();
+    for contact in imported.contacts {
+        if !existing_ids.contains(&contact.id) {
+            lily.contacts.push(contact);
+        }
+    }
+
+    // Merge contact bindings (import wins on conflict)
+    for (role, binding) in imported.contact_bindings {
+        lily.contact_bindings.insert(role, binding);
+    }
+
+    // Merge questionnaire notes (import wins on conflict)
+    for (section, notes) in imported.questionnaire_notes {
+        lily.questionnaire_notes.insert(section, notes);
+    }
+
+    write_lily_file(&working_dir, &lily)?;
+    read_lily_file(&working_dir)
+}
