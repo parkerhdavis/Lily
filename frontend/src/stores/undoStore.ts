@@ -1,6 +1,8 @@
 import { create } from "zustand";
 
 const MAX_UNDO = 100;
+/** Time window (ms) for coalescing consecutive changes to the same field. */
+const COALESCE_MS = 500;
 
 export interface UndoableAction {
 	description: string;
@@ -32,6 +34,31 @@ export const useUndoStore = create<UndoState>((set, get) => ({
 
 	push: (action) => {
 		const { undoStack } = get();
+
+		// Coalesce: if the top action has the same description and is recent,
+		// replace it (keep the original undo, use the new redo).
+		const top = undoStack[undoStack.length - 1];
+		if (
+			top &&
+			top.description === action.description &&
+			action.timestamp - top.timestamp < COALESCE_MS
+		) {
+			const coalesced: UndoableAction = {
+				description: action.description,
+				timestamp: action.timestamp,
+				redo: action.redo,
+				undo: top.undo, // preserve the original "before" state
+			};
+			const updated = [...undoStack.slice(0, -1), coalesced];
+			set({
+				undoStack: updated,
+				redoStack: [],
+				canUndo: updated.length > 0,
+				canRedo: false,
+			});
+			return;
+		}
+
 		const updated = [...undoStack, action];
 		const capped =
 			updated.length > MAX_UNDO

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 use crate::lily_file::atomic_write;
+use tracing::info;
 
 // ─── Data structures ─────────────────────────────────────────────────────────
 
@@ -236,6 +237,7 @@ struct LegacyIndexEntry {
 /// Returns an empty index if the directory is not configured (not an error).
 #[tauri::command]
 pub fn load_questionnaire_index() -> Result<QuestionnaireIndex, String> {
+	info!("Loading questionnaire index");
 	let dir = match get_questionnaires_dir()? {
 		Some(d) => d,
 		None => {
@@ -275,6 +277,7 @@ pub fn load_questionnaire(id: String) -> Result<QuestionnaireDefFile, String> {
 /// If the name changed, renames the file on disk.
 #[tauri::command]
 pub fn save_questionnaire(mut questionnaire: QuestionnaireDefFile) -> Result<(), String> {
+	info!(id = %questionnaire.id, name = %questionnaire.name, "Saving questionnaire");
 	let dir = require_questionnaires_dir()?;
 	let old_path = find_questionnaire_path(&dir, &questionnaire.id)?;
 	let old_name = name_from_path(&old_path);
@@ -299,6 +302,7 @@ pub fn save_questionnaire(mut questionnaire: QuestionnaireDefFile) -> Result<(),
 /// Create a new empty questionnaire with the given name.
 #[tauri::command]
 pub fn create_questionnaire(name: String) -> Result<QuestionnaireDefFile, String> {
+	info!(%name, "Creating questionnaire");
 	let dir = require_questionnaires_dir()?;
 	let target = questionnaire_file_path(&dir, &name);
 
@@ -369,6 +373,7 @@ pub fn duplicate_questionnaire(id: String, name: String) -> Result<Questionnaire
 /// Delete a questionnaire definition by UUID.
 #[tauri::command]
 pub fn delete_questionnaire(id: String) -> Result<(), String> {
+	info!(%id, "Deleting questionnaire");
 	let dir = require_questionnaires_dir()?;
 	let path = find_questionnaire_path(&dir, &id)?;
 
@@ -405,6 +410,7 @@ pub fn set_active_questionnaire(id: String) -> Result<(), String> {
 /// questionnaires directory. Returns the number of migrated files.
 #[tauri::command]
 pub fn migrate_questionnaires() -> Result<u32, String> {
+	info!("Migrating legacy questionnaires");
 	let target_dir = require_questionnaires_dir()?;
 	let legacy_dir = legacy_questionnaires_dir()?;
 
