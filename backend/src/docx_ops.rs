@@ -8,6 +8,8 @@ use zip::read::ZipArchive;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
+use tracing::{error, info};
+
 use crate::lily_file;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -40,8 +42,10 @@ pub fn copy_template(
     filename: String,
     template_rel_path: String,
 ) -> Result<String, String> {
+    info!(%template_path, %filename, "Copying template");
     let src = Path::new(&template_path);
     if !src.exists() {
+        error!(%template_path, "Template file not found");
         return Err(format!("Template file not found: {}", template_path));
     }
 
@@ -301,6 +305,7 @@ pub fn replace_variables(
     variables: HashMap<String, String>,
     conditional_definitions: HashMap<String, Vec<String>>,
 ) -> Result<(), String> {
+    info!(%docx_path, var_count = variables.len(), "Replacing variables in document");
     // First, extract the variable info so we know all case variants
     let raw_xml = read_document_xml(&docx_path)?;
     let xml_content = normalize_split_variables(&raw_xml);
