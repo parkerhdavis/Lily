@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Icon generation script for Lily Tauri app
-# Takes lily_icon_fullres.png and generates all required icon sizes
+# Takes lily-icon-fullres.png and generates all required icon sizes
 # Requires ImageMagick (convert command) and optionally icnsutils (png2icns)
 
 set -e  # Exit on error
 
-SOURCE="lily_icon_fullres.png"
+SOURCE="lily-icon-fullres.png"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cd "$SCRIPT_DIR"
