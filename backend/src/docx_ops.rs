@@ -494,7 +494,12 @@ pub fn get_document_html(docx_path: String) -> Result<String, String> {
         .as_deref()
         .map(parse_styles_xml)
         .unwrap_or_default();
-    let html = xml_to_preview_html(&xml_content, &numbering_map, &style_map);
+    let rels_map = parts
+        .rels
+        .as_deref()
+        .map(parse_rels_xml)
+        .unwrap_or_default();
+    let html = xml_to_preview_html(&xml_content, &numbering_map, &style_map, &rels_map);
     Ok(html)
 }
 
@@ -689,6 +694,8 @@ fn escape_xml_text(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 fn read_document_xml(docx_path: &str) -> Result<String, String> {
@@ -714,6 +721,7 @@ struct DocxParts {
     document: String,
     numbering: Option<String>,
     styles: Option<String>,
+    rels: Option<String>,
 }
 
 /// Read document.xml, numbering.xml, and styles.xml from a .docx ZIP.
@@ -752,10 +760,20 @@ fn read_docx_parts(docx_path: &str) -> Result<DocxParts, String> {
         Err(_) => None,
     };
 
+    let rels = match archive.by_name("word/_rels/document.xml.rels") {
+        Ok(mut entry) => {
+            let mut content = String::new();
+            entry.read_to_string(&mut content).ok();
+            Some(content)
+        }
+        Err(_) => None,
+    };
+
     Ok(DocxParts {
         document,
         numbering,
         styles,
+        rels,
     })
 }
 
@@ -1031,6 +1049,44 @@ struct StyleProps {
 
 /// Map from style ID (e.g., "Heading1") to its properties.
 type StyleMap = HashMap<String, StyleProps>;
+
+/// Map from relationship ID (e.g., "rId5") to target URL.
+type RelationshipMap = HashMap<String, String>;
+
+/// Parse word/_rels/document.xml.rels to extract hyperlink targets.
+fn parse_rels_xml(xml: &str) -> RelationshipMap {
+    let mut rels = RelationshipMap::new();
+    let reader = xml::reader::EventReader::from_str(xml);
+    for event in reader {
+        if let Ok(xml::reader::XmlEvent::StartElement {
+            name, attributes, ..
+        }) = event
+        {
+            if name.local_name == "Relationship" {
+                let id = attributes
+                    .iter()
+                    .find(|a| a.name.local_name == "Id")
+                    .map(|a| a.value.clone());
+                let target = attributes
+                    .iter()
+                    .find(|a| a.name.local_name == "Target")
+                    .map(|a| a.value.clone());
+                let rel_type = attributes
+                    .iter()
+                    .find(|a| a.name.local_name == "Type")
+                    .map(|a| a.value.clone())
+                    .unwrap_or_default();
+                // Only include hyperlink relationships
+                if rel_type.contains("hyperlink") {
+                    if let (Some(id), Some(target)) = (id, target) {
+                        rels.insert(id, target);
+                    }
+                }
+            }
+        }
+    }
+    rels
+}
 
 /// Parse word/styles.xml to extract style definitions.
 fn parse_styles_xml(xml: &str) -> StyleMap {
@@ -2003,9 +2059,13 @@ fn update_sdt_and_bookmark_values(
 ///    `data-variable` (lowercase canonical) and `data-original-case`.
 /// 2. Lily SDT content controls — the text inside `<w:sdtContent>` is wrapped
 ///    in a highlight span using the `lily:` tag value as the variable name.
-fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &StyleMap) -> String {
+fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &StyleMap, rels_map: &RelationshipMap) -> String {
     let mut html = String::from("<div class=\"document-preview\">");
     let mut current_para = String::new();
+
+    // Hyperlink state
+    let mut in_hyperlink = false;
+    let mut hyperlink_url: Option<String> = None;
 
     // Run-level formatting state
     let mut in_t = false;
@@ -2020,6 +2080,7 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
     let mut font_size_half_pts: Option<i32> = None;
     let mut font_color: Option<String> = None;
     let mut highlight_color: Option<String> = None;
+    let mut font_family: Option<String> = None;
 
     // Run properties parsing state
     let mut in_rpr = false;
@@ -2034,6 +2095,7 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
     let mut pending_font_size: Option<i32> = None;
     let mut pending_font_color: Option<String> = None;
     let mut pending_highlight_color: Option<String> = None;
+    let mut pending_font_family: Option<String> = None;
 
     // Paragraph properties
     let mut in_ppr = false;
@@ -2087,6 +2149,20 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                     "tc" if in_tr => {
                         in_tc = true;
                         tc_paras.clear();
+                    }
+                    // ─── Hyperlink ─────────────────────────────────────
+                    "hyperlink" => {
+                        in_hyperlink = true;
+                        hyperlink_url = attributes
+                            .iter()
+                            .find(|a| a.name.local_name == "id")
+                            .and_then(|a| rels_map.get(&a.value).cloned());
+                        if let Some(ref url) = hyperlink_url {
+                            current_para.push_str(&format!(
+                                "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"link link-primary\">",
+                                escape_html(url)
+                            ));
+                        }
                     }
                     // ─── Paragraph ───────────────────────────────────
                     "p" => {
@@ -2314,6 +2390,15 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                             .filter(|a| a.value != "none")
                             .map(|a| word_highlight_to_css(&a.value));
                     }
+                    "rFonts" if in_rpr => {
+                        // Prefer ascii font, fall back to hAnsi, then cs
+                        pending_font_family = attributes
+                            .iter()
+                            .find(|a| a.name.local_name == "ascii")
+                            .or_else(|| attributes.iter().find(|a| a.name.local_name == "hAnsi"))
+                            .or_else(|| attributes.iter().find(|a| a.name.local_name == "cs"))
+                            .map(|a| a.value.clone());
+                    }
                     // ─── Run start ───────────────────────────────────
                     "r" => {
                         // Reset formatting for new run (will be set by rPr if present)
@@ -2345,6 +2430,14 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                 }
             }
             Ok(xml::reader::XmlEvent::EndElement { name, .. }) => match name.local_name.as_str() {
+                // ─── Hyperlink end ──────────────────────────────
+                "hyperlink" => {
+                    if in_hyperlink && hyperlink_url.is_some() {
+                        current_para.push_str("</a>");
+                    }
+                    in_hyperlink = false;
+                    hyperlink_url = None;
+                }
                 // ─── Table end elements ──────────────────────────
                 "tbl" => {
                     in_table = false;
@@ -2392,6 +2485,7 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                     font_size_half_pts = pending_font_size;
                     font_color = pending_font_color.clone();
                     highlight_color = pending_highlight_color.clone();
+                    font_family = pending_font_family.clone();
                 }
                 "t" => {
                     in_t = false;
@@ -2653,8 +2747,11 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                         styled = format!("<sub>{}</sub>", styled);
                     }
 
-                    // Build inline style for font size, color, highlight
+                    // Build inline style for font size, color, highlight, font family
                     let mut run_styles = Vec::new();
+                    if let Some(ref ff) = font_family {
+                        run_styles.push(format!("font-family:\"{}\"", ff));
+                    }
                     if let Some(sz) = font_size_half_pts {
                         let pt = sz as f64 / 2.0;
                         run_styles.push(format!("font-size:{:.1}pt", pt));
@@ -3041,9 +3138,10 @@ mod tests {
     fn test_sdt_preview_html() {
         let empty_num = NumberingMap::new();
         let empty_styles = StyleMap::new();
+        let empty_rels = RelationshipMap::new();
         // Use a namespace-declared root so xml-rs can parse w: prefixed elements
         let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:sdt><w:sdtPr><w:tag w:val="lily:Client Name"/></w:sdtPr><w:sdtContent><w:r><w:t>Jane Doe</w:t></w:r></w:sdtContent></w:sdt></w:p></w:body></w:document>"#;
-        let html = xml_to_preview_html(xml, &empty_num, &empty_styles);
+        let html = xml_to_preview_html(xml, &empty_num, &empty_styles, &empty_rels);
         assert!(
             html.contains("variable-highlight"),
             "Expected highlight span, got: {}",
@@ -3065,8 +3163,9 @@ mod tests {
     fn test_preview_paragraph_alignment() {
         let empty_num = NumberingMap::new();
         let empty_styles = StyleMap::new();
+        let empty_rels = RelationshipMap::new();
         let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Centered text</w:t></w:r></w:p></w:body></w:document>"#;
-        let html = xml_to_preview_html(xml, &empty_num, &empty_styles);
+        let html = xml_to_preview_html(xml, &empty_num, &empty_styles, &empty_rels);
         assert!(
             html.contains("text-align:center"),
             "Expected center alignment, got: {}",
@@ -3078,8 +3177,9 @@ mod tests {
     fn test_preview_indentation() {
         let empty_num = NumberingMap::new();
         let empty_styles = StyleMap::new();
+        let empty_rels = RelationshipMap::new();
         let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:ind w:left="720"/></w:pPr><w:r><w:t>Indented text</w:t></w:r></w:p></w:body></w:document>"#;
-        let html = xml_to_preview_html(xml, &empty_num, &empty_styles);
+        let html = xml_to_preview_html(xml, &empty_num, &empty_styles, &empty_rels);
         assert!(
             html.contains("padding-left:36.0pt"),
             "Expected left indent, got: {}",
@@ -3091,8 +3191,9 @@ mod tests {
     fn test_preview_tab_character() {
         let empty_num = NumberingMap::new();
         let empty_styles = StyleMap::new();
+        let empty_rels = RelationshipMap::new();
         let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Before</w:t></w:r><w:r><w:tab/><w:t>After</w:t></w:r></w:p></w:body></w:document>"#;
-        let html = xml_to_preview_html(xml, &empty_num, &empty_styles);
+        let html = xml_to_preview_html(xml, &empty_num, &empty_styles, &empty_rels);
         assert!(
             html.contains("preview-tab"),
             "Expected tab span, got: {}",
@@ -3104,8 +3205,9 @@ mod tests {
     fn test_preview_line_break() {
         let empty_num = NumberingMap::new();
         let empty_styles = StyleMap::new();
+        let empty_rels = RelationshipMap::new();
         let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Line one</w:t><w:br/><w:t>Line two</w:t></w:r></w:p></w:body></w:document>"#;
-        let html = xml_to_preview_html(xml, &empty_num, &empty_styles);
+        let html = xml_to_preview_html(xml, &empty_num, &empty_styles, &empty_rels);
         assert!(html.contains("<br>"), "Expected line break, got: {}", html);
     }
 
@@ -3113,8 +3215,9 @@ mod tests {
     fn test_preview_table() {
         let empty_num = NumberingMap::new();
         let empty_styles = StyleMap::new();
+        let empty_rels = RelationshipMap::new();
         let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Cell 1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Cell 2</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#;
-        let html = xml_to_preview_html(xml, &empty_num, &empty_styles);
+        let html = xml_to_preview_html(xml, &empty_num, &empty_styles, &empty_rels);
         assert!(
             html.contains("<table"),
             "Expected table element, got: {}",
@@ -3131,8 +3234,9 @@ mod tests {
     fn test_preview_strikethrough() {
         let empty_num = NumberingMap::new();
         let empty_styles = StyleMap::new();
+        let empty_rels = RelationshipMap::new();
         let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:rPr><w:strike/></w:rPr><w:t>struck</w:t></w:r></w:p></w:body></w:document>"#;
-        let html = xml_to_preview_html(xml, &empty_num, &empty_styles);
+        let html = xml_to_preview_html(xml, &empty_num, &empty_styles, &empty_rels);
         assert!(
             html.contains("<s>struck</s>"),
             "Expected strikethrough, got: {}",
@@ -3144,8 +3248,9 @@ mod tests {
     fn test_preview_superscript() {
         let empty_num = NumberingMap::new();
         let empty_styles = StyleMap::new();
+        let empty_rels = RelationshipMap::new();
         let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>th</w:t></w:r></w:p></w:body></w:document>"#;
-        let html = xml_to_preview_html(xml, &empty_num, &empty_styles);
+        let html = xml_to_preview_html(xml, &empty_num, &empty_styles, &empty_rels);
         assert!(
             html.contains("<sup>th</sup>"),
             "Expected superscript, got: {}",
@@ -3157,8 +3262,9 @@ mod tests {
     fn test_preview_font_size() {
         let empty_num = NumberingMap::new();
         let empty_styles = StyleMap::new();
+        let empty_rels = RelationshipMap::new();
         let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:rPr><w:sz w:val="36"/></w:rPr><w:t>big</w:t></w:r></w:p></w:body></w:document>"#;
-        let html = xml_to_preview_html(xml, &empty_num, &empty_styles);
+        let html = xml_to_preview_html(xml, &empty_num, &empty_styles, &empty_rels);
         assert!(
             html.contains("font-size:18.0pt"),
             "Expected 18pt font size (36 half-pts), got: {}",
@@ -3618,8 +3724,9 @@ mod tests {
     fn test_preview_heading_style() {
         let empty_num = NumberingMap::new();
         let empty_styles = StyleMap::new();
+        let empty_rels = RelationshipMap::new();
         let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Title</w:t></w:r></w:p></w:body></w:document>"#;
-        let html = xml_to_preview_html(xml, &empty_num, &empty_styles);
+        let html = xml_to_preview_html(xml, &empty_num, &empty_styles, &empty_rels);
         assert!(html.contains("<h1"), "Expected h1 element, got: {}", html);
     }
 

@@ -52,6 +52,38 @@ function sortTree(nodes: TemplateTreeNode[]) {
 	}
 }
 
+/** Filter a tree to only include files matching the query (and their parent folders). */
+function filterTree(
+	nodes: TemplateTreeNode[],
+	query: string,
+): TemplateTreeNode[] {
+	const q = query.trim().toLowerCase();
+	if (!q) return nodes;
+	const tokens = q.split(/\s+/);
+
+	function matches(name: string): boolean {
+		const lower = name.toLowerCase();
+		return tokens.every((t) => lower.includes(t));
+	}
+
+	function filterNodes(nodes: TemplateTreeNode[]): TemplateTreeNode[] {
+		const result: TemplateTreeNode[] = [];
+		for (const node of nodes) {
+			if (node.kind === "file") {
+				if (matches(node.name)) result.push(node);
+			} else {
+				const filtered = filterNodes(node.children);
+				if (filtered.length > 0) {
+					result.push({ ...node, children: filtered });
+				}
+			}
+		}
+		return result;
+	}
+
+	return filterNodes(nodes);
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /** Check whether a template rel path has any existing documents in the .lily file. */
@@ -272,6 +304,11 @@ export default function TemplatePicker() {
 
 	// Build tree from flat paths
 	const tree = useMemo(() => buildTree(templates), [templates]);
+	const [templateSearch, setTemplateSearch] = useState("");
+	const filteredTree = useMemo(
+		() => filterTree(tree, templateSearch),
+		[tree, templateSearch],
+	);
 
 	// Conflict dialog state
 	const [conflictDocs, setConflictDocs] = useState<
@@ -381,13 +418,26 @@ export default function TemplatePicker() {
 				<SectionHeading className="mb-3">
 					Template Library
 				</SectionHeading>
+				{tree.length > 0 && (
+					<input
+						type="text"
+						className="input input-bordered input-sm w-full mb-3"
+						placeholder="Search templates..."
+						value={templateSearch}
+						onChange={(e) => setTemplateSearch(e.target.value)}
+					/>
+				)}
 				{tree.length === 0 ? (
 					<p className="text-sm text-base-content/50">
 						No .docx templates found in the configured folder.
 					</p>
+				) : filteredTree.length === 0 ? (
+					<p className="text-sm text-base-content/50">
+						No templates match your search.
+					</p>
 				) : (
 					<div className="flex flex-col gap-0.5">
-						{tree.map((node) => (
+						{filteredTree.map((node) => (
 							<TemplateTreeItem
 								key={node.kind === "file" ? node.relPath : node.name}
 								node={node}

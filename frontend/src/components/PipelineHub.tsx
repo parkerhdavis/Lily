@@ -9,6 +9,7 @@ import type { QuestionnaireIndex } from "@/types/questionnaire";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
+import { extractFilename } from "@/utils/path";
 
 // ─── Tree building (reused from TemplatePicker) ─────────────────────────────
 
@@ -191,6 +192,7 @@ export default function PipelineHub() {
 						onOpenInEditor={openInEditor}
 						onPickTemplatesDir={pickTemplatesDir}
 						questionnaireIndex={questionnaireIndex}
+						questionnairesDir={settings.questionnaires_dir}
 						onOpenQuestionnaire={async (id) => {
 							await loadQuestionnaire(id);
 							goToQuestionnaireEditor();
@@ -227,12 +229,14 @@ function TemplatesTab({
 	onOpenInEditor,
 	onPickTemplatesDir,
 	questionnaireIndex,
+	questionnairesDir,
 	onOpenQuestionnaire,
 	onNewQuestionnaire,
 }: {
 	tree: TemplateTreeNode[];
 	loading: boolean;
 	templatesDir: string | null;
+	questionnairesDir: string | null;
 	selectedTemplate: string | null;
 	templateVars: VariableInfo[];
 	replacementVars: VariableInfo[];
@@ -280,63 +284,71 @@ function TemplatesTab({
 					Client Setup
 				</SectionHeading>
 				<div className="flex flex-col gap-0.5 mb-4">
-					{questionnaireIndex?.questionnaires.map((q) => (
-						<button
-							key={q.id}
-							type="button"
-							className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal gap-2"
-							onClick={() => onOpenQuestionnaire(q.id)}
-						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								className="h-4 w-4 shrink-0 opacity-50"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke="currentColor"
+					{!questionnairesDir ? (
+						<p className="text-xs text-base-content/40 px-3 py-2">
+							Set a questionnaires folder in Settings to manage questionnaire definitions.
+						</p>
+					) : (
+						<>
+							{questionnaireIndex?.questionnaires.map((q) => (
+								<button
+									key={q.id}
+									type="button"
+									className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal gap-2"
+									onClick={() => onOpenQuestionnaire(q.id)}
+								>
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										className="h-4 w-4 shrink-0 opacity-50"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+									>
+										<title>Questionnaire</title>
+										<path
+											strokeLinecap="round"
+											strokeLinejoin="round"
+											strokeWidth={2}
+											d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+										/>
+									</svg>
+									<span className="truncate flex-1">
+										{q.name}
+									</span>
+									{q.id ===
+										questionnaireIndex.active_questionnaire_id && (
+										<span className="badge badge-xs badge-primary">
+											Active
+										</span>
+									)}
+								</button>
+							))}
+							<button
+								type="button"
+								className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal gap-2 text-base-content/50"
+								onClick={onNewQuestionnaire}
 							>
-								<title>Questionnaire</title>
-								<path
-									strokeLinecap="round"
-									strokeLinejoin="round"
-									strokeWidth={2}
-									d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
-								/>
-							</svg>
-							<span className="truncate flex-1">
-								{q.name}
-							</span>
-							{q.id ===
-								questionnaireIndex.active_questionnaire_id && (
-								<span className="badge badge-xs badge-primary">
-									Active
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									className="h-4 w-4 shrink-0 opacity-50"
+									fill="none"
+									viewBox="0 0 24 24"
+									stroke="currentColor"
+								>
+									<title>New</title>
+									<path
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										strokeWidth={2}
+										d="M12 4v16m8-8H4"
+									/>
+								</svg>
+								<span className="truncate">
+									New Questionnaire
 								</span>
-							)}
-						</button>
-					))}
-					<button
-						type="button"
-						className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal gap-2 text-base-content/50"
-						onClick={onNewQuestionnaire}
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							className="h-4 w-4 shrink-0 opacity-50"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke="currentColor"
-						>
-							<title>New</title>
-							<path
-								strokeLinecap="round"
-								strokeLinejoin="round"
-								strokeWidth={2}
-								d="M12 4v16m8-8H4"
-							/>
-						</svg>
-						<span className="truncate">
-							New Questionnaire
-						</span>
-					</button>
+							</button>
+						</>
+					)}
 				</div>
 
 				<div className="border-b border-base-300 mb-4" />
@@ -405,7 +417,7 @@ function TemplateDetails({
 	loadingVars: boolean;
 	onOpenInEditor: () => void;
 }) {
-	const filename = relPath.split("/").pop() ?? relPath;
+	const filename = extractFilename(relPath);
 	const folder = relPath.includes("/")
 		? relPath.substring(0, relPath.lastIndexOf("/"))
 		: "";

@@ -9,6 +9,8 @@ export interface AppSettings {
 	footer_size: string | null;
 	last_step: string | null;
 	autosave: boolean | null;
+	questionnaires_dir: string | null;
+	active_questionnaire_id: string | null;
 }
 
 export type WorkflowStep =
@@ -90,6 +92,8 @@ export interface LilyFile {
 	questionnaire_id: string | null;
 	/** Version of the questionnaire definition when it was last applied. */
 	questionnaire_version: number | null;
+	/** Non-persisted warnings from loading this file. */
+	warnings: string[];
 }
 
 /** Notes attached to a questionnaire section. */

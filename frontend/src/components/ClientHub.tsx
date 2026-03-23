@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useToastStore } from "@/stores/toastStore";
 import { useQuestionnaireStore } from "@/stores/questionnaireStore";
 import { questionnaireDef as fallbackDef } from "@/data/questionnaireDef";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
 import type { QuestionnaireSectionDef } from "@/types/questionnaire";
+import { extractFilename, extractFolderName } from "@/utils/path";
 
 /** Format an ISO date string to a readable local format. */
 function formatDate(iso: string): string {
@@ -29,11 +32,6 @@ function stripDocx(name: string): string {
 	return name.replace(/\.docx$/i, "");
 }
 
-/** Extract just the folder name from a full directory path. */
-function getFolderName(dirPath: string): string {
-	const segments = dirPath.replace(/\\/g, "/").split("/");
-	return segments[segments.length - 1] || dirPath;
-}
 
 interface ClientDoc {
 	filename: string;
@@ -60,6 +58,8 @@ export default function ClientHub() {
 	const { settings } = useSettingsStore();
 	const { loadActiveQuestionnaire } = useQuestionnaireStore();
 	const lilyIcon = useLilyIcon();
+
+	const [docSearch, setDocSearch] = useState("");
 
 	// Dynamic questionnaire definition for stats
 	const [qDef, setQDef] = useState<QuestionnaireSectionDef[]>(fallbackDef);
@@ -135,7 +135,57 @@ export default function ClientHub() {
 		startAddDocument();
 	};
 
-	const folderName = workingDir ? getFolderName(workingDir) : "Client";
+	const handleExport = async () => {
+		if (!workingDir) return;
+		const path = await saveDialog({
+			title: "Export Client Data",
+			defaultPath: `${folderName} - Export.json`,
+			filters: [{ name: "JSON", extensions: ["json"] }],
+		});
+		if (path) {
+			try {
+				await invoke("export_client_data", {
+					workingDir,
+					exportPath: path,
+				});
+				useToastStore
+					.getState()
+					.addToast("success", "Client data exported");
+			} catch (err) {
+				useToastStore
+					.getState()
+					.addToast("error", `Export failed: ${err}`);
+			}
+		}
+	};
+
+	const handleImport = async () => {
+		if (!workingDir) return;
+		const path = await open({
+			title: "Import Client Data",
+			filters: [
+				{ name: "JSON / Lily", extensions: ["json", "lily"] },
+			],
+		});
+		if (path) {
+			try {
+				const updated = await invoke<import("@/types").LilyFile>(
+					"import_client_data",
+					{ workingDir, importPath: path },
+				);
+				useWorkflowStore.setState({ lilyFile: updated });
+				useToastStore
+					.getState()
+					.addToast("success", "Client data imported");
+			} catch (err) {
+				useToastStore
+					.getState()
+					.addToast("error", `Import failed: ${err}`);
+			}
+		}
+	};
+
+	const folderName = workingDir ? extractFolderName(workingDir) : "Client";
 	const contactCount = lilyFile?.contacts?.length ?? 0;
 
 	if (loading) {
@@ -157,13 +207,40 @@ export default function ClientHub() {
 				subtitle={workingDir ?? undefined}
 				onBack={reset}
 			>
-				<button
-					type="button"
-					className="btn btn-primary btn-sm"
-					onClick={handleAddDocument}
-				>
-					+ New Document
-				</button>
+				<div className="flex gap-2">
+					<div className="dropdown dropdown-end">
+						<button
+							type="button"
+							className="btn btn-ghost btn-sm"
+							tabIndex={0}
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-4">
+								<title>More</title>
+								<path d="M8 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM8 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM9.5 12.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0Z" />
+							</svg>
+						</button>
+						{/* biome-ignore lint/a11y/noNoninteractiveTabindex: daisyUI dropdown pattern */}
+						<ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-1 z-50">
+							<li>
+								<button type="button" onClick={handleExport}>
+									Export Client Data
+								</button>
+							</li>
+							<li>
+								<button type="button" onClick={handleImport}>
+									Import Client Data
+								</button>
+							</li>
+						</ul>
+					</div>
+					<button
+						type="button"
+						className="btn btn-primary btn-sm"
+						onClick={handleAddDocument}
+					>
+						+ New Document
+					</button>
+				</div>
 			</PageHeader>
 
 			{error && (
@@ -231,6 +308,16 @@ export default function ClientHub() {
 							Documents
 						</SectionHeading>
 
+						{allDocs.length > 3 && (
+							<input
+								type="text"
+								className="input input-bordered input-sm w-full mb-3"
+								placeholder="Search documents..."
+								value={docSearch}
+								onChange={(e) => setDocSearch(e.target.value)}
+							/>
+						)}
+
 						{allDocs.length === 0 ? (
 							<div className="rounded-xl border border-base-300 bg-base-100 p-8 text-center text-base-content/50">
 								<p className="text-base">
@@ -246,7 +333,13 @@ export default function ClientHub() {
 							</div>
 						) : (
 							<div className="rounded-xl border border-base-300 bg-base-100 shadow-sm divide-y divide-base-200 overflow-hidden">
-								{allDocs.map((doc) => (
+								{allDocs
+									.filter((doc) => {
+										if (!docSearch.trim()) return true;
+										const q = docSearch.trim().toLowerCase();
+										return doc.filename.toLowerCase().includes(q);
+									})
+									.map((doc) => (
 									<DocumentRow
 										key={doc.filename}
 										doc={doc}
@@ -316,7 +409,11 @@ function DocumentRow({
 
 	const handleContextMenu = (e: React.MouseEvent) => {
 		e.preventDefault();
-		setMenuPos({ x: e.clientX, y: e.clientY });
+		const menuW = 192; // w-48
+		const menuH = 140; // approximate menu height
+		const x = Math.min(e.clientX, window.innerWidth - menuW);
+		const y = Math.min(e.clientY, window.innerHeight - menuH);
+		setMenuPos({ x, y });
 	};
 
 	const handleNewVersion = async () => {
@@ -361,8 +458,7 @@ function DocumentRow({
 					<span className="text-sm text-base-content/40">
 						from{" "}
 						{stripDocx(
-							doc.templateRelPath.split("/").pop() ??
-								doc.templateRelPath,
+							extractFilename(doc.templateRelPath),
 						)}
 						{" \u00B7 "}
 						{formatDate(doc.modifiedAt)}
