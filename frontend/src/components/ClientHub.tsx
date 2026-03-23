@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useToastStore } from "@/stores/toastStore";
 import { useQuestionnaireStore } from "@/stores/questionnaireStore";
 import { questionnaireDef as fallbackDef } from "@/data/questionnaireDef";
 import PageHeader from "@/components/ui/PageHeader";
@@ -133,6 +135,56 @@ export default function ClientHub() {
 		startAddDocument();
 	};
 
+	const handleExport = async () => {
+		if (!workingDir) return;
+		const path = await saveDialog({
+			title: "Export Client Data",
+			defaultPath: `${folderName} - Export.json`,
+			filters: [{ name: "JSON", extensions: ["json"] }],
+		});
+		if (path) {
+			try {
+				await invoke("export_client_data", {
+					workingDir,
+					exportPath: path,
+				});
+				useToastStore
+					.getState()
+					.addToast("success", "Client data exported");
+			} catch (err) {
+				useToastStore
+					.getState()
+					.addToast("error", `Export failed: ${err}`);
+			}
+		}
+	};
+
+	const handleImport = async () => {
+		if (!workingDir) return;
+		const path = await open({
+			title: "Import Client Data",
+			filters: [
+				{ name: "JSON / Lily", extensions: ["json", "lily"] },
+			],
+		});
+		if (path) {
+			try {
+				const updated = await invoke<import("@/types").LilyFile>(
+					"import_client_data",
+					{ workingDir, importPath: path },
+				);
+				useWorkflowStore.setState({ lilyFile: updated });
+				useToastStore
+					.getState()
+					.addToast("success", "Client data imported");
+			} catch (err) {
+				useToastStore
+					.getState()
+					.addToast("error", `Import failed: ${err}`);
+			}
+		}
+	};
+
 	const folderName = workingDir ? extractFolderName(workingDir) : "Client";
 	const contactCount = lilyFile?.contacts?.length ?? 0;
 
@@ -155,13 +207,40 @@ export default function ClientHub() {
 				subtitle={workingDir ?? undefined}
 				onBack={reset}
 			>
-				<button
-					type="button"
-					className="btn btn-primary btn-sm"
-					onClick={handleAddDocument}
-				>
-					+ New Document
-				</button>
+				<div className="flex gap-2">
+					<div className="dropdown dropdown-end">
+						<button
+							type="button"
+							className="btn btn-ghost btn-sm"
+							tabIndex={0}
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-4">
+								<title>More</title>
+								<path d="M8 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM8 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM9.5 12.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0Z" />
+							</svg>
+						</button>
+						{/* biome-ignore lint/a11y/noNoninteractiveTabindex: daisyUI dropdown pattern */}
+						<ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-1 z-50">
+							<li>
+								<button type="button" onClick={handleExport}>
+									Export Client Data
+								</button>
+							</li>
+							<li>
+								<button type="button" onClick={handleImport}>
+									Import Client Data
+								</button>
+							</li>
+						</ul>
+					</div>
+					<button
+						type="button"
+						className="btn btn-primary btn-sm"
+						onClick={handleAddDocument}
+					>
+						+ New Document
+					</button>
+				</div>
 			</PageHeader>
 
 			{error && (

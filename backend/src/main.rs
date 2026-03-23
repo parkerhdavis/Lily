@@ -10,10 +10,11 @@ use docx_ops::{
     copy_template, extract_variables, get_document_html, rename_document, replace_variables,
 };
 use lily_file::{
-    add_client_variable, add_contact, delete_contact, delete_document, load_lily_file_cmd,
-    new_version_document, open_file_in_os, remove_client_variable, resolve_contact_variables,
-    save_client_variables, save_contact_bindings, save_questionnaire_note, save_variables,
-    set_client_questionnaire, set_document_variables, set_role_override, update_contact,
+    add_client_variable, add_contact, delete_contact, delete_document, export_client_data,
+    import_client_data, load_lily_file_cmd, new_version_document, open_file_in_os,
+    remove_client_variable, resolve_contact_variables, save_client_variables,
+    save_contact_bindings, save_questionnaire_note, save_variables, set_client_questionnaire,
+    set_document_variables, set_role_override, update_contact,
 };
 use questionnaire::{
     create_questionnaire, delete_questionnaire, duplicate_questionnaire, load_questionnaire,
@@ -81,6 +82,8 @@ fn main() {
             save_questionnaire_note,
             set_role_override,
             set_client_questionnaire,
+            export_client_data,
+            import_client_data,
             load_questionnaire_index,
             load_questionnaire,
             save_questionnaire,
