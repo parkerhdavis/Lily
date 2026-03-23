@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { questionnaireDef } from "@/data/questionnaireDef";
+import { useQuestionnaireStore } from "@/stores/questionnaireStore";
+import { questionnaireDef as fallbackDef } from "@/data/questionnaireDef";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
+import type { QuestionnaireSectionDef } from "@/types/questionnaire";
 
 /** Format an ISO date string to a readable local format. */
 function formatDate(iso: string): string {
@@ -55,7 +58,37 @@ export default function ClientHub() {
 		reset,
 	} = useWorkflowStore();
 	const { settings } = useSettingsStore();
+	const { loadActiveQuestionnaire } = useQuestionnaireStore();
 	const lilyIcon = useLilyIcon();
+
+	// Dynamic questionnaire definition for stats
+	const [qDef, setQDef] = useState<QuestionnaireSectionDef[]>(fallbackDef);
+	useEffect(() => {
+		(async () => {
+			try {
+				let def = null;
+				if (lilyFile?.questionnaire_id) {
+					try {
+						def = await invoke<
+							import("@/types/questionnaire").QuestionnaireDefFile
+						>("load_questionnaire", {
+							id: lilyFile.questionnaire_id,
+						});
+					} catch {
+						// Fall through
+					}
+				}
+				if (!def) {
+					def = await loadActiveQuestionnaire();
+				}
+				if (def) {
+					setQDef(def.sections);
+				}
+			} catch {
+				// Use fallback
+			}
+		})();
+	}, [lilyFile?.questionnaire_id, loadActiveQuestionnaire]);
 
 	// Build client documents list from .lily file, sorted by modification date
 	const allDocs = useMemo(() => {
@@ -79,7 +112,7 @@ export default function ClientHub() {
 		const contactCount = lilyFile?.contacts?.length ?? 0;
 		let total = 0;
 		let filled = 0;
-		for (const section of questionnaireDef) {
+		for (const section of qDef) {
 			if (section.kind === "contacts") {
 				total++;
 				if (contactCount > 0) filled++;
@@ -93,7 +126,7 @@ export default function ClientHub() {
 			}
 		}
 		return { total, filled };
-	}, [lilyFile]);
+	}, [lilyFile, qDef]);
 
 	const handleAddDocument = () => {
 		if (settings.templates_dir) {

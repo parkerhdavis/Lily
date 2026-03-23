@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import AppSwitcher from "@/components/ui/AppSwitcher";
 
 interface PageHeaderProps {
-	title: string;
+	title: ReactNode;
 	subtitle?: string;
 	onBack?: () => void;
 	backLabel?: string;

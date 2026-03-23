@@ -3,7 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { useQuestionnaireStore } from "@/stores/questionnaireStore";
 import type { TemplateTreeNode, VariableInfo } from "@/types";
+import type { QuestionnaireIndex } from "@/types/questionnaire";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
@@ -60,6 +62,15 @@ type PipelineTab = "templates" | "processes" | "team";
 export default function PipelineHub() {
 	const { settings, save } = useSettingsStore();
 	const goToHub = useWorkflowStore((s) => s.goToHub);
+	const goToQuestionnaireEditor = useWorkflowStore(
+		(s) => s.goToQuestionnaireEditor,
+	);
+	const {
+		index: questionnaireIndex,
+		loadIndex: loadQuestionnaireIndex,
+		loadQuestionnaire,
+		createQuestionnaire,
+	} = useQuestionnaireStore();
 
 	const [activeTab, setActiveTab] = useState<PipelineTab>("templates");
 	const [templates, setTemplates] = useState<string[]>([]);
@@ -69,6 +80,11 @@ export default function PipelineHub() {
 	);
 	const [templateVars, setTemplateVars] = useState<VariableInfo[]>([]);
 	const [loadingVars, setLoadingVars] = useState(false);
+
+	// Load questionnaire index on mount
+	useEffect(() => {
+		loadQuestionnaireIndex();
+	}, [loadQuestionnaireIndex]);
 
 	// Load templates on mount
 	useEffect(() => {
@@ -174,6 +190,19 @@ export default function PipelineHub() {
 						onSelectTemplate={setSelectedTemplate}
 						onOpenInEditor={openInEditor}
 						onPickTemplatesDir={pickTemplatesDir}
+						questionnaireIndex={questionnaireIndex}
+						onOpenQuestionnaire={async (id) => {
+							await loadQuestionnaire(id);
+							goToQuestionnaireEditor();
+						}}
+						onNewQuestionnaire={async () => {
+							const def =
+								await createQuestionnaire(
+									"New Questionnaire",
+								);
+							await loadQuestionnaire(def.id);
+							goToQuestionnaireEditor();
+						}}
 					/>
 				)}
 				{activeTab === "processes" && <PlaceholderTab title="Processes" description="Define common client processes and document packages. Group templates into workflows that can be assigned to clients." />}
@@ -197,6 +226,9 @@ function TemplatesTab({
 	onSelectTemplate,
 	onOpenInEditor,
 	onPickTemplatesDir,
+	questionnaireIndex,
+	onOpenQuestionnaire,
+	onNewQuestionnaire,
 }: {
 	tree: TemplateTreeNode[];
 	loading: boolean;
@@ -209,6 +241,9 @@ function TemplatesTab({
 	onSelectTemplate: (relPath: string | null) => void;
 	onOpenInEditor: () => void;
 	onPickTemplatesDir: () => void;
+	questionnaireIndex: QuestionnaireIndex | null;
+	onOpenQuestionnaire: (id: string) => void;
+	onNewQuestionnaire: () => void;
 }) {
 	if (!templatesDir) {
 		return (
@@ -240,6 +275,73 @@ function TemplatesTab({
 		<div className="flex h-full">
 			{/* Left: template tree */}
 			<div className="w-72 shrink-0 border-r border-base-300 overflow-y-auto p-4">
+				{/* CLIENT SETUP section */}
+				<SectionHeading className="mb-3">
+					Client Setup
+				</SectionHeading>
+				<div className="flex flex-col gap-0.5 mb-4">
+					{questionnaireIndex?.questionnaires.map((q) => (
+						<button
+							key={q.id}
+							type="button"
+							className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal gap-2"
+							onClick={() => onOpenQuestionnaire(q.id)}
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								className="h-4 w-4 shrink-0 opacity-50"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke="currentColor"
+							>
+								<title>Questionnaire</title>
+								<path
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									strokeWidth={2}
+									d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+								/>
+							</svg>
+							<span className="truncate flex-1">
+								{q.name}
+							</span>
+							{q.id ===
+								questionnaireIndex.active_questionnaire_id && (
+								<span className="badge badge-xs badge-primary">
+									Active
+								</span>
+							)}
+						</button>
+					))}
+					<button
+						type="button"
+						className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal gap-2 text-base-content/50"
+						onClick={onNewQuestionnaire}
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							className="h-4 w-4 shrink-0 opacity-50"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke="currentColor"
+						>
+							<title>New</title>
+							<path
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								strokeWidth={2}
+								d="M12 4v16m8-8H4"
+							/>
+						</svg>
+						<span className="truncate">
+							New Questionnaire
+						</span>
+					</button>
+				</div>
+
+				<div className="border-b border-base-300 mb-4" />
+
+				{/* TEMPLATE LIBRARY section */}
 				<SectionHeading className="mb-3">
 					Template Library
 				</SectionHeading>
@@ -460,7 +562,7 @@ function TreeFolder({
 	selectedTemplate: string | null;
 	onSelect: (relPath: string) => void;
 }) {
-	const [expanded, setExpanded] = useState(true);
+	const [expanded, setExpanded] = useState(false);
 
 	return (
 		<div>

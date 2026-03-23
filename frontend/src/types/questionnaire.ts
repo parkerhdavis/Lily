@@ -50,3 +50,29 @@ export interface QuestionnaireSectionDef {
 
 /** The full questionnaire definition — an ordered list of sections. */
 export type QuestionnaireDef = QuestionnaireSectionDef[];
+
+// ─── Persisted questionnaire types ──────────────────────────────────────────
+
+/** A complete questionnaire definition file stored on disk. */
+export interface QuestionnaireDefFile {
+	id: string;
+	name: string;
+	version: number;
+	tabs: { id: string; label: string }[];
+	sections: QuestionnaireSectionDef[];
+}
+
+/** An entry in the questionnaire index (metadata only). */
+export interface QuestionnaireIndexEntry {
+	id: string;
+	name: string;
+	version: number;
+	created_at: string;
+	modified_at: string;
+}
+
+/** The questionnaire index — lists all definitions and which is active. */
+export interface QuestionnaireIndex {
+	questionnaires: QuestionnaireIndexEntry[];
+	active_questionnaire_id: string | null;
+}

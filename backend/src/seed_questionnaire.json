@@ -1,0 +1,94 @@
+{
+	"id": "",
+	"name": "Elder Law Estate Planning",
+	"version": 1,
+	"tabs": [
+		{ "id": "client-info", "label": "Client Info" },
+		{ "id": "contacts", "label": "Client Contacts" },
+		{ "id": "assignments", "label": "Assignments & Decisions" }
+	],
+	"sections": [
+		{
+			"title": "Client Information",
+			"tab": "client-info",
+			"description": "Basic information about the client.",
+			"questions": [
+				{ "kind": "text", "variable": "Client Full Name", "label": "Full Legal Name", "placeholder": "e.g. Jane M. Doe" },
+				{ "kind": "text", "variable": "Client First Name", "label": "First Name", "half": true },
+				{ "kind": "text", "variable": "Client Last Name", "label": "Last Name", "half": true },
+				{ "kind": "text", "variable": "Client Phone", "label": "Phone Number", "placeholder": "e.g. (303) 555-1234", "half": true },
+				{ "kind": "text", "variable": "Client Email", "label": "Email Address", "half": true },
+				{ "kind": "text", "variable": "Client Address", "label": "Street Address" },
+				{ "kind": "text", "variable": "Client City", "label": "City", "third": true },
+				{ "kind": "text", "variable": "Client State", "label": "State", "placeholder": "e.g. CO", "third": true },
+				{ "kind": "text", "variable": "Client Zip", "label": "ZIP Code", "third": true },
+				{ "kind": "text", "variable": "County", "label": "County of Residence", "placeholder": "e.g. Denver County" }
+			]
+		},
+		{
+			"title": "Client Contacts",
+			"tab": "contacts",
+			"kind": "contacts",
+			"description": "Add family members, agents, and other contacts associated with the client. These contacts can then be selected for roles in the Assignments tab.",
+			"questions": []
+		},
+		{
+			"title": "Healthcare Power of Attorney",
+			"tab": "assignments",
+			"description": "Designate agents to make healthcare decisions on behalf of the client. Used for HPOA and HIPAA documents.",
+			"questions": [
+				{ "kind": "contact-role", "role": "Healthcare POA Agent", "label": "Primary Healthcare POA Agent", "variableMappings": { "Healthcare POA Agent Full Name": "full_name", "Healthcare POA Agent Phone": "phone", "Healthcare POA Agent Address": "address", "Healthcare POA Agent City": "city", "Healthcare POA Agent State": "state", "Healthcare POA Agent Zip": "zip" } },
+				{ "kind": "contact-role", "role": "Healthcare POA Alternate Agent", "label": "Alternate Healthcare POA Agent", "variableMappings": { "Healthcare POA Alternate Agent Full Name": "full_name", "Healthcare POA Alternate Agent Phone": "phone", "Healthcare POA Alternate Agent Address": "address", "Healthcare POA Alternate Agent City": "city", "Healthcare POA Alternate Agent State": "state", "Healthcare POA Alternate Agent Zip": "zip" } },
+				{ "kind": "contact-role", "role": "Healthcare POA Third Agent", "label": "Third Healthcare POA Agent", "variableMappings": { "Healthcare POA Third Agent Full Name": "full_name", "Healthcare POA Third Agent Phone": "phone", "Healthcare POA Third Agent Address": "address", "Healthcare POA Third Agent City": "city", "Healthcare POA Third Agent State": "state", "Healthcare POA Third Agent Zip": "zip" } }
+			]
+		},
+		{
+			"title": "Financial Power of Attorney",
+			"tab": "assignments",
+			"description": "Designate agents to manage financial matters on behalf of the client. Used for General POA (GPOA) documents.",
+			"questions": [
+				{ "kind": "contact-role", "role": "Financial POA Agent", "label": "Primary Financial POA Agent", "variableMappings": { "Financial POA Agent Full Name": "full_name", "Financial POA Agent Phone": "phone", "Financial POA Agent Address": "address", "Financial POA Agent City": "city", "Financial POA Agent State": "state", "Financial POA Agent Zip": "zip" } },
+				{ "kind": "contact-role", "role": "Financial POA Alternate Agent", "label": "Alternate Financial POA Agent", "variableMappings": { "Financial POA Alternate Agent Full Name": "full_name", "Financial POA Alternate Agent Phone": "phone", "Financial POA Alternate Agent Address": "address", "Financial POA Alternate Agent City": "city", "Financial POA Alternate Agent State": "state", "Financial POA Alternate Agent Zip": "zip" } },
+				{ "kind": "contact-role", "role": "Financial POA Third Agent", "label": "Third Financial POA Agent", "variableMappings": { "Financial POA Third Agent Full Name": "full_name", "Financial POA Third Agent Phone": "phone", "Financial POA Third Agent Address": "address", "Financial POA Third Agent City": "city", "Financial POA Third Agent State": "state", "Financial POA Third Agent Zip": "zip" } }
+			]
+		},
+		{
+			"title": "Personal Representatives",
+			"tab": "assignments",
+			"description": "Designate personal representatives for the client's will.",
+			"questions": [
+				{ "kind": "contact-role", "role": "Personal Representative", "label": "Primary Personal Representative", "variableMappings": { "Personal Representative Full Name": "full_name", "Personal Representative Phone": "phone", "Personal Representative Address": "address", "Personal Representative City": "city", "Personal Representative State": "state", "Personal Representative Zip": "zip" } },
+				{ "kind": "contact-role", "role": "Alternate Personal Representative", "label": "Alternate Personal Representative", "variableMappings": { "Alternate Personal Representative Full Name": "full_name", "Alternate Personal Representative Phone": "phone", "Alternate Personal Representative Address": "address", "Alternate Personal Representative City": "city", "Alternate Personal Representative State": "state", "Alternate Personal Representative Zip": "zip" } },
+				{ "kind": "contact-role", "role": "Third Personal Representative", "label": "Third Personal Representative", "variableMappings": { "Third Personal Representative Full Name": "full_name", "Third Personal Representative Phone": "phone", "Third Personal Representative Address": "address", "Third Personal Representative City": "city", "Third Personal Representative State": "state", "Third Personal Representative Zip": "zip" } }
+			]
+		},
+		{
+			"title": "Guardians",
+			"tab": "assignments",
+			"description": "Designate guardians for minor children. Only applies if the client has minor children.",
+			"questions": [
+				{ "kind": "contact-role", "role": "Guardian", "label": "Primary Guardian", "variableMappings": { "Guardian Full Name": "full_name" } },
+				{ "kind": "contact-role", "role": "Alternate Guardian", "label": "Alternate Guardian", "variableMappings": { "Alternate Guardian Full Name": "full_name" } }
+			]
+		},
+		{
+			"title": "Beneficiaries",
+			"tab": "assignments",
+			"description": "Designate beneficiaries for the client's will.",
+			"questions": [
+				{ "kind": "contact-role", "role": "Primary Beneficiary", "label": "Primary Beneficiary", "variableMappings": { "Primary Beneficiary Full Name": "full_name", "Primary Beneficiary Relationship": "relationship" } },
+				{ "kind": "contact-role", "role": "Alternate Beneficiary", "label": "Alternate Beneficiary", "variableMappings": { "Alternate Beneficiary Full Name": "full_name", "Alternate Beneficiary Relationship": "relationship" } }
+			]
+		},
+		{
+			"title": "Trust & Trustees",
+			"tab": "assignments",
+			"description": "Configure the family trust name and designate trustees to manage the trust upon the client's death or disability.",
+			"questions": [
+				{ "kind": "text", "variable": "Trust Name", "label": "Family Trust Name", "placeholder": "e.g. The Smith Family Trust" },
+				{ "kind": "contact-role", "role": "Trustee", "label": "Primary Trustee", "variableMappings": { "Trustee Full Name": "full_name" } },
+				{ "kind": "contact-role", "role": "Alternate Trustee", "label": "Alternate Trustee", "variableMappings": { "Alternate Trustee Full Name": "full_name" } }
+			]
+		}
+	]
+}

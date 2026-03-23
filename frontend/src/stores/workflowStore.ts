@@ -7,6 +7,11 @@ import type {
 	Contact,
 	ContactBinding,
 } from "@/types";
+import {
+	useNavigationStore,
+	type NavigationEntry,
+} from "@/stores/navigationStore";
+import { useUndoStore } from "@/stores/undoStore";
 
 interface WorkflowState {
 	step: WorkflowStep;
@@ -92,8 +97,58 @@ interface WorkflowState {
 	goToSettings: () => void;
 	/** Navigate to Pipeline Management, preserving client state. */
 	goToPipeline: () => void;
+	/** Navigate to the Questionnaire Editor. */
+	goToQuestionnaireEditor: () => void;
 	/** Full reset: clear all client state and return to the Lily Hub. */
 	reset: () => void;
+	/** Restore state from a navigation history entry (back/forward).
+	 *  Does NOT push to navigation history. */
+	restoreNavigationEntry: (entry: NavigationEntry) => Promise<void>;
+}
+
+/** Build a human-readable label for a given step + context. */
+function navLabel(
+	step: WorkflowStep,
+	workingDir: string | null,
+): string {
+	const folderName = workingDir
+		? workingDir
+				.replace(/\\/g, "/")
+				.split("/")
+				.filter(Boolean)
+				.pop() ?? workingDir
+		: "";
+	switch (step) {
+		case "hub":
+			return "Lily Hub";
+		case "client-hub":
+			return folderName || "Client Hub";
+		case "questionnaire":
+			return `${folderName} \u203A Questionnaire`;
+		case "select-template":
+			return `${folderName} \u203A Add Document`;
+		case "edit-variables":
+			return `${folderName} \u203A Edit Document`;
+		case "app-settings":
+			return "Settings";
+		case "pipeline":
+			return "Pipeline";
+		case "questionnaire-editor":
+			return "Pipeline \u203A Questionnaire Editor";
+		default:
+			return step;
+	}
+}
+
+/** Push the current state to navigation history before navigating away. */
+function pushNav(state: WorkflowState) {
+	useNavigationStore.getState().push({
+		step: state.step,
+		workingDir: state.workingDir,
+		documentPath: state.documentPath,
+		templateRelPath: state.templateRelPath,
+		label: navLabel(state.step, state.workingDir),
+	});
 }
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
@@ -110,9 +165,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 	loading: false,
 	error: null,
 
-	setStep: (step) => set({ step }),
+	setStep: (step) => {
+		pushNav(get());
+		set({ step });
+	},
 
 	setWorkingDir: (dir) => {
+		pushNav(get());
 		set({ workingDir: dir, step: "client-hub" });
 
 		// Load .lily file data for the selected working directory
@@ -204,6 +263,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				{ workingDir },
 			);
 
+			pushNav(get());
 			set({
 				documentPath: docPath,
 				templateRelPath,
@@ -222,9 +282,28 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
 	updateVariable: (name, value) => {
 		const { variableValues } = get();
+		const oldValue = variableValues[name] ?? "";
 		set({
 			variableValues: { ...variableValues, [name]: value },
 			dirty: true,
+		});
+		useUndoStore.getState().push({
+			description: `Change ${name}`,
+			timestamp: Date.now(),
+			redo: () => {
+				const s = get();
+				set({
+					variableValues: { ...s.variableValues, [name]: value },
+					dirty: true,
+				});
+			},
+			undo: () => {
+				const s = get();
+				set({
+					variableValues: { ...s.variableValues, [name]: oldValue },
+					dirty: true,
+				});
+			},
 		});
 	},
 
@@ -295,6 +374,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				}
 			}
 
+			pushNav(get());
 			set({
 				documentPath: docPath,
 				templateRelPath,
@@ -314,6 +394,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		const { documentPath } = get();
 		if (!documentPath) return;
 
+		const oldFilename =
+			documentPath.split("/").pop() ??
+			documentPath.split("\\").pop() ??
+			"";
 		set({ loading: true, error: null });
 		try {
 			const newPath = await invoke<string>("rename_document", {
@@ -321,6 +405,28 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				newFilename,
 			});
 			set({ documentPath: newPath, loading: false });
+			useUndoStore.getState().push({
+				description: `Rename to ${newFilename}`,
+				timestamp: Date.now(),
+				redo: async () => {
+					const { documentPath: dp } = get();
+					if (!dp) return;
+					const np = await invoke<string>("rename_document", {
+						docxPath: dp,
+						newFilename,
+					});
+					set({ documentPath: np });
+				},
+				undo: async () => {
+					const { documentPath: dp } = get();
+					if (!dp) return;
+					const np = await invoke<string>("rename_document", {
+						docxPath: dp,
+						newFilename: oldFilename,
+					});
+					set({ documentPath: np });
+				},
+			});
 		} catch (err) {
 			set({ error: String(err), loading: false });
 		}
@@ -401,6 +507,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		const { workingDir } = get();
 		if (!workingDir) return;
 
+		const oldValue = get().lilyFile?.variables[name] ?? "";
 		try {
 			await invoke("save_client_variables", {
 				workingDir,
@@ -416,6 +523,46 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 					},
 				});
 			}
+			useUndoStore.getState().push({
+				description: `Change client variable ${name}`,
+				timestamp: Date.now(),
+				redo: async () => {
+					await invoke("save_client_variables", {
+						workingDir,
+						variableValues: { [name]: value },
+					});
+					const { lilyFile: lf } = get();
+					if (lf) {
+						set({
+							lilyFile: {
+								...lf,
+								variables: {
+									...lf.variables,
+									[name]: value,
+								},
+							},
+						});
+					}
+				},
+				undo: async () => {
+					await invoke("save_client_variables", {
+						workingDir,
+						variableValues: { [name]: oldValue },
+					});
+					const { lilyFile: lf } = get();
+					if (lf) {
+						set({
+							lilyFile: {
+								...lf,
+								variables: {
+									...lf.variables,
+									[name]: oldValue,
+								},
+							},
+						});
+					}
+				},
+			});
 		} catch (err) {
 			console.error("Failed to save client variable:", err);
 		}
@@ -440,6 +587,36 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 					},
 				});
 			}
+			useUndoStore.getState().push({
+				description: `Add variable ${name}`,
+				timestamp: Date.now(),
+				redo: async () => {
+					await invoke("add_client_variable", {
+						workingDir,
+						variableName: name,
+					});
+					const { lilyFile: lf } = get();
+					if (lf) {
+						set({
+							lilyFile: {
+								...lf,
+								variables: { ...lf.variables, [name]: "" },
+							},
+						});
+					}
+				},
+				undo: async () => {
+					await invoke("remove_client_variable", {
+						workingDir,
+						variableName: name,
+					});
+					const { lilyFile: lf } = get();
+					if (lf) {
+						const { [name]: _, ...rest } = lf.variables;
+						set({ lilyFile: { ...lf, variables: rest } });
+					}
+				},
+			});
 		} catch (err) {
 			throw err;
 		}
@@ -449,6 +626,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		const { workingDir } = get();
 		if (!workingDir) return;
 
+		const oldValue = get().lilyFile?.variables[name] ?? "";
 		try {
 			await invoke("remove_client_variable", {
 				workingDir,
@@ -465,6 +643,43 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 					},
 				});
 			}
+			useUndoStore.getState().push({
+				description: `Remove variable ${name}`,
+				timestamp: Date.now(),
+				redo: async () => {
+					await invoke("remove_client_variable", {
+						workingDir,
+						variableName: name,
+					});
+					const { lilyFile: lf } = get();
+					if (lf) {
+						const { [name]: _, ...rest } = lf.variables;
+						set({ lilyFile: { ...lf, variables: rest } });
+					}
+				},
+				undo: async () => {
+					await invoke("add_client_variable", {
+						workingDir,
+						variableName: name,
+					});
+					await invoke("save_client_variables", {
+						workingDir,
+						variableValues: { [name]: oldValue },
+					});
+					const { lilyFile: lf } = get();
+					if (lf) {
+						set({
+							lilyFile: {
+								...lf,
+								variables: {
+									...lf.variables,
+									[name]: oldValue,
+								},
+							},
+						});
+					}
+				},
+			});
 		} catch (err) {
 			console.error("Failed to remove client variable:", err);
 		}
@@ -534,6 +749,24 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			contact: { id: "", ...contact },
 		});
 		await get().reloadLilyFile();
+		useUndoStore.getState().push({
+			description: `Add contact ${contact.full_name}`,
+			timestamp: Date.now(),
+			redo: async () => {
+				await invoke<Contact>("add_contact", {
+					workingDir,
+					contact: created,
+				});
+				await get().reloadLilyFile();
+			},
+			undo: async () => {
+				await invoke("delete_contact", {
+					workingDir,
+					contactId: created.id,
+				});
+				await get().reloadLilyFile();
+			},
+		});
 		return created;
 	},
 
@@ -541,16 +774,59 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		const { workingDir } = get();
 		if (!workingDir) return;
 
+		const oldContact = get().lilyFile?.contacts.find(
+			(c) => c.id === contact.id,
+		);
 		await invoke("update_contact", { workingDir, contact });
 		await get().reloadLilyFile();
+		if (oldContact) {
+			useUndoStore.getState().push({
+				description: `Update contact ${contact.full_name}`,
+				timestamp: Date.now(),
+				redo: async () => {
+					await invoke("update_contact", { workingDir, contact });
+					await get().reloadLilyFile();
+				},
+				undo: async () => {
+					await invoke("update_contact", {
+						workingDir,
+						contact: oldContact,
+					});
+					await get().reloadLilyFile();
+				},
+			});
+		}
 	},
 
 	deleteContact: async (contactId) => {
 		const { workingDir } = get();
 		if (!workingDir) return;
 
+		const oldContact = get().lilyFile?.contacts.find(
+			(c) => c.id === contactId,
+		);
 		await invoke("delete_contact", { workingDir, contactId });
 		await get().reloadLilyFile();
+		if (oldContact) {
+			useUndoStore.getState().push({
+				description: `Delete contact ${oldContact.full_name}`,
+				timestamp: Date.now(),
+				redo: async () => {
+					await invoke("delete_contact", {
+						workingDir,
+						contactId,
+					});
+					await get().reloadLilyFile();
+				},
+				undo: async () => {
+					await invoke<Contact>("add_contact", {
+						workingDir,
+						contact: oldContact,
+					});
+					await get().reloadLilyFile();
+				},
+			});
+		}
 	},
 
 	setContactBinding: async (role, binding) => {
@@ -622,6 +898,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		const { workingDir } = get();
 		if (!workingDir) return;
 
+		const oldValue =
+			get().lilyFile?.questionnaire_notes?.[section]?.[noteKind] ?? "";
 		await invoke("save_questionnaire_note", {
 			workingDir,
 			section,
@@ -641,17 +919,74 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 				lilyFile: { ...lilyFile, questionnaire_notes: notes },
 			});
 		}
+		useUndoStore.getState().push({
+			description: `Change ${noteKind} note for ${section}`,
+			timestamp: Date.now(),
+			redo: async () => {
+				await invoke("save_questionnaire_note", {
+					workingDir,
+					section,
+					noteKind,
+					value,
+				});
+				const { lilyFile: lf } = get();
+				if (lf) {
+					const notes = {
+						...(lf.questionnaire_notes ?? {}),
+					};
+					const sn = notes[section] ?? {
+						client: "",
+						internal: "",
+					};
+					notes[section] = { ...sn, [noteKind]: value };
+					set({
+						lilyFile: {
+							...lf,
+							questionnaire_notes: notes,
+						},
+					});
+				}
+			},
+			undo: async () => {
+				await invoke("save_questionnaire_note", {
+					workingDir,
+					section,
+					noteKind,
+					value: oldValue,
+				});
+				const { lilyFile: lf } = get();
+				if (lf) {
+					const notes = {
+						...(lf.questionnaire_notes ?? {}),
+					};
+					const sn = notes[section] ?? {
+						client: "",
+						internal: "",
+					};
+					notes[section] = { ...sn, [noteKind]: oldValue };
+					set({
+						lilyFile: {
+							...lf,
+							questionnaire_notes: notes,
+						},
+					});
+				}
+			},
+		});
 	},
 
 	openQuestionnaire: () => {
+		pushNav(get());
 		set({ step: "questionnaire" });
 	},
 
 	startAddDocument: () => {
+		pushNav(get());
 		set({ step: "select-template" });
 	},
 
 	returnToHub: () => {
+		pushNav(get());
 		// Clear document-specific state but keep workingDir, lilyFile, templates
 		set({
 			step: "client-hub",
@@ -667,11 +1002,26 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 		get().reloadLilyFile();
 	},
 
-	goToHub: () => set({ step: "hub" }),
-	goToSettings: () => set({ step: "app-settings" }),
-	goToPipeline: () => set({ step: "pipeline" }),
+	goToHub: () => {
+		pushNav(get());
+		set({ step: "hub" });
+	},
+	goToSettings: () => {
+		pushNav(get());
+		set({ step: "app-settings" });
+	},
+	goToPipeline: () => {
+		pushNav(get());
+		set({ step: "pipeline" });
+	},
+	goToQuestionnaireEditor: () => {
+		pushNav(get());
+		set({ step: "questionnaire-editor" });
+	},
 
-	reset: () =>
+	reset: () => {
+		useNavigationStore.getState().clear();
+		useUndoStore.getState().clear();
 		set({
 			step: "hub",
 			workingDir: null,
@@ -684,5 +1034,84 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 			lilyFile: null,
 			dirty: false,
 			error: null,
-		}),
+		});
+	},
+
+	restoreNavigationEntry: async (entry) => {
+		const current = get();
+		const needsLilyReload =
+			entry.workingDir !== current.workingDir && entry.workingDir;
+		const needsDocReload =
+			entry.documentPath && entry.documentPath !== current.documentPath;
+
+		set({
+			step: entry.step,
+			workingDir: entry.workingDir,
+			documentPath: entry.documentPath,
+			templateRelPath: entry.templateRelPath,
+		});
+
+		// Reload .lily file if we changed working directories
+		if (needsLilyReload) {
+			try {
+				const lilyFile = await invoke<LilyFile>("load_lily_file_cmd", {
+					workingDir: entry.workingDir,
+				});
+				set({ lilyFile });
+			} catch (err) {
+				console.error("Failed to reload .lily file:", err);
+			}
+		}
+
+		// Reload document HTML if restoring to a document editing step
+		if (needsDocReload && entry.step === "edit-variables") {
+			try {
+				const documentHtml = await invoke<string>("get_document_html", {
+					docxPath: entry.documentPath,
+				});
+				// Re-extract variables
+				let variables = await invoke<VariableInfo[]>(
+					"extract_variables",
+					{ docxPath: entry.documentPath },
+				);
+				const { lilyFile } = get();
+				// Patch conditionals from .lily
+				const conditionalSet = new Set(
+					lilyFile?.conditional_variables ?? [],
+				);
+				if (conditionalSet.size > 0) {
+					variables = variables.map((v) =>
+						conditionalSet.has(v.display_name)
+							? { ...v, is_conditional: true }
+							: v,
+					);
+				}
+				// Fall back to stored variable names if no placeholders remain
+				if (variables.length === 0) {
+					const filename =
+						entry.documentPath?.split("/").pop() ?? "";
+					const storedNames =
+						lilyFile?.documents[filename]?.variable_names ?? [];
+					if (storedNames.length > 0) {
+						variables = storedNames.map((name) => ({
+							display_name: name,
+							variants: [name],
+							is_conditional: conditionalSet.has(name),
+						}));
+					}
+				}
+				// Restore variable values from client pool
+				const savedVars = lilyFile?.variables ?? {};
+				const variableValues: Record<string, string> = {};
+				for (const v of variables) {
+					const defaultVal = v.is_conditional ? "false" : "";
+					variableValues[v.display_name] =
+						savedVars[v.display_name] ?? defaultVal;
+				}
+				set({ documentHtml, variables, variableValues, dirty: false });
+			} catch (err) {
+				console.error("Failed to reload document:", err);
+			}
+		}
+	},
 }));
