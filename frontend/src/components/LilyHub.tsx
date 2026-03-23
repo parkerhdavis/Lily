@@ -81,7 +81,16 @@ export default function LilyHub() {
 						Lily
 					</h1>
 					<p className="text-xs text-base-content/40">
-						Document preparation for Carelaw Colorado
+						Legal Drafting and Client Management Toolset
+						— Developed by{" "}
+						<a
+							href="https://github.com/parkerhdavis"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="underline hover:text-base-content/60"
+						>
+							Parker H. Davis
+						</a>
 					</p>
 				</div>
 				<AppSwitcher />
