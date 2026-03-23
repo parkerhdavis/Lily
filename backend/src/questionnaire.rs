@@ -1,8 +1,7 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 // ─── Data structures ─────────────────────────────────────────────────────────
@@ -10,294 +9,514 @@ use uuid::Uuid;
 /// A single question in a questionnaire definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuestionDef {
-    pub kind: String,
-    /// Remaining fields vary by kind — stored as a flat JSON map.
-    #[serde(flatten)]
-    pub fields: Value,
+	pub kind: String,
+	/// Remaining fields vary by kind — stored as a flat JSON map.
+	#[serde(flatten)]
+	pub fields: Value,
 }
 
 /// A tab in the questionnaire UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TabDef {
-    pub id: String,
-    pub label: String,
+	pub id: String,
+	pub label: String,
 }
 
 /// A section grouping related questions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SectionDef {
-    pub title: String,
-    pub tab: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    /// "standard" or "contacts". Defaults to "standard" if absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
-    pub questions: Vec<QuestionDef>,
+	pub title: String,
+	pub tab: String,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub description: Option<String>,
+	/// "standard" or "contacts". Defaults to "standard" if absent.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub kind: Option<String>,
+	pub questions: Vec<QuestionDef>,
 }
 
-/// A complete questionnaire definition file.
+/// A complete questionnaire definition file (.lily with lily_type "questionnaire").
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuestionnaireDefFile {
-    pub id: String,
-    pub name: String,
-    pub version: u32,
-    pub tabs: Vec<TabDef>,
-    pub sections: Vec<SectionDef>,
+	/// Always "questionnaire" for questionnaire .lily files.
+	#[serde(default)]
+	pub lily_type: String,
+	pub id: String,
+	/// Display name — populated from the filename on read, used for filename on write.
+	pub name: String,
+	pub version: u32,
+	pub tabs: Vec<TabDef>,
+	pub sections: Vec<SectionDef>,
 }
 
-/// An entry in the questionnaire index (metadata only, no sections).
+/// An entry in the questionnaire index (derived from scanning the directory).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuestionnaireIndexEntry {
-    pub id: String,
-    pub name: String,
-    pub version: u32,
-    pub created_at: DateTime<Utc>,
-    pub modified_at: DateTime<Utc>,
+	pub id: String,
+	pub name: String,
+	pub version: u32,
 }
 
-/// The questionnaire index file — lists all questionnaire definitions and
-/// which one is currently active.
+/// The questionnaire index — built by scanning the questionnaires directory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuestionnaireIndex {
-    pub questionnaires: Vec<QuestionnaireIndexEntry>,
-    #[serde(default)]
-    pub active_questionnaire_id: Option<String>,
+	pub questionnaires: Vec<QuestionnaireIndexEntry>,
+	#[serde(default)]
+	pub active_questionnaire_id: Option<String>,
 }
 
-// ─── File paths ──────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-fn questionnaires_dir() -> Result<PathBuf, String> {
-    let config_dir =
-        dirs::config_dir().ok_or_else(|| "Could not determine config directory".to_string())?;
-    let dir = config_dir.join("lily").join("questionnaires");
-    if !dir.exists() {
-        fs::create_dir_all(&dir)
-            .map_err(|e| format!("Failed to create questionnaires directory: {}", e))?;
-    }
-    Ok(dir)
+/// Read the user-configured questionnaires directory from settings.
+fn get_questionnaires_dir() -> Result<Option<PathBuf>, String> {
+	let settings = crate::settings::load_settings()?;
+	match settings.questionnaires_dir {
+		Some(dir) => {
+			let path = PathBuf::from(&dir);
+			if !path.is_dir() {
+				return Err(format!(
+					"Questionnaires directory does not exist: {}",
+					dir
+				));
+			}
+			Ok(Some(path))
+		}
+		None => Ok(None),
+	}
 }
 
-fn index_path() -> Result<PathBuf, String> {
-    Ok(questionnaires_dir()?.join("index.json"))
+/// Require the questionnaires directory to be configured.
+fn require_questionnaires_dir() -> Result<PathBuf, String> {
+	get_questionnaires_dir()?.ok_or_else(|| "Questionnaires directory not configured".to_string())
 }
 
-fn questionnaire_path(id: &str) -> Result<PathBuf, String> {
-    Ok(questionnaires_dir()?.join(format!("{}.json", id)))
+/// Strip characters that are invalid in filenames on Windows/macOS/Linux.
+fn sanitize_filename(name: &str) -> String {
+	name.chars()
+		.filter(|c| !matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'))
+		.collect::<String>()
+		.trim()
+		.to_string()
 }
 
-// ─── Index I/O ───────────────────────────────────────────────────────────────
-
-fn read_index() -> Result<QuestionnaireIndex, String> {
-    let path = index_path()?;
-    if !path.exists() {
-        return Ok(QuestionnaireIndex {
-            questionnaires: vec![],
-            active_questionnaire_id: None,
-        });
-    }
-    let content =
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read index: {}", e))?;
-    serde_json::from_str(&content).map_err(|e| format!("Failed to parse index: {}", e))
+/// Extract the display name from a .lily file path (filename stem).
+fn name_from_path(path: &Path) -> String {
+	path.file_stem()
+		.map(|s| s.to_string_lossy().to_string())
+		.unwrap_or_default()
 }
 
-fn write_index(index: &QuestionnaireIndex) -> Result<(), String> {
-    let path = index_path()?;
-    let content = serde_json::to_string_pretty(index)
-        .map_err(|e| format!("Failed to serialize index: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write index: {}", e))
+/// Scan the questionnaires directory for .lily files with lily_type "questionnaire".
+fn scan_questionnaires(dir: &Path) -> Result<Vec<(PathBuf, QuestionnaireDefFile)>, String> {
+	let mut results = Vec::new();
+
+	let entries =
+		fs::read_dir(dir).map_err(|e| format!("Failed to read questionnaires directory: {}", e))?;
+
+	for entry in entries {
+		let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+		let path = entry.path();
+
+		if !path.is_file() {
+			continue;
+		}
+		if path.extension().is_none_or(|e| e != "lily") {
+			continue;
+		}
+
+		let content = match fs::read_to_string(&path) {
+			Ok(c) => c,
+			Err(_) => continue, // skip unreadable files
+		};
+
+		// Check lily_type before full parse
+		let parsed: Value = match serde_json::from_str(&content) {
+			Ok(v) => v,
+			Err(_) => continue, // skip unparseable files
+		};
+
+		if parsed.get("lily_type").and_then(|v| v.as_str()) != Some("questionnaire") {
+			continue;
+		}
+
+		let mut def: QuestionnaireDefFile = serde_json::from_value(parsed)
+			.map_err(|e| format!("Failed to parse questionnaire {}: {}", path.display(), e))?;
+
+		// Filename is authoritative for the display name
+		def.name = name_from_path(&path);
+
+		results.push((path, def));
+	}
+
+	// Sort alphabetically by name (case-insensitive)
+	results.sort_by(|a, b| a.1.name.to_lowercase().cmp(&b.1.name.to_lowercase()));
+
+	Ok(results)
 }
 
-// ─── Questionnaire file I/O ─────────────────────────────────────────────────
-
-fn read_questionnaire(id: &str) -> Result<QuestionnaireDefFile, String> {
-    let path = questionnaire_path(id)?;
-    if !path.exists() {
-        return Err(format!("Questionnaire not found: {}", id));
-    }
-    let content = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read questionnaire: {}", e))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse questionnaire: {}", e))
+/// Find a questionnaire file by UUID in the configured directory.
+fn find_questionnaire_path(dir: &Path, id: &str) -> Result<PathBuf, String> {
+	for (path, def) in scan_questionnaires(dir)? {
+		if def.id == id {
+			return Ok(path);
+		}
+	}
+	Err(format!("Questionnaire not found: {}", id))
 }
 
-fn write_questionnaire(q: &QuestionnaireDefFile) -> Result<(), String> {
-    let path = questionnaire_path(&q.id)?;
-    let content = serde_json::to_string_pretty(q)
-        .map_err(|e| format!("Failed to serialize questionnaire: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write questionnaire: {}", e))
+/// Read and parse a single questionnaire .lily file, setting name from filename.
+fn read_questionnaire_file(path: &Path) -> Result<QuestionnaireDefFile, String> {
+	let content = fs::read_to_string(path)
+		.map_err(|e| format!("Failed to read questionnaire: {}", e))?;
+	let mut def: QuestionnaireDefFile =
+		serde_json::from_str(&content).map_err(|e| format!("Failed to parse questionnaire: {}", e))?;
+	def.name = name_from_path(path);
+	Ok(def)
 }
 
-// ─── Seed / default questionnaire ───────────────────────────────────────────
+/// Write a questionnaire definition to a .lily file.
+fn write_questionnaire_file(path: &Path, def: &QuestionnaireDefFile) -> Result<(), String> {
+	let content = serde_json::to_string_pretty(def)
+		.map_err(|e| format!("Failed to serialize questionnaire: {}", e))?;
+	fs::write(path, content).map_err(|e| format!("Failed to write questionnaire: {}", e))
+}
 
-const SEED_QUESTIONNAIRE_JSON: &str = include_str!("seed_questionnaire.json");
+/// Build the target path for a questionnaire with the given name.
+fn questionnaire_file_path(dir: &Path, name: &str) -> PathBuf {
+	dir.join(format!("{}.lily", sanitize_filename(name)))
+}
 
-fn ensure_seed() -> Result<QuestionnaireIndex, String> {
-    let mut index = read_index()?;
-    if !index.questionnaires.is_empty() {
-        return Ok(index);
-    }
+/// Check if a filename would conflict with an existing file (different UUID).
+fn check_name_conflict(dir: &Path, name: &str, own_id: &str) -> Result<(), String> {
+	let target = questionnaire_file_path(dir, name);
+	if target.exists() {
+		// Read the existing file to check if it's the same questionnaire (case-only rename)
+		if let Ok(existing) = read_questionnaire_file(&target) {
+			if existing.id != own_id {
+				return Err(format!(
+					"A questionnaire named \"{}\" already exists",
+					name
+				));
+			}
+		}
+	}
+	Ok(())
+}
 
-    // Parse the embedded seed JSON
-    let mut seed: QuestionnaireDefFile = serde_json::from_str(SEED_QUESTIONNAIRE_JSON)
-        .map_err(|e| format!("Failed to parse seed questionnaire: {}", e))?;
+// ─── Legacy config-dir helpers (for migration) ──────────────────────────────
 
-    // Assign a fresh UUID
-    let id = Uuid::new_v4().to_string();
-    seed.id = id.clone();
-    seed.version = 1;
+/// Path to the old config-dir questionnaires location.
+fn legacy_questionnaires_dir() -> Result<PathBuf, String> {
+	let config_dir =
+		dirs::config_dir().ok_or_else(|| "Could not determine config directory".to_string())?;
+	Ok(config_dir.join("lily").join("questionnaires"))
+}
 
-    // Write the questionnaire file
-    write_questionnaire(&seed)?;
+/// Legacy index file format.
+#[derive(Debug, Deserialize)]
+struct LegacyIndex {
+	questionnaires: Vec<LegacyIndexEntry>,
+	#[serde(default)]
+	active_questionnaire_id: Option<String>,
+}
 
-    // Update the index
-    let now = Utc::now();
-    index.questionnaires.push(QuestionnaireIndexEntry {
-        id: id.clone(),
-        name: seed.name.clone(),
-        version: 1,
-        created_at: now,
-        modified_at: now,
-    });
-    index.active_questionnaire_id = Some(id);
-    write_index(&index)?;
-
-    Ok(index)
+#[derive(Debug, Deserialize)]
+struct LegacyIndexEntry {
+	id: String,
+	name: String,
+	#[allow(dead_code)]
+	version: u32,
 }
 
 // ─── Tauri commands ──────────────────────────────────────────────────────────
 
-/// Load the questionnaire index, creating the seed questionnaire on first run.
+/// Load the questionnaire index by scanning the configured directory.
+/// Returns an empty index if the directory is not configured (not an error).
 #[tauri::command]
 pub fn load_questionnaire_index() -> Result<QuestionnaireIndex, String> {
-    ensure_seed()
+	let dir = match get_questionnaires_dir()? {
+		Some(d) => d,
+		None => {
+			return Ok(QuestionnaireIndex {
+				questionnaires: vec![],
+				active_questionnaire_id: None,
+			});
+		}
+	};
+
+	let entries = scan_questionnaires(&dir)?
+		.into_iter()
+		.map(|(_, def)| QuestionnaireIndexEntry {
+			id: def.id,
+			name: def.name,
+			version: def.version,
+		})
+		.collect();
+
+	let settings = crate::settings::load_settings()?;
+
+	Ok(QuestionnaireIndex {
+		questionnaires: entries,
+		active_questionnaire_id: settings.active_questionnaire_id,
+	})
 }
 
-/// Load a single questionnaire definition by ID.
+/// Load a single questionnaire definition by UUID.
 #[tauri::command]
 pub fn load_questionnaire(id: String) -> Result<QuestionnaireDefFile, String> {
-    read_questionnaire(&id)
+	let dir = require_questionnaires_dir()?;
+	let path = find_questionnaire_path(&dir, &id)?;
+	read_questionnaire_file(&path)
 }
 
 /// Save/update a questionnaire definition. Bumps the version number.
+/// If the name changed, renames the file on disk.
 #[tauri::command]
 pub fn save_questionnaire(mut questionnaire: QuestionnaireDefFile) -> Result<(), String> {
-    questionnaire.version += 1;
-    write_questionnaire(&questionnaire)?;
+	let dir = require_questionnaires_dir()?;
+	let old_path = find_questionnaire_path(&dir, &questionnaire.id)?;
+	let old_name = name_from_path(&old_path);
 
-    // Update the index entry
-    let mut index = read_index()?;
-    let now = Utc::now();
-    if let Some(entry) = index
-        .questionnaires
-        .iter_mut()
-        .find(|e| e.id == questionnaire.id)
-    {
-        entry.name = questionnaire.name.clone();
-        entry.version = questionnaire.version;
-        entry.modified_at = now;
-    }
-    write_index(&index)?;
-    Ok(())
+	questionnaire.version += 1;
+	questionnaire.lily_type = "questionnaire".to_string();
+
+	// Handle rename if name changed
+	let target_path = if questionnaire.name != old_name {
+		check_name_conflict(&dir, &questionnaire.name, &questionnaire.id)?;
+		let new_path = questionnaire_file_path(&dir, &questionnaire.name);
+		fs::rename(&old_path, &new_path)
+			.map_err(|e| format!("Failed to rename questionnaire file: {}", e))?;
+		new_path
+	} else {
+		old_path
+	};
+
+	write_questionnaire_file(&target_path, &questionnaire)
 }
 
 /// Create a new empty questionnaire with the given name.
 #[tauri::command]
 pub fn create_questionnaire(name: String) -> Result<QuestionnaireDefFile, String> {
-    let id = Uuid::new_v4().to_string();
-    let q = QuestionnaireDefFile {
-        id: id.clone(),
-        name: name.clone(),
-        version: 1,
-        tabs: vec![
-            TabDef {
-                id: "client-info".into(),
-                label: "Client Info".into(),
-            },
-            TabDef {
-                id: "contacts".into(),
-                label: "Client Contacts".into(),
-            },
-            TabDef {
-                id: "assignments".into(),
-                label: "Assignments & Decisions".into(),
-            },
-        ],
-        sections: vec![],
-    };
-    write_questionnaire(&q)?;
+	let dir = require_questionnaires_dir()?;
+	let target = questionnaire_file_path(&dir, &name);
 
-    let mut index = read_index()?;
-    let now = Utc::now();
-    index.questionnaires.push(QuestionnaireIndexEntry {
-        id,
-        name,
-        version: 1,
-        created_at: now,
-        modified_at: now,
-    });
-    write_index(&index)?;
+	if target.exists() {
+		return Err(format!(
+			"A questionnaire named \"{}\" already exists",
+			name
+		));
+	}
 
-    Ok(q)
+	let id = Uuid::new_v4().to_string();
+	let q = QuestionnaireDefFile {
+		lily_type: "questionnaire".to_string(),
+		id: id.clone(),
+		name: sanitize_filename(&name),
+		version: 1,
+		tabs: vec![
+			TabDef {
+				id: "client-info".into(),
+				label: "Client Info".into(),
+			},
+			TabDef {
+				id: "contacts".into(),
+				label: "Client Contacts".into(),
+			},
+			TabDef {
+				id: "assignments".into(),
+				label: "Assignments & Decisions".into(),
+			},
+		],
+		sections: vec![],
+	};
+	write_questionnaire_file(&target, &q)?;
+
+	Ok(q)
 }
 
 /// Duplicate an existing questionnaire with a new name.
 #[tauri::command]
 pub fn duplicate_questionnaire(id: String, name: String) -> Result<QuestionnaireDefFile, String> {
-    let source = read_questionnaire(&id)?;
-    let new_id = Uuid::new_v4().to_string();
-    let q = QuestionnaireDefFile {
-        id: new_id.clone(),
-        name: name.clone(),
-        version: 1,
-        tabs: source.tabs,
-        sections: source.sections,
-    };
-    write_questionnaire(&q)?;
+	let dir = require_questionnaires_dir()?;
+	let target = questionnaire_file_path(&dir, &name);
 
-    let mut index = read_index()?;
-    let now = Utc::now();
-    index.questionnaires.push(QuestionnaireIndexEntry {
-        id: new_id,
-        name,
-        version: 1,
-        created_at: now,
-        modified_at: now,
-    });
-    write_index(&index)?;
+	if target.exists() {
+		return Err(format!(
+			"A questionnaire named \"{}\" already exists",
+			name
+		));
+	}
 
-    Ok(q)
+	let source_path = find_questionnaire_path(&dir, &id)?;
+	let source = read_questionnaire_file(&source_path)?;
+
+	let new_id = Uuid::new_v4().to_string();
+	let q = QuestionnaireDefFile {
+		lily_type: "questionnaire".to_string(),
+		id: new_id,
+		name: sanitize_filename(&name),
+		version: 1,
+		tabs: source.tabs,
+		sections: source.sections,
+	};
+	write_questionnaire_file(&target, &q)?;
+
+	Ok(q)
 }
 
-/// Delete a questionnaire definition.
+/// Delete a questionnaire definition by UUID.
 #[tauri::command]
 pub fn delete_questionnaire(id: String) -> Result<(), String> {
-    // Remove the file
-    let path = questionnaire_path(&id)?;
-    if path.exists() {
-        fs::remove_file(&path).map_err(|e| format!("Failed to delete questionnaire: {}", e))?;
-    }
+	let dir = require_questionnaires_dir()?;
+	let path = find_questionnaire_path(&dir, &id)?;
 
-    // Update the index
-    let mut index = read_index()?;
-    index.questionnaires.retain(|e| e.id != id);
-    if index.active_questionnaire_id.as_deref() == Some(&id) {
-        // Fall back to the first remaining questionnaire, or None
-        index.active_questionnaire_id = index.questionnaires.first().map(|e| e.id.clone());
-    }
-    write_index(&index)?;
-    Ok(())
+	fs::remove_file(&path).map_err(|e| format!("Failed to delete questionnaire: {}", e))?;
+
+	// If this was the active questionnaire, clear or reassign
+	let mut settings = crate::settings::load_settings()?;
+	if settings.active_questionnaire_id.as_deref() == Some(&id) {
+		// Try to set the first remaining questionnaire as active
+		let remaining = scan_questionnaires(&dir)?;
+		settings.active_questionnaire_id = remaining.first().map(|(_, def)| def.id.clone());
+		crate::settings::save_settings(settings)?;
+	}
+
+	Ok(())
 }
 
 /// Set which questionnaire is the "active" one used for new clients.
 #[tauri::command]
 pub fn set_active_questionnaire(id: String) -> Result<(), String> {
-    let mut index = read_index()?;
-    // Verify the ID exists
-    if !index.questionnaires.iter().any(|e| e.id == id) {
-        return Err(format!("Questionnaire not found: {}", id));
-    }
-    index.active_questionnaire_id = Some(id);
-    write_index(&index)?;
-    Ok(())
+	let dir = require_questionnaires_dir()?;
+
+	// Verify the UUID exists
+	find_questionnaire_path(&dir, &id)?;
+
+	let mut settings = crate::settings::load_settings()?;
+	settings.active_questionnaire_id = Some(id);
+	crate::settings::save_settings(settings)?;
+
+	Ok(())
+}
+
+/// Migrate questionnaires from the old config-dir storage to the user-configured
+/// questionnaires directory. Returns the number of migrated files.
+#[tauri::command]
+pub fn migrate_questionnaires() -> Result<u32, String> {
+	let target_dir = require_questionnaires_dir()?;
+	let legacy_dir = legacy_questionnaires_dir()?;
+
+	if !legacy_dir.is_dir() {
+		return Ok(0);
+	}
+
+	// Read the old index for active_questionnaire_id
+	let index_path = legacy_dir.join("index.json");
+	let legacy_index: Option<LegacyIndex> = if index_path.exists() {
+		let content = fs::read_to_string(&index_path).ok();
+		content.and_then(|c| serde_json::from_str(&c).ok())
+	} else {
+		None
+	};
+
+	// Build a map of id → name from the legacy index
+	let name_map: std::collections::HashMap<String, String> = legacy_index
+		.as_ref()
+		.map(|idx| {
+			idx.questionnaires
+				.iter()
+				.map(|e| (e.id.clone(), e.name.clone()))
+				.collect()
+		})
+		.unwrap_or_default();
+
+	let mut count: u32 = 0;
+
+	// Scan for .json files in the legacy dir (excluding index.json)
+	let entries = fs::read_dir(&legacy_dir)
+		.map_err(|e| format!("Failed to read legacy questionnaires directory: {}", e))?;
+
+	for entry in entries {
+		let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+		let path = entry.path();
+
+		if !path.is_file() {
+			continue;
+		}
+		if path.extension().is_none_or(|e| e != "json") {
+			continue;
+		}
+		if path.file_name().is_some_and(|n| n == "index.json") {
+			continue;
+		}
+
+		// Read and parse the old-format questionnaire
+		let content = match fs::read_to_string(&path) {
+			Ok(c) => c,
+			Err(_) => continue,
+		};
+		let mut parsed: Value = match serde_json::from_str(&content) {
+			Ok(v) => v,
+			Err(_) => continue,
+		};
+
+		// Get the id and name
+		let id = parsed
+			.get("id")
+			.and_then(|v| v.as_str())
+			.unwrap_or("")
+			.to_string();
+		if id.is_empty() {
+			continue;
+		}
+
+		let name = name_map
+			.get(&id)
+			.cloned()
+			.or_else(|| {
+				parsed
+					.get("name")
+					.and_then(|v| v.as_str())
+					.map(|s| s.to_string())
+			})
+			.unwrap_or_else(|| id.clone());
+
+		// Inject lily_type
+		if let Some(obj) = parsed.as_object_mut() {
+			obj.insert(
+				"lily_type".to_string(),
+				Value::String("questionnaire".to_string()),
+			);
+		}
+
+		// Determine target filename, handling conflicts
+		let sanitized = sanitize_filename(&name);
+		let mut target_name = sanitized.clone();
+		let mut suffix = 2;
+		while questionnaire_file_path(&target_dir, &target_name).exists() {
+			target_name = format!("{} ({})", sanitized, suffix);
+			suffix += 1;
+		}
+
+		let target_path = questionnaire_file_path(&target_dir, &target_name);
+		let content = serde_json::to_string_pretty(&parsed)
+			.map_err(|e| format!("Failed to serialize migrated questionnaire: {}", e))?;
+		fs::write(&target_path, content)
+			.map_err(|e| format!("Failed to write migrated questionnaire: {}", e))?;
+
+		count += 1;
+	}
+
+	// Migrate active_questionnaire_id to settings
+	if let Some(ref legacy_idx) = legacy_index {
+		if let Some(ref active_id) = legacy_idx.active_questionnaire_id {
+			let mut settings = crate::settings::load_settings()?;
+			if settings.active_questionnaire_id.is_none() {
+				settings.active_questionnaire_id = Some(active_id.clone());
+				crate::settings::save_settings(settings)?;
+			}
+		}
+	}
+
+	Ok(count)
 }

@@ -58,6 +58,9 @@ pub struct SectionNotes {
 /// in the directory). Document entries track only provenance and timestamps.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LilyFile {
+    /// Discriminator for .lily file types ("client", "questionnaire", etc.).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lily_type: Option<String>,
     /// Schema version for forward compatibility.
     pub lily_version: u32,
     /// Client-level variable values shared across all documents.
@@ -130,6 +133,7 @@ pub struct DocumentMeta {
 impl Default for LilyFile {
     fn default() -> Self {
         Self {
+            lily_type: Some("client".to_string()),
             lily_version: CURRENT_VERSION,
             variables: HashMap::new(),
             conditional_variables: Vec::new(),

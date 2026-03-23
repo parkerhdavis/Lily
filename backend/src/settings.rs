@@ -32,6 +32,12 @@ pub struct AppSettings {
     /// Whether editors auto-save changes. Defaults to true when absent.
     #[serde(default)]
     pub autosave: Option<bool>,
+    /// Path to the directory containing questionnaire definition .lily files.
+    #[serde(default)]
+    pub questionnaires_dir: Option<String>,
+    /// UUID of the currently active questionnaire definition.
+    #[serde(default)]
+    pub active_questionnaire_id: Option<String>,
 }
 
 fn settings_path() -> Result<PathBuf, String> {

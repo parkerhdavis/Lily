@@ -16,8 +16,9 @@ use lily_file::{
     set_client_questionnaire, set_document_variables, set_role_override, update_contact,
 };
 use questionnaire::{
-    create_questionnaire, delete_questionnaire, duplicate_questionnaire,
-    load_questionnaire, load_questionnaire_index, save_questionnaire, set_active_questionnaire,
+    create_questionnaire, delete_questionnaire, duplicate_questionnaire, load_questionnaire,
+    load_questionnaire_index, migrate_questionnaires, save_questionnaire,
+    set_active_questionnaire,
 };
 use settings::{load_settings, save_settings};
 use tauri::Manager;
@@ -87,6 +88,7 @@ fn main() {
             duplicate_questionnaire,
             delete_questionnaire,
             set_active_questionnaire,
+            migrate_questionnaires,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
