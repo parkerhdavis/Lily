@@ -53,6 +53,7 @@ frontend/pnpm-debug.log*
 *.tmp
 *.temp
 .vite.pid
+.dev.pid
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Testing & Coverage
