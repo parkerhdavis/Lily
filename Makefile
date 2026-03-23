@@ -110,21 +110,21 @@ down:
 else
 dev:
 	@echo "Starting Tauri development server (frontend + Rust)..."
-	@# Kill any leftover dev server on port 5173 (prevents cross-project conflicts)
+	@# Warn about and kill any leftover dev server on port 5173
 	@EXISTING_PID=$$(lsof -ti :5173 2>/dev/null); \
 	if [ -n "$$EXISTING_PID" ]; then \
-		echo "  -> Killing existing process on port 5173 (pid $$EXISTING_PID)..."; \
+		echo "  -> WARNING: Port 5173 in use (pid $$EXISTING_PID) — killing to free port"; \
 		kill $$EXISTING_PID 2>/dev/null || true; \
 		sleep 1; \
 	fi
 	@echo "  -> Starting Bun dev server in background..."
-	@cd frontend && $(BUN) run dev > $(NULL) 2>&1 & echo $$! > .dev.pid
+	@cd frontend && setsid $(BUN) run dev > $(NULL) 2>&1 & echo $$! > .dev.pid
 	@sleep 2
 	@echo "  -> Starting Tauri..."
 	@cd backend && $(TAURI) dev; \
 	DEV_PID=$$(cat ../.dev.pid 2>/dev/null); \
 	if [ -n "$$DEV_PID" ]; then \
-		kill $$DEV_PID 2>/dev/null || true; \
+		kill -- -$$DEV_PID 2>/dev/null || kill $$DEV_PID 2>/dev/null || true; \
 	fi; \
 	rm -f ../.dev.pid
 
@@ -132,9 +132,9 @@ down:
 	@echo "Stopping Lily dev server..."
 	@DEV_PID=$$(cat .dev.pid 2>/dev/null); \
 	if [ -n "$$DEV_PID" ]; then \
-		kill $$DEV_PID 2>/dev/null || true; \
+		kill -- -$$DEV_PID 2>/dev/null || kill $$DEV_PID 2>/dev/null || true; \
 		rm -f .dev.pid; \
-		echo "  -> Killed Bun dev server (pid $$DEV_PID)"; \
+		echo "  -> Killed dev server process group (pid $$DEV_PID)"; \
 	else \
 		echo "  -> No .dev.pid found, checking port 5173..."; \
 		PORT_PID=$$(lsof -ti :5173 2>/dev/null); \
