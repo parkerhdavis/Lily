@@ -4,6 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+use crate::lily_file::atomic_write;
+
 // ─── Data structures ─────────────────────────────────────────────────────────
 
 /// A single question in a questionnaire definition.
@@ -178,7 +180,7 @@ fn read_questionnaire_file(path: &Path) -> Result<QuestionnaireDefFile, String> 
 fn write_questionnaire_file(path: &Path, def: &QuestionnaireDefFile) -> Result<(), String> {
 	let content = serde_json::to_string_pretty(def)
 		.map_err(|e| format!("Failed to serialize questionnaire: {}", e))?;
-	fs::write(path, content).map_err(|e| format!("Failed to write questionnaire: {}", e))
+	atomic_write(path, &content)
 }
 
 /// Build the target path for a questionnaire with the given name.
@@ -501,8 +503,7 @@ pub fn migrate_questionnaires() -> Result<u32, String> {
 		let target_path = questionnaire_file_path(&target_dir, &target_name);
 		let content = serde_json::to_string_pretty(&parsed)
 			.map_err(|e| format!("Failed to serialize migrated questionnaire: {}", e))?;
-		fs::write(&target_path, content)
-			.map_err(|e| format!("Failed to write migrated questionnaire: {}", e))?;
+		atomic_write(&target_path, &content)?;
 
 		count += 1;
 	}

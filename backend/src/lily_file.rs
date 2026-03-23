@@ -9,6 +9,28 @@ const LILY_EXT: &str = "lily";
 const OLD_SIDECAR_FILENAME: &str = ".lily.json";
 const CURRENT_VERSION: u32 = 4;
 
+/// Write content to a file atomically: write to a temp file in the same
+/// directory, then rename over the target. Prevents corruption if the
+/// process crashes mid-write.
+pub fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Cannot determine parent directory".to_string())?;
+    let tmp_path = parent.join(format!(
+        ".{}.tmp",
+        path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "file".to_string())
+    ));
+    fs::write(&tmp_path, content).map_err(|e| format!("Failed to write temp file: {}", e))?;
+    fs::rename(&tmp_path, path).map_err(|e| {
+        // Clean up temp file on rename failure
+        let _ = fs::remove_file(&tmp_path);
+        format!("Failed to rename temp file: {}", e)
+    })?;
+    Ok(())
+}
+
 /// A contact associated with a client — a person referenced across documents
 /// (e.g., a family member, agent, or trustee).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +115,9 @@ pub struct LilyFile {
     /// Version of the questionnaire definition when it was last applied.
     #[serde(default)]
     pub questionnaire_version: Option<u32>,
+    /// Non-persisted warnings surfaced to the frontend on load.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 /// A per-document override for a contact role, allowing a document to use
@@ -144,6 +169,7 @@ impl Default for LilyFile {
             questionnaire_notes: HashMap::new(),
             questionnaire_id: None,
             questionnaire_version: None,
+            warnings: Vec::new(),
         }
     }
 }
@@ -170,7 +196,7 @@ struct LegacyDocumentMeta {
 /// Find the `.lily` file in a working directory.
 /// Returns `None` if no `.lily` file exists. If multiple `.lily` files exist,
 /// returns the first one found (alphabetically).
-fn find_lily_file(working_dir: &str) -> Result<Option<std::path::PathBuf>, String> {
+fn find_lily_files(working_dir: &str) -> Result<Vec<std::path::PathBuf>, String> {
     let dir = Path::new(working_dir);
     if !dir.is_dir() {
         return Err(format!("Not a directory: {}", working_dir));
@@ -192,17 +218,34 @@ fn find_lily_file(working_dir: &str) -> Result<Option<std::path::PathBuf>, Strin
     }
 
     lily_files.sort();
-    Ok(lily_files.into_iter().next())
+    Ok(lily_files)
 }
 
 /// Read the `.lily` file from a working directory.
 /// If no `.lily` file exists, checks for a legacy `.lily.json` and migrates it.
 /// Returns a default (empty) LilyFile if neither exists.
 pub fn read_lily_file(working_dir: &str) -> Result<LilyFile, String> {
-    // Check for existing .lily file
-    if let Some(path) = find_lily_file(working_dir)? {
+    // Check for existing .lily file(s)
+    let lily_files = find_lily_files(working_dir)?;
+    if let Some(path) = lily_files.first() {
+        let mut warnings = Vec::new();
+        if lily_files.len() > 1 {
+            let names: Vec<String> = lily_files
+                .iter()
+                .map(|p| {
+                    p.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default()
+                })
+                .collect();
+            warnings.push(format!(
+                "Multiple .lily files found (using {}): {}",
+                names.first().unwrap_or(&String::new()),
+                names.join(", ")
+            ));
+        }
         let content =
-            fs::read_to_string(&path).map_err(|e| format!("Failed to read .lily file: {}", e))?;
+            fs::read_to_string(path).map_err(|e| format!("Failed to read .lily file: {}", e))?;
         let mut lily: LilyFile = serde_json::from_str(&content)
             .map_err(|e| format!("Failed to parse .lily file: {}", e))?;
 
@@ -213,6 +256,7 @@ pub fn read_lily_file(working_dir: &str) -> Result<LilyFile, String> {
             write_lily_file(working_dir, &lily)?;
         }
 
+        lily.warnings = warnings;
         return Ok(lily);
     }
 
@@ -230,7 +274,7 @@ pub fn read_lily_file(working_dir: &str) -> Result<LilyFile, String> {
 /// Otherwise, a new file is created using the directory name as the filename
 /// (e.g., `Doe, Jane.lily` for a directory named `Doe, Jane`).
 fn write_lily_file(working_dir: &str, lily: &LilyFile) -> Result<(), String> {
-    let path = match find_lily_file(working_dir)? {
+    let path = match find_lily_files(working_dir)?.into_iter().next() {
         Some(existing) => existing,
         None => {
             // Derive filename from the directory name
@@ -245,7 +289,7 @@ fn write_lily_file(working_dir: &str, lily: &LilyFile) -> Result<(), String> {
 
     let content = serde_json::to_string_pretty(lily)
         .map_err(|e| format!("Failed to serialize .lily file: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write .lily file: {}", e))?;
+    atomic_write(&path, &content)?;
     Ok(())
 }
 

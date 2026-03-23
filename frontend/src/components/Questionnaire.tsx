@@ -12,6 +12,28 @@ import StatusDot from "@/components/ui/StatusDot";
 import type { QuestionDef, QuestionnaireSectionDef } from "@/types/questionnaire";
 import { extractFolderName } from "@/utils/path";
 
+/** Highlight search matches within text. */
+function HighlightText({
+	text,
+	query,
+}: { text: string; query: string }) {
+	const q = query.trim().toLowerCase();
+	if (!q) return <>{text}</>;
+
+	const idx = text.toLowerCase().indexOf(q);
+	if (idx === -1) return <>{text}</>;
+
+	return (
+		<>
+			{text.slice(0, idx)}
+			<mark className="bg-warning/30 text-inherit rounded px-0.5">
+				{text.slice(idx, idx + q.length)}
+			</mark>
+			{text.slice(idx + q.length)}
+		</>
+	);
+}
+
 export default function Questionnaire() {
 	const {
 		workingDir,
@@ -470,6 +492,9 @@ export default function Questionnaire() {
 																	onSave={
 																		handleSaveVariable
 																	}
+																	searchQuery={
+																		search
+																	}
 																/>
 															</div>
 														);
@@ -823,10 +848,12 @@ function QuestionField({
 	question,
 	value,
 	onSave,
+	searchQuery,
 }: {
 	question: QuestionDef;
 	value: string;
 	onSave: (name: string, value: string) => Promise<void>;
+	searchQuery?: string;
 }) {
 	switch (question.kind) {
 		case "text":
@@ -835,6 +862,7 @@ function QuestionField({
 					question={question}
 					value={value}
 					onSave={onSave}
+					searchQuery={searchQuery}
 				/>
 			);
 		case "conditional":
@@ -843,6 +871,7 @@ function QuestionField({
 					question={question}
 					value={value}
 					onSave={onSave}
+					searchQuery={searchQuery}
 				/>
 			);
 		case "contact-role":
@@ -854,10 +883,12 @@ function TextQuestion({
 	question,
 	value,
 	onSave,
+	searchQuery,
 }: {
 	question: Extract<QuestionDef, { kind: "text" }>;
 	value: string;
 	onSave: (name: string, value: string) => Promise<void>;
+	searchQuery?: string;
 }) {
 	const [localValue, setLocalValue] = useState(value);
 
@@ -884,7 +915,7 @@ function TextQuestion({
 			<label className="label pb-1">
 				<span className="label-text text-sm font-medium flex items-center gap-1.5">
 					<StatusDot filled={Boolean(localValue.trim())} />
-					{question.label}
+					<HighlightText text={question.label} query={searchQuery ?? ""} />
 				</span>
 			</label>
 			<input
@@ -904,10 +935,12 @@ function ConditionalQuestion({
 	question,
 	value,
 	onSave,
+	searchQuery,
 }: {
 	question: Extract<QuestionDef, { kind: "conditional" }>;
 	value: string;
 	onSave: (name: string, value: string) => Promise<void>;
+	searchQuery?: string;
 }) {
 	const isTrue = value === "true";
 	const trueLabel = question.trueLabel ?? "True";
@@ -917,7 +950,7 @@ function ConditionalQuestion({
 		<div className="form-control w-full">
 			<label className="label pb-1">
 				<span className="label-text text-sm font-medium">
-					{question.label}
+					<HighlightText text={question.label} query={searchQuery ?? ""} />
 				</span>
 			</label>
 			<div className="flex rounded-lg overflow-hidden border border-base-300">

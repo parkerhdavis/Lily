@@ -183,7 +183,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
 		// Load .lily file data for the selected working directory
 		invoke<LilyFile>("load_lily_file_cmd", { workingDir: dir })
-			.then((lilyFile) => set({ lilyFile }))
+			.then((lilyFile) => {
+				set({ lilyFile });
+				for (const w of lilyFile.warnings ?? []) {
+					useToastStore.getState().addToast("warning", w);
+				}
+			})
 			.catch((err) =>
 				console.error("Failed to load .lily file:", err),
 			);
