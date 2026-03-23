@@ -23,8 +23,29 @@ use questionnaire::{
 };
 use settings::{load_settings, save_settings};
 use tauri::Manager;
+use tracing_subscriber::EnvFilter;
+
+fn init_logging() {
+    let log_dir = dirs::config_dir()
+        .map(|d| d.join("lily").join("logs"))
+        .expect("Could not determine config directory");
+    std::fs::create_dir_all(&log_dir).ok();
+
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "lily.log");
+
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("lily=info")),
+        )
+        .with_writer(file_appender)
+        .with_ansi(false)
+        .init();
+
+    tracing::info!("Lily starting up");
+}
 
 fn main() {
+    init_logging();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())

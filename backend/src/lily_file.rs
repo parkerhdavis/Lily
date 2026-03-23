@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 const LILY_EXT: &str = "lily";
@@ -225,11 +226,13 @@ fn find_lily_files(working_dir: &str) -> Result<Vec<std::path::PathBuf>, String>
 /// If no `.lily` file exists, checks for a legacy `.lily.json` and migrates it.
 /// Returns a default (empty) LilyFile if neither exists.
 pub fn read_lily_file(working_dir: &str) -> Result<LilyFile, String> {
+    info!(working_dir, "Loading .lily file");
     // Check for existing .lily file(s)
     let lily_files = find_lily_files(working_dir)?;
     if let Some(path) = lily_files.first() {
         let mut warnings = Vec::new();
         if lily_files.len() > 1 {
+            warn!(working_dir, count = lily_files.len(), "Multiple .lily files found");
             let names: Vec<String> = lily_files
                 .iter()
                 .map(|p| {
@@ -274,6 +277,7 @@ pub fn read_lily_file(working_dir: &str) -> Result<LilyFile, String> {
 /// Otherwise, a new file is created using the directory name as the filename
 /// (e.g., `Doe, Jane.lily` for a directory named `Doe, Jane`).
 fn write_lily_file(working_dir: &str, lily: &LilyFile) -> Result<(), String> {
+    info!(working_dir, "Writing .lily file");
     let path = match find_lily_files(working_dir)?.into_iter().next() {
         Some(existing) => existing,
         None => {
