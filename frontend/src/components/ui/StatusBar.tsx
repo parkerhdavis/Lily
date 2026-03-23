@@ -1,13 +1,19 @@
 import { invoke } from "@tauri-apps/api/core";
+import { useToastStore } from "@/stores/toastStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useNavigationStore } from "@/stores/navigationStore";
+import { extractFolderName } from "@/utils/path";
 
 /**
  * Persistent status bar at the bottom of the app window.
  * Three-section layout: [Left: settings + folder] [Center: <- Page ->] [Right: theme + zoom]
  */
-export default function StatusBar() {
+export default function StatusBar({
+	onShowShortcuts,
+}: {
+	onShowShortcuts?: () => void;
+}) {
 	const { settings, toggleTheme, zoomIn, zoomOut, zoomReset } =
 		useSettingsStore();
 	const step = useWorkflowStore((s) => s.step);
@@ -49,6 +55,7 @@ export default function StatusBar() {
 			await invoke("open_file_in_os", { filePath: path });
 		} catch (err) {
 			console.error("Failed to open folder:", err);
+			useToastStore.getState().addToast("error", "Failed to open folder");
 		}
 	};
 
@@ -71,12 +78,11 @@ export default function StatusBar() {
 			: null;
 
 	const btnClass =
-		"flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-white/10 hover:text-white/90 transition-colors";
+		"flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-base-content/10 hover:text-base-content/90 transition-colors";
 
 	return (
 		<footer
-			className={`flex items-center px-2 border-t border-[#1a1e24] shrink-0 select-none ${sizeClasses}`}
-			style={{ backgroundColor: "#111418", color: "oklch(0.7 0 0)" }}
+			className={`flex items-center px-2 border-t border-base-300 bg-base-300 text-base-content/60 shrink-0 select-none ${sizeClasses}`}
 		>
 			{/* Left side */}
 			<div className="flex items-center gap-0.5 flex-none">
@@ -121,6 +127,26 @@ export default function StatusBar() {
 						</svg>
 					</button>
 				)}
+
+				{/* Keyboard shortcuts */}
+				{onShowShortcuts && (
+					<button
+						type="button"
+						className={btnClass}
+						onClick={onShowShortcuts}
+						title="Keyboard shortcuts"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							viewBox="0 0 16 16"
+							fill="currentColor"
+							className={iconSize}
+						>
+							<title>Keyboard shortcuts</title>
+							<path fillRule="evenodd" d="M2 4.25A2.25 2.25 0 0 1 4.25 2h7.5A2.25 2.25 0 0 1 14 4.25v5.5A2.25 2.25 0 0 1 11.75 12h-7.5A2.25 2.25 0 0 1 2 9.75v-5.5Zm2 .25a.75.75 0 0 1 .75-.75h.5a.75.75 0 0 1 0 1.5h-.5A.75.75 0 0 1 4 4.5Zm3.75-.75a.75.75 0 0 0 0 1.5h.5a.75.75 0 0 0 0-1.5h-.5ZM10 4.5a.75.75 0 0 1 .75-.75h.5a.75.75 0 0 1 0 1.5h-.5A.75.75 0 0 1 10 4.5ZM4.75 6.75a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5ZM4 9.5a.75.75 0 0 1 .75-.75h6.5a.75.75 0 0 1 0 1.5h-6.5A.75.75 0 0 1 4 9.5Z" clipRule="evenodd" />
+						</svg>
+					</button>
+				)}
 			</div>
 
 			{/* Center: back / page title / forward */}
@@ -147,7 +173,7 @@ export default function StatusBar() {
 					</svg>
 				</button>
 
-				<span className="text-white/50 truncate max-w-64">
+				<span className="text-base-content/50 truncate max-w-64">
 					{getStepLabel(step, workingDir)}
 				</span>
 
@@ -208,13 +234,13 @@ export default function StatusBar() {
 					)}
 				</button>
 
-				<span className="mx-1 text-white/15">|</span>
+				<span className="mx-1 text-base-content/15">|</span>
 
 				{/* Zoom controls */}
 				{zoom !== 100 && (
 					<button
 						type="button"
-						className="px-1.5 py-0.5 rounded hover:bg-white/10 hover:text-white/90 transition-colors"
+						className="px-1.5 py-0.5 rounded hover:bg-base-content/10 hover:text-base-content/90 transition-colors"
 						onClick={zoomReset}
 						title="Reset zoom to 100%"
 					>
@@ -223,7 +249,7 @@ export default function StatusBar() {
 				)}
 				<button
 					type="button"
-					className="px-1 py-0.5 rounded hover:bg-white/10 hover:text-white/90 transition-colors font-mono tabular-nums"
+					className="px-1 py-0.5 rounded hover:bg-base-content/10 hover:text-base-content/90 transition-colors font-mono tabular-nums"
 					onClick={zoomReset}
 					title="Reset zoom (Ctrl+0)"
 				>
@@ -239,13 +265,7 @@ function getStepLabel(
 	step: string,
 	workingDir: string | null,
 ): string {
-	const folderName = workingDir
-		? workingDir
-				.replace(/\\/g, "/")
-				.split("/")
-				.filter(Boolean)
-				.pop() ?? workingDir
-		: "";
+	const folderName = workingDir ? extractFolderName(workingDir) : "";
 
 	switch (step) {
 		case "hub":

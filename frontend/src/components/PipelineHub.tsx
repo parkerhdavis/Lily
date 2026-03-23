@@ -9,6 +9,7 @@ import type { QuestionnaireIndex } from "@/types/questionnaire";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
+import { extractFilename } from "@/utils/path";
 
 // ─── Tree building (reused from TemplatePicker) ─────────────────────────────
 
@@ -405,7 +406,7 @@ function TemplateDetails({
 	loadingVars: boolean;
 	onOpenInEditor: () => void;
 }) {
-	const filename = relPath.split("/").pop() ?? relPath;
+	const filename = extractFilename(relPath);
 	const folder = relPath.includes("/")
 		? relPath.substring(0, relPath.lastIndexOf("/"))
 		: "";

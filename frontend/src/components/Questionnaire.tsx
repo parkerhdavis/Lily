@@ -10,12 +10,7 @@ import ContactPicker from "@/components/ContactPicker";
 import PageHeader from "@/components/ui/PageHeader";
 import StatusDot from "@/components/ui/StatusDot";
 import type { QuestionDef, QuestionnaireSectionDef } from "@/types/questionnaire";
-
-/** Extract just the folder name from a full directory path. */
-function getFolderName(dirPath: string): string {
-	const segments = dirPath.replace(/\\/g, "/").split("/");
-	return segments[segments.length - 1] || dirPath;
-}
+import { extractFolderName } from "@/utils/path";
 
 export default function Questionnaire() {
 	const {
@@ -301,7 +296,7 @@ export default function Questionnaire() {
 		return map;
 	}, [variables, contacts]);
 
-	const folderName = workingDir ? getFolderName(workingDir) : "Client";
+	const folderName = workingDir ? extractFolderName(workingDir) : "Client";
 
 	const allExpanded = tabSections.every(
 		(s) => !collapsedSections[s.title],
