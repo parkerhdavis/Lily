@@ -28,6 +28,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 		zoom: null,
 		footer_size: null,
 		last_step: null,
+		autosave: null,
 	},
 	loaded: false,
 

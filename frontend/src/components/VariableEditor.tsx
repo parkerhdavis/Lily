@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import SectionHeading from "@/components/ui/SectionHeading";
 import StatusDot from "@/components/ui/StatusDot";
 import AppSwitcher from "@/components/ui/AppSwitcher";
@@ -218,11 +219,27 @@ export default function VariableEditor() {
 		updateVariable,
 		renameDocument,
 		saveDocument,
+		saveClientVariable,
 		setContactBinding,
 		clearContactBinding,
 		setRoleOverride,
 		returnToHub,
+		openQuestionnaire,
 	} = useWorkflowStore();
+	const autosave = useSettingsStore((s) => s.settings.autosave) !== false;
+	const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	// Autosave: debounce saves when autosave is enabled and document is dirty
+	useEffect(() => {
+		if (!autosave || !dirty) return;
+		if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+		autosaveTimer.current = setTimeout(() => {
+			saveDocument();
+		}, 2000);
+		return () => {
+			if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+		};
+	}, [autosave, dirty, variableValues, saveDocument]);
 
 	// Current document filename (for looking up per-document overrides)
 	const currentFilename = useMemo(() => {
@@ -249,6 +266,7 @@ export default function VariableEditor() {
 	const [varSearch, setVarSearch] = useState("");
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
+	const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
 	const titleInputRef = useRef<HTMLInputElement>(null);
 	const varSearchRef = useRef<HTMLInputElement>(null);
 	const previewRef = useRef<HTMLDivElement>(null);
@@ -316,6 +334,16 @@ export default function VariableEditor() {
 			titleInputRef.current.select();
 		}
 	}, [editingTitle]);
+
+	// Warn about unsaved changes when closing the window (when autosave is off)
+	useEffect(() => {
+		if (autosave || !dirty) return;
+		const handler = (e: BeforeUnloadEvent) => {
+			e.preventDefault();
+		};
+		window.addEventListener("beforeunload", handler);
+		return () => window.removeEventListener("beforeunload", handler);
+	}, [autosave, dirty]);
 
 	// Ctrl+S / Cmd+S keyboard shortcut for saving
 	// Ctrl+F / Cmd+F keyboard shortcut to focus variable search
@@ -635,7 +663,13 @@ export default function VariableEditor() {
 				<button
 					type="button"
 					className="btn btn-ghost btn-sm gap-1.5 text-base-content/70 hover:text-base-content"
-					onClick={returnToHub}
+					onClick={() => {
+						if (dirty && !autosave) {
+							setShowUnsavedDialog(true);
+						} else {
+							returnToHub();
+						}
+					}}
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -755,9 +789,14 @@ export default function VariableEditor() {
 									className={`p-3 w-full rounded-lg border bg-base-100 ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 								>
 									<div className="flex items-center justify-between mb-1.5">
-										<span className="label-text text-sm font-medium">
+										<button
+											type="button"
+											className="label-text text-sm font-medium hover:text-primary transition-colors cursor-pointer"
+											onClick={() => openQuestionnaire()}
+											title="Open in questionnaire"
+										>
 											{name}
-										</span>
+										</button>
 										<div className="join">
 											<button
 												type="button"
@@ -903,6 +942,33 @@ export default function VariableEditor() {
 									onManualChange={(varName, value) => {
 										handleVariableChange(varName, value);
 									}}
+									onApplyToQuestionnaire={async () => {
+										// Write current override values back to questionnaire (client-level variables)
+										for (const p of group.properties) {
+											const val = variableValues[p.displayName] ?? "";
+											await saveClientVariable(p.displayName, val);
+										}
+										// Find or set the contact binding at the questionnaire level
+										const overrideData = roleOverrides[group.role];
+										if (overrideData?.contact_id) {
+											await setContactBinding(group.role, {
+												contact_id: overrideData.contact_id,
+												variable_mappings:
+													lilyFile?.contact_bindings?.[group.role]?.variable_mappings ??
+													Object.fromEntries(
+														group.properties.map((p) => [p.displayName, p.property]),
+													),
+											});
+										}
+										// Remove the document override (re-link)
+										await setRoleOverride(group.role, null);
+										// Restore from the now-updated questionnaire values
+										const { lilyFile: updatedLily } = useWorkflowStore.getState();
+										const savedVars = updatedLily?.variables ?? {};
+										for (const p of group.properties) {
+											handleVariableChange(p.displayName, savedVars[p.displayName] ?? "");
+										}
+									}}
 									onSelect={(varName) =>
 										setSelectedVariable(varName)
 									}
@@ -920,10 +986,15 @@ export default function VariableEditor() {
 								className={`p-3 w-full rounded-lg border bg-base-100 ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 							>
 								<div className="flex items-center justify-between mb-1">
-									<span className="label-text text-sm font-medium flex items-center gap-1.5">
+									<button
+										type="button"
+										className="label-text text-sm font-medium flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer"
+										onClick={() => openQuestionnaire()}
+										title="Open in questionnaire"
+									>
 										<StatusDot filled={isFilled} />
 										{name}
-									</span>
+									</button>
 									<div className="join">
 										<button
 											type="button"
@@ -992,6 +1063,60 @@ export default function VariableEditor() {
 					/>
 				</div>
 			</div>
+
+			{/* Unsaved changes confirmation dialog */}
+			{showUnsavedDialog && (
+				<dialog className="modal modal-open">
+					<div className="modal-box">
+						<h3 className="font-bold text-lg">
+							Unsaved Changes
+						</h3>
+						<p className="py-4 text-base-content/70">
+							You have unsaved changes to this document.
+							Would you like to save before leaving?
+						</p>
+						<div className="modal-action">
+							<button
+								type="button"
+								className="btn btn-ghost"
+								onClick={() => {
+									setShowUnsavedDialog(false);
+									returnToHub();
+								}}
+							>
+								Discard
+							</button>
+							<button
+								type="button"
+								className="btn btn-ghost"
+								onClick={() =>
+									setShowUnsavedDialog(false)
+								}
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								className="btn btn-primary"
+								onClick={async () => {
+									await saveDocument();
+									setShowUnsavedDialog(false);
+									returnToHub();
+								}}
+							>
+								Save & Leave
+							</button>
+						</div>
+					</div>
+					{/* biome-ignore lint/a11y/useKeyWithClickEvents: modal backdrop */}
+					<div
+						className="modal-backdrop"
+						onClick={() =>
+							setShowUnsavedDialog(false)
+						}
+					/>
+				</dialog>
+			)}
 		</div>
 	);
 }
@@ -1041,6 +1166,7 @@ function ContactRoleField({
 	onToggleOverride,
 	onSelectContact,
 	onManualChange,
+	onApplyToQuestionnaire,
 	onSelect,
 	scrollToOccurrence,
 }: {
@@ -1053,6 +1179,7 @@ function ContactRoleField({
 	onToggleOverride: (overriding: boolean) => Promise<void>;
 	onSelectContact: (contactId: string | null) => Promise<void>;
 	onManualChange: (varName: string, value: string) => void;
+	onApplyToQuestionnaire: () => Promise<void>;
 	onSelect: (varName: string) => void;
 	scrollToOccurrence: (varName: string, direction: "prev" | "next") => void;
 }) {
@@ -1111,8 +1238,8 @@ function ContactRoleField({
 				</div>
 			</div>
 
-			{/* Override toggle */}
-			<div className="flex items-center gap-2 mb-1.5">
+			{/* Override toggle + Apply to Questionnaire */}
+			<div className="mb-1.5 space-y-0.5">
 				<button
 					type="button"
 					className={`flex items-center gap-1.5 text-xs transition-colors ${
@@ -1123,8 +1250,8 @@ function ContactRoleField({
 					onClick={() => onToggleOverride(!isOverridden)}
 					title={
 						isOverridden
-							? "Click to re-link to questionnaire"
-							: "Click to override for this document"
+							? "Re-link this role to the questionnaire value and discard the document-specific override"
+							: "Unlink from the questionnaire so you can set a different value for this document only"
 					}
 				>
 					{isOverridden ? (
@@ -1138,6 +1265,29 @@ function ContactRoleField({
 							: "Linked to questionnaire"}
 					</span>
 				</button>
+				{isOverridden && (
+					<button
+						type="button"
+						className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors ml-5"
+						onClick={onApplyToQuestionnaire}
+						title="Save this document's current values back to the questionnaire as the new default for all documents, then re-link"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							viewBox="0 0 16 16"
+							fill="currentColor"
+							className="size-3"
+						>
+							<title>Apply</title>
+							<path
+								fillRule="evenodd"
+								d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z"
+								clipRule="evenodd"
+							/>
+						</svg>
+						Apply to Questionnaire
+					</button>
+				)}
 			</div>
 
 			{/* ── Linked state: greyed-out, shows questionnaire value ── */}
@@ -1211,11 +1361,20 @@ function ContactRoleField({
 										getContactProperty(c, p.property) ===
 										(variableValues[p.displayName] ?? ""),
 								),
-							)?.id ?? "__manual__"
+							)?.id ??
+							// If any values are filled, show custom; otherwise "not assigned"
+							(group.properties.some(
+								(p) =>
+									(
+										variableValues[p.displayName] ?? ""
+									).trim(),
+							)
+								? "__manual__"
+								: "")
 						}
 						onChange={(e) => {
 							const val = e.target.value;
-							if (val === "__manual__") {
+							if (val === "" || val === "__manual__") {
 								onSelectContact(null);
 							} else {
 								onSelectContact(val);
@@ -1225,6 +1384,7 @@ function ContactRoleField({
 							onSelect(group.properties[0]?.displayName)
 						}
 					>
+						<option value="">Not assigned</option>
 						{contacts.map((c) => (
 							<option key={c.id} value={c.id}>
 								{c.full_name}
