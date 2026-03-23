@@ -57,6 +57,8 @@ export default function ClientHub() {
 	const { loadActiveQuestionnaire } = useQuestionnaireStore();
 	const lilyIcon = useLilyIcon();
 
+	const [docSearch, setDocSearch] = useState("");
+
 	// Dynamic questionnaire definition for stats
 	const [qDef, setQDef] = useState<QuestionnaireSectionDef[]>(fallbackDef);
 	useEffect(() => {
@@ -227,6 +229,16 @@ export default function ClientHub() {
 							Documents
 						</SectionHeading>
 
+						{allDocs.length > 3 && (
+							<input
+								type="text"
+								className="input input-bordered input-sm w-full mb-3"
+								placeholder="Search documents..."
+								value={docSearch}
+								onChange={(e) => setDocSearch(e.target.value)}
+							/>
+						)}
+
 						{allDocs.length === 0 ? (
 							<div className="rounded-xl border border-base-300 bg-base-100 p-8 text-center text-base-content/50">
 								<p className="text-base">
@@ -242,7 +254,13 @@ export default function ClientHub() {
 							</div>
 						) : (
 							<div className="rounded-xl border border-base-300 bg-base-100 shadow-sm divide-y divide-base-200 overflow-hidden">
-								{allDocs.map((doc) => (
+								{allDocs
+									.filter((doc) => {
+										if (!docSearch.trim()) return true;
+										const q = docSearch.trim().toLowerCase();
+										return doc.filename.toLowerCase().includes(q);
+									})
+									.map((doc) => (
 									<DocumentRow
 										key={doc.filename}
 										doc={doc}
@@ -312,7 +330,11 @@ function DocumentRow({
 
 	const handleContextMenu = (e: React.MouseEvent) => {
 		e.preventDefault();
-		setMenuPos({ x: e.clientX, y: e.clientY });
+		const menuW = 192; // w-48
+		const menuH = 140; // approximate menu height
+		const x = Math.min(e.clientX, window.innerWidth - menuW);
+		const y = Math.min(e.clientY, window.innerHeight - menuH);
+		setMenuPos({ x, y });
 	};
 
 	const handleNewVersion = async () => {

@@ -92,6 +92,8 @@ export interface LilyFile {
 	questionnaire_id: string | null;
 	/** Version of the questionnaire definition when it was last applied. */
 	questionnaire_version: number | null;
+	/** Non-persisted warnings from loading this file. */
+	warnings: string[];
 }
 
 /** Notes attached to a questionnaire section. */
