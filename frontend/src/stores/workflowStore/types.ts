@@ -5,6 +5,7 @@ import type {
 	Contact,
 	ContactBinding,
 	RoleOverride,
+	TextOccurrence,
 } from "@/types";
 import type { NavigationEntry } from "@/stores/navigationStore";
 
@@ -77,6 +78,31 @@ export interface WorkflowState {
 		value: string,
 	) => Promise<void>;
 	restoreNavigationEntry: (entry: NavigationEntry) => Promise<void>;
+
+	// Template editor state
+	templateEditorPath: string | null;
+	templateEditorHtml: string;
+	templateEditorVars: VariableInfo[];
+	templateEditorRelPath: string | null;
+
+	// Template editor actions
+	openTemplateEditor: (
+		relPath: string,
+		templatesDir: string,
+	) => Promise<void>;
+	insertTemplateVariable: (
+		searchText: string,
+		variableName: string,
+		occurrenceIndex?: number,
+		replaceAll?: boolean,
+	) => Promise<void>;
+	removeTemplateVariable: (
+		variableName: string,
+		replacementText: string,
+		occurrenceIndex?: number,
+	) => Promise<void>;
+	findTextOccurrences: (searchText: string) => Promise<TextOccurrence[]>;
+	returnFromTemplateEditor: () => void;
 }
 
 /** Zustand slice creator type for workflow store slices. */
