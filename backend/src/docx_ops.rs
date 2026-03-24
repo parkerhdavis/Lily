@@ -1,9 +1,9 @@
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use zip::read::ZipArchive;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
@@ -28,6 +28,54 @@ pub struct VariableInfo {
     /// Conditional variables use the syntax `{Label ?? true_text :: false_text}`
     /// and display as a checkbox in the UI.
     pub is_conditional: bool,
+}
+
+// ─── Template schema types ──────────────────────────────────────────────────
+
+/// Schema definition for a single variable in a template.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct VariableSchemaEntry {
+    /// The type of this variable: "text", "date", "currency", or "conditional".
+    #[serde(default = "default_var_type")]
+    pub var_type: String,
+    /// Default value if the user hasn't provided one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+    /// Help text shown to the user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub help: Option<String>,
+    /// Date format string (for date variables, e.g., "MM/DD/YYYY").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date_format: Option<String>,
+    /// Whether this field is required.
+    #[serde(default)]
+    pub required: bool,
+}
+
+fn default_var_type() -> String {
+    "text".to_string()
+}
+
+/// Schema file for a template — stored as a .lily sidecar file alongside the template.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VariableSchema {
+    /// Identifies this as a template schema file.
+    pub lily_type: String,
+    /// The template filename this schema applies to.
+    pub template_filename: String,
+    /// Map from variable display_name to its schema definition.
+    #[serde(default)]
+    pub variables: HashMap<String, VariableSchemaEntry>,
+}
+
+impl Default for VariableSchema {
+    fn default() -> Self {
+        Self {
+            lily_type: "template-schema".to_string(),
+            template_filename: String::new(),
+            variables: HashMap::new(),
+        }
+    }
 }
 
 // ─── Tauri commands ─────────────────────────────────────────────────────────
@@ -992,6 +1040,59 @@ pub fn remove_template_variable(
         .map_err(|e| format!("Failed to write docx: {}", e))?;
 
     extract_variables(template_path)
+}
+
+// ─── Template schema commands ───────────────────────────────────────────────
+
+/// Derive the schema file path from a template's relative path.
+/// E.g., "Trust Templates/Revocable Trust.docx" → "{templates_dir}/Trust Templates/Revocable Trust.lily"
+fn schema_path_for_template(templates_dir: &str, template_rel_path: &str) -> PathBuf {
+    let template_path = Path::new(templates_dir).join(template_rel_path);
+    let stem = template_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let parent = template_path.parent().unwrap_or(Path::new(templates_dir));
+    parent.join(format!("{}.lily", stem))
+}
+
+/// Load the variable schema for a template. Returns a default (empty) schema
+/// if no schema file exists.
+#[tauri::command]
+pub fn load_template_schema(
+    templates_dir: String,
+    template_rel_path: String,
+) -> Result<VariableSchema, String> {
+    let path = schema_path_for_template(&templates_dir, &template_rel_path);
+    if !path.exists() {
+        let template_filename = Path::new(&template_rel_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        return Ok(VariableSchema {
+            template_filename,
+            ..Default::default()
+        });
+    }
+
+    let content =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read schema: {}", e))?;
+    let schema: VariableSchema =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse schema: {}", e))?;
+    Ok(schema)
+}
+
+/// Save the variable schema for a template.
+#[tauri::command]
+pub fn save_template_schema(
+    templates_dir: String,
+    template_rel_path: String,
+    schema: VariableSchema,
+) -> Result<(), String> {
+    let path = schema_path_for_template(&templates_dir, &template_rel_path);
+    let content = serde_json::to_string_pretty(&schema)
+        .map_err(|e| format!("Failed to serialize schema: {}", e))?;
+    lily_file::atomic_write(&path, &content)
 }
 
 // ─── Internal helpers ───────────────────────────────────────────────────────
