@@ -22,6 +22,7 @@ export const useWorkflowStore = create<WorkflowState>((...a) => {
 		templates: [],
 		templateRelPath: null,
 		lilyFile: null,
+		templateSchema: null,
 		dirty: false,
 		loading: false,
 		error: null,

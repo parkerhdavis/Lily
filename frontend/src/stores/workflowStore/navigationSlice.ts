@@ -28,6 +28,7 @@ export const createNavigationSlice: WorkflowSlice = (set, get) => ({
 			variables: [],
 			variableValues: {},
 			templateRelPath: null,
+			templateSchema: null,
 			dirty: false,
 			error: null,
 		});

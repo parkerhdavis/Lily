@@ -2,6 +2,7 @@ import type {
 	WorkflowStep,
 	LilyFile,
 	VariableInfo,
+	VariableSchema,
 	Contact,
 	ContactBinding,
 	RoleOverride,
@@ -19,6 +20,8 @@ export interface WorkflowState {
 	templates: string[];
 	templateRelPath: string | null;
 	lilyFile: LilyFile | null;
+	/** Variable schema from the template's sidecar .lily file. */
+	templateSchema: VariableSchema | null;
 	dirty: boolean;
 	loading: boolean;
 	error: string | null;
