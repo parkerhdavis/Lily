@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { LilyFile, VariableInfo } from "@/types";
+import type { LilyFile, VariableInfo, VariableSchema } from "@/types";
 import { useUndoStore } from "@/stores/undoStore";
 import { extractFilename } from "@/utils/path";
 import { pushNav, toastError, toastSuccess } from "./helpers";
@@ -78,6 +78,29 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				{ workingDir },
 			);
 
+			// Load template schema (if it exists) for type-specific inputs
+			let templateSchema: VariableSchema | null = null;
+			try {
+				templateSchema = await invoke<VariableSchema>(
+					"load_template_schema",
+					{ templatesDir, templateRelPath },
+				);
+			} catch {
+				// Schema is optional — continue without it
+			}
+
+			// Apply schema defaults to unfilled variables
+			if (templateSchema) {
+				for (const v of variables) {
+					if (!variableValues[v.display_name]) {
+						const entry = templateSchema.variables[v.display_name];
+						if (entry?.default) {
+							variableValues[v.display_name] = entry.default;
+						}
+					}
+				}
+			}
+
 			pushNav(get());
 			set({
 				documentPath: docPath,
@@ -86,6 +109,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				variableValues,
 				documentHtml,
 				lilyFile: updatedLilyFile,
+				templateSchema,
 				dirty: false,
 				step: "edit-variables",
 				loading: false,
@@ -154,6 +178,25 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				}
 			}
 
+			// Load template schema for type-specific inputs
+			let templateSchema: VariableSchema | null = null;
+			try {
+				const settings = await invoke<{ templates_dir: string | null }>(
+					"load_settings",
+				);
+				if (settings.templates_dir) {
+					templateSchema = await invoke<VariableSchema>(
+						"load_template_schema",
+						{
+							templatesDir: settings.templates_dir,
+							templateRelPath,
+						},
+					);
+				}
+			} catch {
+				// Schema is optional
+			}
+
 			pushNav(get());
 			set({
 				documentPath: docPath,
@@ -161,6 +204,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				variables,
 				variableValues,
 				documentHtml,
+				templateSchema,
 				dirty: false,
 				step: "edit-variables",
 				loading: false,

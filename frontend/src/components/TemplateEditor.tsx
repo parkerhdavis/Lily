@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
-import type { VariableInfo, TextOccurrence } from "@/types";
+import { invoke } from "@tauri-apps/api/core";
+import { useSettingsStore } from "@/stores/settingsStore";
+import type { VariableInfo, VariableType, VariableSchema, TextOccurrence } from "@/types";
 import { extractFilename } from "@/utils/path";
 
 /** Strip the .docx/.dotx extension for display. */
@@ -31,8 +33,12 @@ export default function TemplateEditor() {
 	const dragStartWidth = useRef(0);
 
 	// Selection state
+	const templatesDir = useSettingsStore((s) => s.settings.templates_dir);
+
 	const [selectedText, setSelectedText] = useState<string | null>(null);
 	const [variableName, setVariableName] = useState("");
+	const [variableType, setVariableType] = useState<VariableType>("text");
+	const [variableRequired, setVariableRequired] = useState(false);
 	const [showAutocomplete, setShowAutocomplete] = useState(false);
 
 	// Disambiguation state
@@ -143,14 +149,45 @@ export default function TemplateEditor() {
 		}
 	}, []);
 
+	// Save variable type to schema after inserting
+	const saveToSchema = useCallback(
+		async (name: string, varType: VariableType, required: boolean) => {
+			if (!templatesDir || !templateEditorRelPath) return;
+			try {
+				const schema = await invoke<VariableSchema>(
+					"load_template_schema",
+					{
+						templatesDir,
+						templateRelPath: templateEditorRelPath,
+					},
+				);
+				schema.variables[name] = {
+					var_type: varType,
+					required,
+				};
+				await invoke("save_template_schema", {
+					templatesDir,
+					templateRelPath: templateEditorRelPath,
+					schema,
+				});
+			} catch {
+				// Schema save is best-effort
+			}
+		},
+		[templatesDir, templateEditorRelPath],
+	);
+
 	// Handle insert (single occurrence)
 	const handleInsert = async () => {
 		if (!selectedText || !variableName.trim()) return;
 
 		try {
 			await insertTemplateVariable(selectedText, variableName.trim());
+			await saveToSchema(variableName.trim(), variableType, variableRequired);
 			setSelectedText(null);
 			setVariableName("");
+			setVariableType("text");
+			setVariableRequired(false);
 		} catch (err) {
 			// Check if the error is about multiple occurrences
 			const msg = String(err);
@@ -168,8 +205,11 @@ export default function TemplateEditor() {
 	const handleReplaceAll = async () => {
 		if (!selectedText || !variableName.trim()) return;
 		await insertTemplateVariable(selectedText, variableName.trim(), undefined, true);
+		await saveToSchema(variableName.trim(), variableType, variableRequired);
 		setSelectedText(null);
 		setVariableName("");
+		setVariableType("text");
+		setVariableRequired(false);
 	};
 
 	// Handle disambiguation pick
@@ -285,6 +325,36 @@ export default function TemplateEditor() {
 											))}
 										</ul>
 									)}
+								</div>
+								<div className="flex gap-2">
+									<select
+										className="select select-bordered select-sm flex-1"
+										value={variableType}
+										onChange={(e) =>
+											setVariableType(
+												e.target.value as VariableType,
+											)
+										}
+									>
+										<option value="text">Text</option>
+										<option value="date">Date</option>
+										<option value="currency">Currency</option>
+									</select>
+									<label className="label cursor-pointer gap-1.5">
+										<input
+											type="checkbox"
+											className="checkbox checkbox-xs"
+											checked={variableRequired}
+											onChange={(e) =>
+												setVariableRequired(
+													e.target.checked,
+												)
+											}
+										/>
+										<span className="label-text text-xs">
+											Required
+										</span>
+									</label>
 								</div>
 								<div className="flex gap-2">
 									<button
