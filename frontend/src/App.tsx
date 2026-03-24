@@ -11,6 +11,7 @@ import Questionnaire from "@/components/Questionnaire";
 import AppSettings from "@/components/AppSettings";
 import PipelineHub from "@/components/PipelineHub";
 import QuestionnaireEditor from "@/components/QuestionnaireEditor";
+import TemplateEditor from "@/components/TemplateEditor";
 import StatusBar from "@/components/ui/StatusBar";
 import ToastContainer from "@/components/ui/ToastContainer";
 import KeyboardShortcutsModal from "@/components/ui/KeyboardShortcutsModal";
@@ -146,6 +147,8 @@ export default function App() {
 				return <PipelineHub />;
 			case "questionnaire-editor":
 				return <QuestionnaireEditor />;
+			case "template-editor":
+				return <TemplateEditor />;
 		}
 	})();
 

@@ -5,6 +5,7 @@ import { createDocumentSlice } from "./workflowStore/documentSlice";
 import { createVariableSlice } from "./workflowStore/variableSlice";
 import { createContactSlice } from "./workflowStore/contactSlice";
 import { createProjectSlice } from "./workflowStore/projectSlice";
+import { createTemplateEditorSlice } from "./workflowStore/templateEditorSlice";
 
 export type { WorkflowState } from "./workflowStore/types";
 
@@ -31,5 +32,6 @@ export const useWorkflowStore = create<WorkflowState>((...a) => {
 		...createVariableSlice(set, get),
 		...createContactSlice(set, get),
 		...createProjectSlice(set, get),
+		...createTemplateEditorSlice(set, get),
 	} as WorkflowState;
 });

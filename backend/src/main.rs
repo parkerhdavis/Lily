@@ -7,7 +7,8 @@ mod questionnaire;
 mod settings;
 
 use docx_ops::{
-    copy_template, extract_variables, get_document_html, rename_document, replace_variables,
+    copy_template, extract_variables, get_document_html, get_template_text_occurrences,
+    insert_template_variable, remove_template_variable, rename_document, replace_variables,
 };
 use lily_file::{
     add_client_variable, add_contact, delete_contact, delete_document, export_client_data,
@@ -83,6 +84,9 @@ fn main() {
             replace_variables,
             rename_document,
             get_document_html,
+            get_template_text_occurrences,
+            insert_template_variable,
+            remove_template_variable,
             load_settings,
             save_settings,
             list_templates,

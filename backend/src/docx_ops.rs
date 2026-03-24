@@ -508,6 +508,492 @@ pub fn get_document_html(docx_path: String) -> Result<String, String> {
     Ok(html)
 }
 
+// ─── Template authoring commands ────────────────────────────────────────────
+
+/// A single occurrence of text found in a template document.
+#[derive(Debug, Serialize)]
+pub struct TextOccurrence {
+    /// Zero-based index of this occurrence in document order.
+    pub index: usize,
+    /// Surrounding context (~40 chars on each side).
+    pub context: String,
+    /// One-based paragraph number where this occurrence appears.
+    pub paragraph_number: usize,
+}
+
+/// A segment of text within a paragraph, mapping flat-text offsets to XML byte ranges.
+struct TextSegment {
+    /// Byte offset in the XML where the <w:t> content starts.
+    xml_content_start: usize,
+    /// Byte offset in the XML where the <w:t> content ends.
+    xml_content_end: usize,
+    /// Character offset in the concatenated paragraph text where this segment starts.
+    text_start: usize,
+    /// Character offset in the concatenated paragraph text where this segment ends.
+    text_end: usize,
+}
+
+/// A paragraph with its text segments and flat text.
+struct ParagraphTextMap {
+    /// The concatenated plain text of this paragraph.
+    flat_text: String,
+    /// Segments mapping flat text ranges back to XML byte ranges.
+    segments: Vec<TextSegment>,
+    /// One-based paragraph number.
+    paragraph_number: usize,
+}
+
+/// Build a text-to-XML mapping for all paragraphs in the document XML.
+/// This maps flat text positions back to specific byte ranges in the XML,
+/// enabling text search in the flat text with replacement in the XML.
+fn build_paragraph_text_maps(xml: &str) -> Vec<ParagraphTextMap> {
+    let t_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
+    let p_start_re = Regex::new(r#"<w:p[\s>/]"#).expect("invalid regex");
+    let p_end_re = Regex::new(r#"</w:p>"#).expect("invalid regex");
+
+    let mut maps = Vec::new();
+    let mut para_num: usize = 0;
+
+    // Find paragraph boundaries
+    let mut search_from = 0;
+    while let Some(p_start) = p_start_re.find(&xml[search_from..]) {
+        let para_start = search_from + p_start.start();
+        para_num += 1;
+
+        // Find the end of this paragraph
+        let after_start = para_start + p_start.len();
+        let para_end = match p_end_re.find(&xml[after_start..]) {
+            Some(m) => after_start + m.end(),
+            None => {
+                search_from = after_start;
+                continue;
+            }
+        };
+
+        let para_xml = &xml[para_start..para_end];
+        let mut flat_text = String::new();
+        let mut segments = Vec::new();
+
+        // Find all <w:t> elements within this paragraph
+        for t_match in t_re.captures_iter(para_xml) {
+            let content = t_match.get(1).unwrap();
+
+            let xml_content_start = para_start + content.start();
+            let xml_content_end = para_start + content.end();
+            let text_start = flat_text.len();
+            // Decode XML entities for the flat text
+            let decoded = content.as_str()
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&apos;", "'");
+            flat_text.push_str(&decoded);
+            let text_end = flat_text.len();
+
+            segments.push(TextSegment {
+                xml_content_start,
+                xml_content_end,
+                text_start,
+                text_end,
+            });
+        }
+
+        if !flat_text.is_empty() {
+            maps.push(ParagraphTextMap {
+                flat_text,
+                segments,
+                paragraph_number: para_num,
+            });
+        }
+
+        search_from = para_end;
+    }
+
+    maps
+}
+
+/// Find all occurrences of `search_text` across the document paragraphs.
+/// Returns (paragraph_index, char_offset_in_flat_text) pairs.
+fn find_text_in_paragraphs(
+    maps: &[ParagraphTextMap],
+    search_text: &str,
+) -> Vec<(usize, usize)> {
+    let mut results = Vec::new();
+    for (pi, para) in maps.iter().enumerate() {
+        let mut start = 0;
+        while let Some(pos) = para.flat_text[start..].find(search_text) {
+            results.push((pi, start + pos));
+            start += pos + 1;
+        }
+    }
+    results
+}
+
+/// Replace text at a specific position in the XML, handling cross-segment spans.
+/// Returns the modified XML string.
+fn replace_text_in_xml(
+    xml: &str,
+    para: &ParagraphTextMap,
+    text_offset: usize,
+    search_len: usize,
+    replacement: &str,
+) -> String {
+    let text_end = text_offset + search_len;
+
+    // Find which segments this match spans
+    let mut first_seg: Option<usize> = None;
+    let mut last_seg: Option<usize> = None;
+
+    for (i, seg) in para.segments.iter().enumerate() {
+        if seg.text_end > text_offset && seg.text_start < text_end {
+            if first_seg.is_none() {
+                first_seg = Some(i);
+            }
+            last_seg = Some(i);
+        }
+    }
+
+    let Some(first) = first_seg else {
+        return xml.to_string();
+    };
+    let last = last_seg.unwrap_or(first);
+
+    let mut result = xml.to_string();
+
+    // Work backwards to preserve byte offsets
+    if first == last {
+        // Match is within a single segment — simple substring replacement
+        let seg = &para.segments[first];
+        let seg_text_start = text_offset - seg.text_start;
+        let seg_text_end = text_end - seg.text_start;
+        let original_content = &xml[seg.xml_content_start..seg.xml_content_end];
+        // Decode, replace, re-encode
+        let decoded = original_content
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'");
+        let new_decoded = format!(
+            "{}{}{}",
+            &decoded[..seg_text_start],
+            replacement,
+            &decoded[seg_text_end..],
+        );
+        let new_encoded = escape_xml_text(&new_decoded);
+        result.replace_range(seg.xml_content_start..seg.xml_content_end, &new_encoded);
+    } else {
+        // Match spans multiple segments — put replacement in first, blank others
+        // Process in reverse order to preserve byte offsets
+        for i in (first + 1..=last).rev() {
+            let seg = &para.segments[i];
+            let keep_start = if i == last {
+                text_end - seg.text_start
+            } else {
+                seg.text_end - seg.text_start
+            };
+            let original_content = &result[seg.xml_content_start..seg.xml_content_end];
+            let decoded = original_content
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&apos;", "'");
+            let remaining = if i == last {
+                &decoded[keep_start..]
+            } else {
+                ""
+            };
+            result.replace_range(
+                seg.xml_content_start..seg.xml_content_end,
+                &escape_xml_text(remaining),
+            );
+        }
+        // Now handle the first segment
+        let seg = &para.segments[first];
+        let seg_text_start = text_offset - seg.text_start;
+        let original_content = &result[seg.xml_content_start..seg.xml_content_end];
+        let decoded = original_content
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'");
+        let new_decoded = format!("{}{}", &decoded[..seg_text_start], replacement);
+        result.replace_range(
+            seg.xml_content_start..seg.xml_content_end,
+            &escape_xml_text(&new_decoded),
+        );
+    }
+
+    result
+}
+
+/// Find all occurrences of text in a template document, with context for disambiguation.
+#[tauri::command]
+pub fn get_template_text_occurrences(
+    template_path: String,
+    search_text: String,
+) -> Result<Vec<TextOccurrence>, String> {
+    info!(%template_path, %search_text, "Finding text occurrences in template");
+    let xml = read_document_xml(&template_path)?;
+    let normalized = normalize_split_variables(&xml);
+    let maps = build_paragraph_text_maps(&normalized);
+    let matches = find_text_in_paragraphs(&maps, &search_text);
+
+    let mut occurrences = Vec::new();
+    for (i, (pi, offset)) in matches.iter().enumerate() {
+        let para = &maps[*pi];
+        let end = offset + search_text.len();
+        // Build context: ~20 chars before and after
+        let ctx_start = offset.saturating_sub(20);
+        let ctx_end = (end + 20).min(para.flat_text.len());
+        let mut context = String::new();
+        if ctx_start > 0 {
+            context.push_str("...");
+        }
+        context.push_str(&para.flat_text[ctx_start..ctx_end]);
+        if ctx_end < para.flat_text.len() {
+            context.push_str("...");
+        }
+
+        occurrences.push(TextOccurrence {
+            index: i,
+            context,
+            paragraph_number: para.paragraph_number,
+        });
+    }
+
+    Ok(occurrences)
+}
+
+/// Replace text in a template with a `{Variable Name}` placeholder.
+/// Returns the updated list of variables in the template.
+#[tauri::command]
+pub fn insert_template_variable(
+    template_path: String,
+    search_text: String,
+    variable_name: String,
+    occurrence_index: Option<usize>,
+    replace_all: Option<bool>,
+) -> Result<Vec<VariableInfo>, String> {
+    info!(%template_path, %search_text, %variable_name, "Inserting template variable");
+
+    let file_bytes =
+        fs::read(&template_path).map_err(|e| format!("Failed to read docx: {}", e))?;
+    let cursor = Cursor::new(file_bytes);
+    let mut archive =
+        ZipArchive::new(cursor).map_err(|e| format!("Failed to open docx as zip: {}", e))?;
+
+    // Read all entries
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("Failed to read zip entry: {}", e))?;
+        let name = entry.name().to_string();
+        let mut buf = Vec::new();
+        entry
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("Failed to read entry content: {}", e))?;
+        entries.push((name, buf));
+    }
+
+    let replacement = format!("{{{}}}", variable_name);
+
+    // Process document.xml (and optionally headers/footers)
+    for (name, content) in entries.iter_mut() {
+        if name != "word/document.xml"
+            && !name.starts_with("word/header")
+            && !name.starts_with("word/footer")
+        {
+            continue;
+        }
+
+        let xml_str = String::from_utf8_lossy(content).to_string();
+        let normalized = normalize_split_variables(&xml_str);
+        let maps = build_paragraph_text_maps(&normalized);
+        let matches = find_text_in_paragraphs(&maps, &search_text);
+
+        if matches.is_empty() {
+            continue;
+        }
+
+        let replace_all = replace_all.unwrap_or(false);
+
+        if matches.len() > 1 && !replace_all && occurrence_index.is_none() {
+            return Err(format!(
+                "Found {} occurrences of \"{}\". Specify occurrence_index or use replace_all.",
+                matches.len(),
+                search_text
+            ));
+        }
+
+        // Determine which matches to replace
+        let to_replace: Vec<(usize, usize)> = if replace_all {
+            matches
+        } else if let Some(idx) = occurrence_index {
+            if idx >= matches.len() {
+                return Err(format!(
+                    "Occurrence index {} out of range (found {})",
+                    idx,
+                    matches.len()
+                ));
+            }
+            vec![matches[idx]]
+        } else {
+            vec![matches[0]]
+        };
+
+        // Replace in reverse order to preserve byte offsets
+        let mut modified = normalized;
+        let mut sorted = to_replace.clone();
+        sorted.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.cmp(&a.0)));
+
+        for (pi, offset) in sorted {
+            modified = replace_text_in_xml(
+                &modified,
+                &build_paragraph_text_maps(&modified)[pi],
+                offset,
+                search_text.len(),
+                &replacement,
+            );
+        }
+
+        *content = modified.into_bytes();
+    }
+
+    // Write back
+    let mut output = Cursor::new(Vec::new());
+    {
+        let mut writer = ZipWriter::new(&mut output);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in &entries {
+            writer
+                .start_file(name, options)
+                .map_err(|e| format!("Failed to write zip entry: {}", e))?;
+            writer
+                .write_all(content)
+                .map_err(|e| format!("Failed to write content: {}", e))?;
+        }
+        writer
+            .finish()
+            .map_err(|e| format!("Failed to finalize zip: {}", e))?;
+    }
+    fs::write(&template_path, output.into_inner())
+        .map_err(|e| format!("Failed to write docx: {}", e))?;
+
+    // Return updated variable list
+    extract_variables(template_path)
+}
+
+/// Replace a `{Variable Name}` placeholder back to plain text.
+/// Returns the updated list of variables in the template.
+#[tauri::command]
+pub fn remove_template_variable(
+    template_path: String,
+    variable_name: String,
+    replacement_text: String,
+    occurrence_index: Option<usize>,
+) -> Result<Vec<VariableInfo>, String> {
+    info!(%template_path, %variable_name, "Removing template variable");
+
+    let search_text = format!("{{{}}}", variable_name);
+    let replace_all = occurrence_index.is_none();
+
+    let file_bytes =
+        fs::read(&template_path).map_err(|e| format!("Failed to read docx: {}", e))?;
+    let cursor = Cursor::new(file_bytes);
+    let mut archive =
+        ZipArchive::new(cursor).map_err(|e| format!("Failed to open docx as zip: {}", e))?;
+
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("Failed to read zip entry: {}", e))?;
+        let name = entry.name().to_string();
+        let mut buf = Vec::new();
+        entry
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("Failed to read entry content: {}", e))?;
+        entries.push((name, buf));
+    }
+
+    for (name, content) in entries.iter_mut() {
+        if name != "word/document.xml"
+            && !name.starts_with("word/header")
+            && !name.starts_with("word/footer")
+        {
+            continue;
+        }
+
+        let xml_str = String::from_utf8_lossy(content).to_string();
+        let normalized = normalize_split_variables(&xml_str);
+        let maps = build_paragraph_text_maps(&normalized);
+        let matches = find_text_in_paragraphs(&maps, &search_text);
+
+        if matches.is_empty() {
+            continue;
+        }
+
+        let to_replace: Vec<(usize, usize)> = if replace_all {
+            matches
+        } else if let Some(idx) = occurrence_index {
+            if idx >= matches.len() {
+                return Err(format!(
+                    "Occurrence index {} out of range (found {})",
+                    idx,
+                    matches.len()
+                ));
+            }
+            vec![matches[idx]]
+        } else {
+            vec![matches[0]]
+        };
+
+        let mut modified = normalized;
+        let mut sorted = to_replace.clone();
+        sorted.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.cmp(&a.0)));
+
+        for (pi, offset) in sorted {
+            modified = replace_text_in_xml(
+                &modified,
+                &build_paragraph_text_maps(&modified)[pi],
+                offset,
+                search_text.len(),
+                &replacement_text,
+            );
+        }
+
+        *content = modified.into_bytes();
+    }
+
+    let mut output = Cursor::new(Vec::new());
+    {
+        let mut writer = ZipWriter::new(&mut output);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in &entries {
+            writer
+                .start_file(name, options)
+                .map_err(|e| format!("Failed to write zip entry: {}", e))?;
+            writer
+                .write_all(content)
+                .map_err(|e| format!("Failed to write content: {}", e))?;
+        }
+        writer
+            .finish()
+            .map_err(|e| format!("Failed to finalize zip: {}", e))?;
+    }
+    fs::write(&template_path, output.into_inner())
+        .map_err(|e| format!("Failed to write docx: {}", e))?;
+
+    extract_variables(template_path)
+}
+
 // ─── Internal helpers ───────────────────────────────────────────────────────
 
 /// Pre-process Word XML to merge variable placeholders that are split across
