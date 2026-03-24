@@ -26,6 +26,7 @@ export default function VariableEditor() {
 		loading,
 		error,
 		lilyFile,
+		templateSchema,
 		updateVariable,
 		renameDocument,
 		saveDocument,
@@ -778,23 +779,79 @@ export default function VariableEditor() {
 										</button>
 									</div>
 								</div>
-								{/* Value input */}
+								{/* Value input — type-specific based on schema */}
 								<div className="p-3">
-									<input
-										type="text"
-										className="input input-bordered input-sm w-full"
-										placeholder={`Enter ${name}`}
-										value={variableValues[name] ?? ""}
-										onChange={(e) =>
-											handleVariableChange(
-												name,
-												e.target.value,
-											)
+									{(() => {
+										const schemaEntry = templateSchema?.variables[name];
+										const varType = schemaEntry?.var_type ?? "text";
+										const val = variableValues[name] ?? "";
+
+										if (varType === "date") {
+											return (
+												<div className="flex gap-2">
+													<input
+														type="date"
+														className="input input-bordered input-sm flex-1"
+														value={val}
+														onChange={(e) =>
+															handleVariableChange(name, e.target.value)
+														}
+														onFocus={() => setSelectedVariable(name)}
+													/>
+													{schemaEntry?.required && !val && (
+														<span className="badge badge-error badge-sm self-center">required</span>
+													)}
+												</div>
+											);
 										}
-										onFocus={() =>
-											setSelectedVariable(name)
+
+										if (varType === "currency") {
+											return (
+												<div className="flex gap-2">
+													<span className="flex items-center text-base-content/50 text-sm pl-1">$</span>
+													<input
+														type="text"
+														inputMode="decimal"
+														className="input input-bordered input-sm flex-1"
+														placeholder="0.00"
+														value={val}
+														onChange={(e) => {
+															const v = e.target.value.replace(/[^0-9.,]/g, "");
+															handleVariableChange(name, v);
+														}}
+														onFocus={() => setSelectedVariable(name)}
+													/>
+													{schemaEntry?.required && !val && (
+														<span className="badge badge-error badge-sm self-center">required</span>
+													)}
+												</div>
+											);
 										}
-									/>
+
+										// Default: text input
+										return (
+											<div className="flex gap-2">
+												<input
+													type="text"
+													className="input input-bordered input-sm flex-1"
+													placeholder={`Enter ${name}`}
+													value={val}
+													onChange={(e) =>
+														handleVariableChange(name, e.target.value)
+													}
+													onFocus={() => setSelectedVariable(name)}
+												/>
+												{schemaEntry?.required && !val && (
+													<span className="badge badge-error badge-sm self-center">required</span>
+												)}
+											</div>
+										);
+									})()}
+									{templateSchema?.variables[name]?.help && (
+										<p className="text-xs text-base-content/40 mt-1">
+											{templateSchema.variables[name].help}
+										</p>
+									)}
 								</div>
 							</div>
 						);

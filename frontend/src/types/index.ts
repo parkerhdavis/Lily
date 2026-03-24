@@ -125,6 +125,30 @@ export interface VariableInfo {
 	is_conditional: boolean;
 }
 
+/** Type of a variable in a template schema. */
+export type VariableType = "text" | "date" | "currency" | "conditional";
+
+/** Schema definition for a single variable in a template. */
+export interface VariableSchemaEntry {
+	/** The type of this variable. */
+	var_type: VariableType;
+	/** Default value if not provided. */
+	default?: string;
+	/** Help text shown to the user. */
+	help?: string;
+	/** Date format string (for date variables, e.g., "MM/DD/YYYY"). */
+	date_format?: string;
+	/** Whether this field is required. */
+	required: boolean;
+}
+
+/** Schema file for a template (.lily sidecar). */
+export interface VariableSchema {
+	lily_type: string;
+	template_filename: string;
+	variables: Record<string, VariableSchemaEntry>;
+}
+
 /** A node in the template folder tree. */
 export type TemplateTreeNode =
 	| { kind: "folder"; name: string; children: TemplateTreeNode[] }
