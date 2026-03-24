@@ -38,6 +38,8 @@ export function navLabel(
 			return "Pipeline";
 		case "questionnaire-editor":
 			return "Pipeline \u203A Questionnaire Editor";
+		case "template-editor":
+			return "Pipeline \u203A Edit Template";
 		default:
 			return step;
 	}
