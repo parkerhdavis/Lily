@@ -21,7 +21,15 @@ export type WorkflowStep =
 	| "edit-variables"
 	| "app-settings"
 	| "pipeline"
-	| "questionnaire-editor";
+	| "questionnaire-editor"
+	| "template-editor";
+
+/** A single occurrence of text found in a template document. */
+export interface TextOccurrence {
+	index: number;
+	context: string;
+	paragraph_number: number;
+}
 
 /** A per-document override for a contact role. */
 export interface RoleOverride {
