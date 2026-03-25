@@ -1,10 +1,15 @@
+import { useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import type { ClientSummary, PersistedNavEntry } from "@/types";
 import SectionHeading from "@/components/ui/SectionHeading";
 import AppSwitcher from "@/components/ui/AppSwitcher";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
+import { extractFolderName } from "@/utils/path";
 
+/** Steps that operate on an individual client (require a working dir). */
 const CLIENT_STEPS = new Set([
 	"client-hub",
 	"questionnaire",
@@ -13,27 +18,65 @@ const CLIENT_STEPS = new Set([
 ]);
 
 function describeLastStep(step: string, dirName: string | null): string {
+	if (step === "clients") return "Clients";
 	if (CLIENT_STEPS.has(step) && dirName) return dirName;
 	if (step === "pipeline") return "Pipeline";
 	if (step === "app-settings") return "Settings";
+	if (step === "questionnaire-editor")
+		return "Pipeline \u203A Questionnaire Editor";
+	if (step === "template-editor") return "Pipeline \u203A Edit Template";
 	return "";
 }
 
+/** Format a timestamp as relative time. */
+function relativeTime(ms: number): string {
+	const diff = Date.now() - ms;
+	const minutes = Math.floor(diff / 60000);
+	if (minutes < 1) return "Just now";
+	if (minutes < 60) return `${minutes}m ago`;
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) return `${hours}h ago`;
+	const days = Math.floor(hours / 24);
+	if (days === 1) return "Yesterday";
+	if (days < 7) return `${days}d ago`;
+	return new Date(ms).toLocaleDateString(undefined, {
+		month: "short",
+		day: "numeric",
+	});
+}
+
 export default function LilyHub() {
-	const { settings, save, addRecentDirectory, removeRecentDirectory } =
-		useSettingsStore();
+	const { settings, save, addRecentDirectory } = useSettingsStore();
 	const lilyIcon = useLilyIcon();
-	const { setWorkingDir, loadTemplates, goToSettings, goToPipeline } =
-		useWorkflowStore();
+	const {
+		setWorkingDir,
+		loadTemplates,
+		goToSettings,
+		goToPipeline,
+		goToClients,
+	} = useWorkflowStore();
+
+	// Load a lightweight preview summary for the resume card
+	const [resumePreview, setResumePreview] = useState<ClientSummary | null>(
+		null,
+	);
+	useEffect(() => {
+		const { last_step, last_working_dir } = settings;
+		if (!last_step || !last_working_dir || !CLIENT_STEPS.has(last_step))
+			return;
+		invoke<ClientSummary[]>("load_client_summaries", {
+			directories: [last_working_dir],
+		})
+			.then((summaries) => setResumePreview(summaries[0] ?? null))
+			.catch(() => setResumePreview(null));
+	}, [settings.last_step, settings.last_working_dir]);
 
 	const selectClient = async (dir: string) => {
 		await addRecentDirectory(dir);
 		save({ last_working_dir: dir });
-
 		if (settings.templates_dir) {
 			await loadTemplates(settings.templates_dir);
 		}
-
 		setWorkingDir(dir);
 	};
 
@@ -52,20 +95,69 @@ export default function LilyHub() {
 		const { last_step, last_working_dir } = settings;
 		if (!last_step) return;
 
-		if (CLIENT_STEPS.has(last_step) && last_working_dir) {
+		if (last_step === "clients") {
+			goToClients();
+		} else if (CLIENT_STEPS.has(last_step) && last_working_dir) {
 			await selectClient(last_working_dir);
 		} else if (last_step === "pipeline") {
 			goToPipeline();
 		} else if (last_step === "app-settings") {
 			goToSettings();
+		} else if (
+			last_step === "questionnaire-editor" ||
+			last_step === "template-editor"
+		) {
+			goToPipeline();
 		}
 	};
 
-	/** Show just the last path component (the folder name). */
-	const dirName = (path: string) => {
-		const sep = path.includes("\\") ? "\\" : "/";
-		return path.split(sep).filter(Boolean).pop() ?? path;
+	const navigateToEntry = async (entry: PersistedNavEntry) => {
+		if (entry.step === "clients") {
+			goToClients();
+		} else if (CLIENT_STEPS.has(entry.step) && entry.working_dir) {
+			await selectClient(entry.working_dir);
+		} else if (entry.step === "pipeline") {
+			goToPipeline();
+		} else if (entry.step === "app-settings") {
+			goToSettings();
+		} else if (
+			entry.step === "questionnaire-editor" ||
+			entry.step === "template-editor"
+		) {
+			goToPipeline();
+		}
 	};
+
+	// Derive recent pages from persisted nav history, excluding the resume entry
+	const recentPages = useMemo(() => {
+		const history = settings.navigation_history ?? [];
+		const { last_step, last_working_dir } = settings;
+		return history
+			.filter((e) => {
+				// Exclude hub entries
+				if (e.step === "hub") return false;
+				// Exclude the "resume" entry (already shown separately)
+				if (
+					last_step &&
+					e.step === last_step &&
+					(e.working_dir ?? null) === (last_working_dir ?? null)
+				)
+					return false;
+				return true;
+			})
+			.slice(0, 8);
+	}, [settings.navigation_history, settings.last_step, settings.last_working_dir]);
+
+	const dirName = (path: string) => extractFolderName(path);
+
+	const resumeLabel = settings.last_step
+		? describeLastStep(
+				settings.last_step,
+				settings.last_working_dir
+					? dirName(settings.last_working_dir)
+					: null,
+			)
+		: "";
 
 	return (
 		<div className="flex flex-col h-full">
@@ -93,184 +185,102 @@ export default function LilyHub() {
 						</a>
 					</p>
 				</div>
+				<button
+					type="button"
+					className="btn btn-ghost btn-sm"
+					onClick={pickClientFolder}
+					title="Open Client Folder"
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						viewBox="0 0 20 20"
+						fill="currentColor"
+						className="size-5 opacity-60"
+					>
+						<title>Open Folder</title>
+						<path
+							fillRule="evenodd"
+							d="M3.75 3A1.75 1.75 0 0 0 2 4.75v3.26a3.235 3.235 0 0 1 1.75-.51h12.5c.644 0 1.245.188 1.75.51V6.75A1.75 1.75 0 0 0 16.25 5h-4.836a.25.25 0 0 1-.177-.073L9.823 3.513A1.75 1.75 0 0 0 8.586 3H3.75ZM3.75 9A1.75 1.75 0 0 0 2 10.75v4.5c0 .966.784 1.75 1.75 1.75h12.5A1.75 1.75 0 0 0 18 15.25v-4.5A1.75 1.75 0 0 0 16.25 9H3.75Z"
+							clipRule="evenodd"
+						/>
+					</svg>
+				</button>
 				<AppSwitcher />
 			</header>
 
 			{/* Main content */}
-			<div className="flex-1 overflow-y-auto">
-				<div className="flex gap-6 p-6 h-full">
-					{/* Left column: Clients (primary) */}
-					<div className="flex-1 min-w-0 flex flex-col bg-base-100 rounded-xl border border-base-300 shadow-sm">
-						<div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-base-300">
-							<SectionHeading className="text-sm">
-								Clients
-							</SectionHeading>
-							<button
-								type="button"
-								className="btn btn-primary btn-sm"
-								onClick={pickClientFolder}
-							>
-								Open Client Folder
-							</button>
-						</div>
-
-						<div className="flex-1 overflow-y-auto">
-							{settings.recent_directories.length > 0 ? (
-								<div className="divide-y divide-base-200">
-									{settings.recent_directories.map(
-										(dir) => (
-											<div
-												key={dir}
-												className="flex items-center justify-between gap-3 px-6 py-4 cursor-pointer hover:bg-base-200/60 transition-colors"
-												onClick={() =>
-													selectClient(dir)
-												}
-												onKeyDown={(e) => {
-													if (
-														e.key === "Enter" ||
-														e.key === " "
-													)
-														selectClient(dir);
-												}}
-												role="button"
-												tabIndex={0}
-											>
-												<div className="flex flex-col min-w-0">
-													<span className="font-medium text-base truncate">
-														{dirName(dir)}
-													</span>
-													<span className="text-sm text-base-content/35 truncate">
-														{dir}
-													</span>
-												</div>
-												<button
-													type="button"
-													className="btn btn-ghost btn-xs opacity-20 hover:opacity-100 text-base-content/50"
-													onClick={(e) => {
-														e.stopPropagation();
-														removeRecentDirectory(
-															dir,
-														);
-													}}
-													title="Remove from recent"
-												>
-													<svg
-														xmlns="http://www.w3.org/2000/svg"
-														viewBox="0 0 20 20"
-														fill="currentColor"
-														className="size-4"
-													>
-														<title>Remove</title>
-														<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
-													</svg>
-												</button>
-											</div>
-										),
-									)}
-								</div>
-							) : (
-								<div className="flex flex-col items-center justify-center flex-1 py-16 text-base-content/40">
-									<p className="text-base">
-										No recent clients
-									</p>
-									<p className="text-sm mt-1">
-										Open a client folder to get started.
-									</p>
-								</div>
-							)}
-						</div>
-					</div>
-
-					{/* Right column: secondary cards */}
-					<div className="w-72 shrink-0 flex flex-col gap-4">
-						{/* Resume card */}
-						{settings.last_step &&
-							describeLastStep(
-								settings.last_step,
-								settings.last_working_dir
-									? dirName(settings.last_working_dir)
-									: null,
-							) && (
-								<button
-									type="button"
-									className="card bg-primary/10 border border-primary/20 shadow-sm hover:shadow-md hover:bg-primary/15 hover:border-primary/30 transition-all cursor-pointer text-left"
-									onClick={resumeLastSession}
-								>
-									<div className="card-body p-5 gap-2">
-										<div className="flex items-center gap-2.5">
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												viewBox="0 0 20 20"
-												fill="currentColor"
-												className="size-5 text-primary"
-											>
-												<title>Resume</title>
-												<path
-													fillRule="evenodd"
-													d="M2 10a8 8 0 1 1 16 0 8 8 0 0 1-16 0Zm6.39-2.908a.75.75 0 0 1 .766.027l3.5 2.25a.75.75 0 0 1 0 1.262l-3.5 2.25A.75.75 0 0 1 8 12.25v-4.5a.75.75 0 0 1 .39-.658Z"
-													clipRule="evenodd"
-												/>
-											</svg>
-											<span className="font-semibold text-base text-primary">
-												Pick up where you left
-												off
-											</span>
-										</div>
-										<p className="text-sm text-base-content/50">
-											{describeLastStep(
-												settings.last_step,
-												settings.last_working_dir
-													? dirName(
-															settings.last_working_dir,
-														)
-													: null,
-											)}
-										</p>
-									</div>
-								</button>
-							)}
-
-						{/* Pipeline card */}
+			<div className="flex-1 overflow-y-auto flex items-center justify-center">
+				<div className="max-w-4xl w-full px-6 py-8 space-y-6">
+					{/* Module panels */}
+					<div className="grid grid-cols-3 gap-5">
+						{/* Clients */}
 						<button
 							type="button"
-							className="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md hover:bg-base-200/50 hover:border-base-content/20 transition-all cursor-pointer text-left flex-1"
-							onClick={goToPipeline}
+							className="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md hover:bg-base-200/50 hover:border-base-content/20 transition-all cursor-pointer text-left"
+							onClick={goToClients}
 						>
-							<div className="card-body p-5 gap-2">
-								<div className="flex items-center gap-2.5">
+							<div className="card-body p-8 gap-3">
+								<div className="flex items-center gap-3">
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
 										viewBox="0 0 20 20"
 										fill="currentColor"
-										className="size-5 text-base-content/50"
+										className="size-6 text-base-content/50"
 									>
-										<title>Pipeline</title>
-										<path d="M3.75 3A1.75 1.75 0 0 0 2 4.75v3.26a3.235 3.235 0 0 1 1.75-.51h12.5c.644 0 1.245.188 1.75.51V6.75A1.75 1.75 0 0 0 16.25 5h-4.836a.25.25 0 0 1-.177-.073L9.823 3.513A1.75 1.75 0 0 0 8.586 3H3.75ZM3.75 9A1.75 1.75 0 0 0 2 10.75v4.5c0 .966.784 1.75 1.75 1.75h12.5A1.75 1.75 0 0 0 18 15.25v-4.5A1.75 1.75 0 0 0 16.25 9H3.75Z" />
+										<title>Clients</title>
+										<path d="M7 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM14.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM1.615 16.428a1.224 1.224 0 0 1-.569-1.175 6.002 6.002 0 0 1 11.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 0 1 7 18a9.953 9.953 0 0 1-5.385-1.572ZM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 0 0-1.588-3.755 4.502 4.502 0 0 1 5.874 2.636.818.818 0 0 1-.36.98A7.465 7.465 0 0 1 14.5 16Z" />
 									</svg>
-									<span className="font-semibold text-base">
-										Pipeline
+									<span className="font-semibold text-lg">
+										Clients
 									</span>
 								</div>
 								<p className="text-sm text-base-content/50">
-									Templates, processes, and workspace
-									configuration
+									Manage client details and docs and
+									track progress
 								</p>
 							</div>
 						</button>
 
-						{/* Settings card */}
+						{/* Pipeline */}
 						<button
 							type="button"
-							className="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md hover:bg-base-200/50 hover:border-base-content/20 transition-all cursor-pointer text-left flex-1"
-							onClick={goToSettings}
+							className="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md hover:bg-base-200/50 hover:border-base-content/20 transition-all cursor-pointer text-left"
+							onClick={goToPipeline}
 						>
-							<div className="card-body p-5 gap-2">
-								<div className="flex items-center gap-2.5">
+							<div className="card-body p-8 gap-3">
+								<div className="flex items-center gap-3">
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
 										viewBox="0 0 20 20"
 										fill="currentColor"
-										className="size-5 text-base-content/50"
+										className="size-6 text-base-content/50"
+									>
+										<title>Pipeline</title>
+										<path d="M3.75 3A1.75 1.75 0 0 0 2 4.75v3.26a3.235 3.235 0 0 1 1.75-.51h12.5c.644 0 1.245.188 1.75.51V6.75A1.75 1.75 0 0 0 16.25 5h-4.836a.25.25 0 0 1-.177-.073L9.823 3.513A1.75 1.75 0 0 0 8.586 3H3.75ZM3.75 9A1.75 1.75 0 0 0 2 10.75v4.5c0 .966.784 1.75 1.75 1.75h12.5A1.75 1.75 0 0 0 18 15.25v-4.5A1.75 1.75 0 0 0 16.25 9H3.75Z" />
+									</svg>
+									<span className="font-semibold text-lg">
+										Pipeline
+									</span>
+								</div>
+								<p className="text-sm text-base-content/50">
+									Configure templates, processes, and team settings
+								</p>
+							</div>
+						</button>
+
+						{/* Settings */}
+						<button
+							type="button"
+							className="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md hover:bg-base-200/50 hover:border-base-content/20 transition-all cursor-pointer text-left"
+							onClick={goToSettings}
+						>
+							<div className="card-body p-8 gap-3">
+								<div className="flex items-center gap-3">
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										viewBox="0 0 20 20"
+										fill="currentColor"
+										className="size-6 text-base-content/50"
 									>
 										<title>Settings</title>
 										<path
@@ -279,16 +289,135 @@ export default function LilyHub() {
 											clipRule="evenodd"
 										/>
 									</svg>
-									<span className="font-semibold text-base">
+									<span className="font-semibold text-lg">
 										Settings
 									</span>
 								</div>
 								<p className="text-sm text-base-content/50">
-									Theme, templates folder, and preferences
+									Adjust your app settings for themes,
+									file paths, and more
 								</p>
 							</div>
 						</button>
 					</div>
+
+					{/* Pick up where you left off */}
+					{resumeLabel && (
+						<button
+							type="button"
+							className="w-full card bg-primary/10 border border-primary/20 shadow-sm hover:shadow-md hover:bg-primary/15 hover:border-primary/30 transition-all cursor-pointer text-left"
+							onClick={resumeLastSession}
+						>
+							<div className="card-body p-6 gap-3">
+								<div className="flex items-center gap-2.5">
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										viewBox="0 0 20 20"
+										fill="currentColor"
+										className="size-5 text-primary"
+									>
+										<title>Resume</title>
+										<path
+											fillRule="evenodd"
+											d="M2 10a8 8 0 1 1 16 0 8 8 0 0 1-16 0Zm6.39-2.908a.75.75 0 0 1 .766.027l3.5 2.25a.75.75 0 0 1 0 1.262l-3.5 2.25A.75.75 0 0 1 8 12.25v-4.5a.75.75 0 0 1 .39-.658Z"
+											clipRule="evenodd"
+										/>
+									</svg>
+									<span className="font-semibold text-base text-primary">
+										Pick up where you left off
+									</span>
+								</div>
+
+								{/* Preview card */}
+								<div className="rounded-lg bg-base-100/60 border border-primary/10 px-4 py-3">
+									<div className="font-medium text-sm">
+										{resumeLabel}
+									</div>
+									{resumePreview && (
+										<div className="text-xs text-base-content/50 mt-1">
+											{resumePreview.total_documents}{" "}
+											document
+											{resumePreview.total_documents !==
+											1
+												? "s"
+												: ""}
+											{resumePreview.contacts_count >
+												0 &&
+												` \u00B7 ${resumePreview.contacts_count} contact${resumePreview.contacts_count !== 1 ? "s" : ""}`}
+											{resumePreview
+												.required_documents
+												.length > 0 && (
+												<>
+													{" \u00B7 "}
+													{
+														resumePreview.required_documents.filter(
+															(r) =>
+																r.status ===
+																	"complete" ||
+																r.status ===
+																	"executed",
+														).length
+													}
+													/
+													{
+														resumePreview
+															.required_documents
+															.length
+													}{" "}
+													complete
+												</>
+											)}
+										</div>
+									)}
+									{!resumePreview &&
+										settings.last_step &&
+										!CLIENT_STEPS.has(
+											settings.last_step,
+										) && (
+											<p className="text-xs text-base-content/40 mt-0.5">
+												{settings.last_step ===
+												"pipeline"
+													? "Templates, processes, and workspace configuration"
+													: settings.last_step ===
+														  "app-settings"
+														? "Theme, templates folder, and preferences"
+														: ""}
+											</p>
+										)}
+								</div>
+							</div>
+						</button>
+					)}
+
+					{/* Recent pages */}
+					{recentPages.length > 0 && (
+						<div>
+							<SectionHeading className="mb-3">
+								Recent
+							</SectionHeading>
+							<div className="rounded-xl border border-base-300 bg-base-100 shadow-sm divide-y divide-base-200 overflow-hidden">
+								{recentPages.map((entry, i) => (
+									<button
+										key={`${entry.step}-${entry.working_dir}-${i}`}
+										type="button"
+										className="w-full text-left px-5 py-3 hover:bg-base-200/60 transition-colors flex items-center justify-between gap-3"
+										onClick={() =>
+											navigateToEntry(entry)
+										}
+									>
+										<span className="text-sm font-medium truncate">
+											{entry.label}
+										</span>
+										<span className="text-xs text-base-content/30 shrink-0">
+											{relativeTime(
+												entry.visited_at,
+											)}
+										</span>
+									</button>
+								))}
+							</div>
+						</div>
+					)}
 				</div>
 			</div>
 		</div>

@@ -32,6 +32,26 @@ export default function AppSettings() {
 		}
 	};
 
+	const addClientLibraryDir = async () => {
+		const selected = await open({
+			directory: true,
+			title: "Select Client Library Folder",
+		});
+		if (selected) {
+			const dirs = settings.client_library_dirs ?? [];
+			if (!dirs.includes(selected)) {
+				save({ client_library_dirs: [...dirs, selected] });
+			}
+		}
+	};
+
+	const removeClientLibraryDir = (dir: string) => {
+		const dirs = (settings.client_library_dirs ?? []).filter(
+			(d) => d !== dir,
+		);
+		save({ client_library_dirs: dirs });
+	};
+
 	const pickQuestionnairesDir = async () => {
 		const selected = await open({
 			directory: true,
@@ -211,6 +231,65 @@ export default function AppSettings() {
 							Workspace
 						</SectionHeading>
 						<div className="p-4 rounded-xl border border-base-300 bg-base-100 space-y-3">
+							<div>
+								<p className="text-sm font-medium mb-1">
+									Client Libraries
+								</p>
+								<p className="text-xs text-base-content/40 mb-2">
+									Folders containing client subfolders
+								</p>
+								{(settings.client_library_dirs ?? [])
+									.length > 0 ? (
+									<div className="space-y-1.5 mb-2">
+										{settings.client_library_dirs.map(
+											(dir) => (
+												<div
+													key={dir}
+													className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-base-200/50 text-xs font-mono"
+												>
+													<span className="truncate">
+														{dir}
+													</span>
+													<button
+														type="button"
+														className="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
+														onClick={() =>
+															removeClientLibraryDir(
+																dir,
+															)
+														}
+														title="Remove"
+													>
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															viewBox="0 0 20 20"
+															fill="currentColor"
+															className="size-3.5"
+														>
+															<title>
+																Remove
+															</title>
+															<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+														</svg>
+													</button>
+												</div>
+											),
+										)}
+									</div>
+								) : (
+									<p className="text-xs text-base-content/30 mb-2">
+										No client libraries configured
+									</p>
+								)}
+								<button
+									type="button"
+									className="btn btn-outline btn-sm"
+									onClick={addClientLibraryDir}
+								>
+									Add Client Library
+								</button>
+							</div>
+							<div className="border-t border-base-300 my-3" />
 							<div>
 								<p className="text-sm font-medium mb-1">
 									Templates Folder

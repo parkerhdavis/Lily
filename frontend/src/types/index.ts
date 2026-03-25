@@ -1,3 +1,42 @@
+export type DocumentStatus =
+	| "not_started"
+	| "drafting"
+	| "reviewing"
+	| "complete"
+	| "executed";
+
+export interface RequiredDocument {
+	id: string;
+	template_rel_path: string;
+	status: DocumentStatus;
+	document_filename: string | null;
+	notes: string;
+}
+
+export interface ClientSummary {
+	directory: string;
+	client_name: string;
+	total_documents: number;
+	required_documents: RequiredDocumentSummary[];
+	contacts_count: number;
+	has_questionnaire: boolean;
+}
+
+export interface RequiredDocumentSummary {
+	template_rel_path: string;
+	status: DocumentStatus;
+	document_filename: string | null;
+}
+
+export interface PersistedNavEntry {
+	step: string;
+	working_dir: string | null;
+	document_path: string | null;
+	template_rel_path: string | null;
+	label: string;
+	visited_at: number;
+}
+
 export interface AppSettings {
 	templates_dir: string | null;
 	last_working_dir: string | null;
@@ -11,10 +50,13 @@ export interface AppSettings {
 	autosave: boolean | null;
 	questionnaires_dir: string | null;
 	active_questionnaire_id: string | null;
+	client_library_dirs: string[];
+	navigation_history: PersistedNavEntry[];
 }
 
 export type WorkflowStep =
 	| "hub"
+	| "clients"
 	| "client-hub"
 	| "questionnaire"
 	| "select-template"
@@ -100,6 +142,8 @@ export interface LilyFile {
 	questionnaire_id: string | null;
 	/** Version of the questionnaire definition when it was last applied. */
 	questionnaire_version: number | null;
+	/** Documents required for this client, with status tracking. */
+	required_documents: RequiredDocument[];
 	/** Non-persisted warnings from loading this file. */
 	warnings: string[];
 }

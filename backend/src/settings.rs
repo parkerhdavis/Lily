@@ -4,6 +4,18 @@ use std::path::PathBuf;
 
 use crate::lily_file::atomic_write;
 
+/// A navigation entry persisted across sessions for the "recent pages" list.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistedNavEntry {
+    pub step: String,
+    pub working_dir: Option<String>,
+    pub document_path: Option<String>,
+    pub template_rel_path: Option<String>,
+    pub label: String,
+    /// Unix timestamp in milliseconds when this page was visited.
+    pub visited_at: i64,
+}
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct AppSettings {
     /// Path to the directory containing template .docx files.
@@ -40,6 +52,12 @@ pub struct AppSettings {
     /// UUID of the currently active questionnaire definition.
     #[serde(default)]
     pub active_questionnaire_id: Option<String>,
+    /// Directories containing client folders (like templates_dir but for clients).
+    #[serde(default)]
+    pub client_library_dirs: Vec<String>,
+    /// Persisted navigation history for "recent pages" on the hub.
+    #[serde(default)]
+    pub navigation_history: Vec<PersistedNavEntry>,
 }
 
 fn settings_path() -> Result<PathBuf, String> {

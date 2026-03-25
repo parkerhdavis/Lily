@@ -9,6 +9,7 @@ import TemplatePicker from "@/components/TemplatePicker";
 import VariableEditor from "@/components/VariableEditor";
 import Questionnaire from "@/components/Questionnaire";
 import AppSettings from "@/components/AppSettings";
+import ClientsHub from "@/components/ClientsHub";
 import PipelineHub from "@/components/PipelineHub";
 import QuestionnaireEditor from "@/components/QuestionnaireEditor";
 import TemplateEditor from "@/components/TemplateEditor";
@@ -133,6 +134,8 @@ export default function App() {
 		switch (step) {
 			case "hub":
 				return <LilyHub />;
+			case "clients":
+				return <ClientsHub />;
 			case "client-hub":
 				return <ClientHub />;
 			case "questionnaire":
