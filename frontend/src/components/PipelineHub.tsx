@@ -63,6 +63,7 @@ type PipelineTab = "templates" | "processes" | "team";
 export default function PipelineHub() {
 	const { settings, save } = useSettingsStore();
 	const goToHub = useWorkflowStore((s) => s.goToHub);
+	const goToSettings = useWorkflowStore((s) => s.goToSettings);
 	const openTemplateEditor = useWorkflowStore(
 		(s) => s.openTemplateEditor,
 	);
@@ -213,6 +214,7 @@ export default function PipelineHub() {
 							await loadQuestionnaire(def.id);
 							goToQuestionnaireEditor();
 						}}
+						onGoToSettings={goToSettings}
 					/>
 				)}
 				{activeTab === "processes" && <PlaceholderTab title="Processes" description="Define common client processes and document packages. Group templates into workflows that can be assigned to clients." />}
@@ -241,6 +243,7 @@ function TemplatesTab({
 	questionnairesDir,
 	onOpenQuestionnaire,
 	onNewQuestionnaire,
+	onGoToSettings,
 }: {
 	tree: TemplateTreeNode[];
 	loading: boolean;
@@ -258,6 +261,7 @@ function TemplatesTab({
 	questionnaireIndex: QuestionnaireIndex | null;
 	onOpenQuestionnaire: (id: string) => void;
 	onNewQuestionnaire: () => void;
+	onGoToSettings: () => void;
 }) {
 	if (!templatesDir) {
 		return (
@@ -295,9 +299,18 @@ function TemplatesTab({
 				</SectionHeading>
 				<div className="flex flex-col gap-0.5 mb-4">
 					{!questionnairesDir ? (
-						<p className="text-xs text-base-content/40 px-3 py-2">
-							Set a questionnaires folder in Settings to manage questionnaire definitions.
-						</p>
+						<div className="px-3 py-2 space-y-2">
+							<p className="text-xs text-base-content/40">
+								Set a questionnaires folder in Settings to manage questionnaire definitions.
+							</p>
+							<button
+								type="button"
+								className="btn btn-ghost btn-xs text-base-content/50"
+								onClick={onGoToSettings}
+							>
+								Open Settings
+							</button>
+						</div>
 					) : (
 						<>
 							{questionnaireIndex?.questionnaires.map((q) => (

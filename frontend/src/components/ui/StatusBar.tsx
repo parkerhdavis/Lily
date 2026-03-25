@@ -270,6 +270,8 @@ function getStepLabel(
 	switch (step) {
 		case "hub":
 			return "Lily Hub";
+		case "clients":
+			return "Clients";
 		case "client-hub":
 			return folderName || "Client Hub";
 		case "questionnaire":

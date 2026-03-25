@@ -43,6 +43,10 @@ export const createNavigationSlice: WorkflowSlice = (set, get) => ({
 		pushNav(get());
 		set({ step: "app-settings" });
 	},
+	goToClients: () => {
+		pushNav(get());
+		set({ step: "clients" });
+	},
 	goToPipeline: () => {
 		pushNav(get());
 		set({ step: "pipeline" });

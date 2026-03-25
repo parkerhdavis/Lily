@@ -12,11 +12,13 @@ use docx_ops::{
     replace_variables, save_template_schema,
 };
 use lily_file::{
-    add_client_variable, add_contact, delete_contact, delete_document, export_client_data,
-    import_client_data, load_lily_file_cmd, new_version_document, open_file_in_os,
-    remove_client_variable, resolve_contact_variables, save_client_variables,
-    save_contact_bindings, save_questionnaire_note, save_variables, set_client_questionnaire,
-    set_document_variables, set_role_override, update_contact,
+    add_client_variable, add_contact, add_required_document, delete_contact, delete_document,
+    detect_document_statuses, export_client_data, import_client_data, list_clients_in_library,
+    load_client_summaries, load_lily_file_cmd, new_version_document, open_file_in_os,
+    remove_client_variable, remove_required_document, resolve_contact_variables,
+    save_client_variables, save_contact_bindings, save_questionnaire_note, save_variables,
+    set_client_questionnaire, set_document_variables, set_role_override, update_contact,
+    update_required_document_notes, update_required_document_status,
 };
 use questionnaire::{
     create_questionnaire, delete_questionnaire, duplicate_questionnaire, load_questionnaire,
@@ -120,6 +122,13 @@ fn main() {
             delete_questionnaire,
             set_active_questionnaire,
             migrate_questionnaires,
+            add_required_document,
+            update_required_document_status,
+            update_required_document_notes,
+            remove_required_document,
+            detect_document_statuses,
+            load_client_summaries,
+            list_clients_in_library,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 const LILY_EXT: &str = "lily";
 const OLD_SIDECAR_FILENAME: &str = ".lily.json";
-const CURRENT_VERSION: u32 = 4;
+const CURRENT_VERSION: u32 = 5;
 
 /// Write content to a file atomically: write to a temp file in the same
 /// directory, then rename over the target. Prevents corruption if the
@@ -60,6 +60,47 @@ pub struct ContactBinding {
     /// Map from variable display name → contact property key.
     /// e.g., `"POA Agent Full Name" → "full_name"`
     pub variable_mappings: HashMap<String, String>,
+}
+
+/// Status of a required document in the client workflow.
+///
+/// Progression: NotStarted → Drafting → Reviewing → Complete → Executed
+/// - NotStarted: client needs this doc, but it doesn't exist yet
+/// - Drafting: doc exists but still has unfilled variables
+/// - Reviewing: all variables filled; ready for attorney review & polish
+/// - Complete: reviewed and ready for signature
+/// - Executed: signed (locked from editing unless user confirms)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentStatus {
+    NotStarted,
+    Drafting,
+    Reviewing,
+    Complete,
+    Executed,
+}
+
+impl Default for DocumentStatus {
+    fn default() -> Self {
+        Self::NotStarted
+    }
+}
+
+/// A document that a client needs prepared, with status tracking.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequiredDocument {
+    /// Unique identifier for this requirement.
+    pub id: String,
+    /// Which template this document is based on (relative to templates dir).
+    pub template_rel_path: String,
+    /// Current status in the workflow.
+    pub status: DocumentStatus,
+    /// The filename of the actual document in the working dir, once created.
+    /// Links to the `documents` HashMap key in `LilyFile`.
+    pub document_filename: Option<String>,
+    /// Free-form notes about this requirement.
+    #[serde(default)]
+    pub notes: String,
 }
 
 /// Notes attached to a questionnaire section (client-facing and internal).
@@ -116,6 +157,9 @@ pub struct LilyFile {
     /// Version of the questionnaire definition when it was last applied.
     #[serde(default)]
     pub questionnaire_version: Option<u32>,
+    /// Documents required for this client, with status tracking.
+    #[serde(default)]
+    pub required_documents: Vec<RequiredDocument>,
     /// Non-persisted warnings surfaced to the frontend on load.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
@@ -170,6 +214,7 @@ impl Default for LilyFile {
             questionnaire_notes: HashMap::new(),
             questionnaire_id: None,
             questionnaire_version: None,
+            required_documents: Vec::new(),
             warnings: Vec::new(),
         }
     }
@@ -785,6 +830,235 @@ pub fn export_client_data(working_dir: String, export_path: String) -> Result<()
         .map_err(|e| format!("Failed to serialize client data: {}", e))?;
     atomic_write(Path::new(&export_path), &content)
 }
+
+// ─── Required document CRUD ──────────────────────────────────────────────
+
+/// Add a required document to the client's .lily file.
+#[tauri::command]
+pub fn add_required_document(
+    working_dir: String,
+    template_rel_path: String,
+    notes: String,
+) -> Result<RequiredDocument, String> {
+    let mut lily = read_lily_file(&working_dir)?;
+    let doc = RequiredDocument {
+        id: Uuid::new_v4().to_string(),
+        template_rel_path,
+        status: DocumentStatus::NotStarted,
+        document_filename: None,
+        notes,
+    };
+    lily.required_documents.push(doc.clone());
+    write_lily_file(&working_dir, &lily)?;
+    Ok(doc)
+}
+
+/// Update the status of a required document.
+#[tauri::command]
+pub fn update_required_document_status(
+    working_dir: String,
+    document_id: String,
+    status: DocumentStatus,
+) -> Result<(), String> {
+    let mut lily = read_lily_file(&working_dir)?;
+    let doc = lily
+        .required_documents
+        .iter_mut()
+        .find(|d| d.id == document_id)
+        .ok_or_else(|| format!("Required document '{}' not found", document_id))?;
+    doc.status = status;
+    write_lily_file(&working_dir, &lily)
+}
+
+/// Update the notes of a required document.
+#[tauri::command]
+pub fn update_required_document_notes(
+    working_dir: String,
+    document_id: String,
+    notes: String,
+) -> Result<(), String> {
+    let mut lily = read_lily_file(&working_dir)?;
+    let doc = lily
+        .required_documents
+        .iter_mut()
+        .find(|d| d.id == document_id)
+        .ok_or_else(|| format!("Required document '{}' not found", document_id))?;
+    doc.notes = notes;
+    write_lily_file(&working_dir, &lily)
+}
+
+/// Remove a required document by ID.
+#[tauri::command]
+pub fn remove_required_document(working_dir: String, document_id: String) -> Result<(), String> {
+    let mut lily = read_lily_file(&working_dir)?;
+    lily.required_documents.retain(|d| d.id != document_id);
+    write_lily_file(&working_dir, &lily)
+}
+
+// ─── Status auto-detection ──────────────────────────────────────────────
+
+/// Detect the status of a required document based on filesystem heuristics.
+fn detect_single_status(
+    working_dir: &str,
+    req: &RequiredDocument,
+    lily: &LilyFile,
+) -> DocumentStatus {
+    let dir = Path::new(working_dir);
+
+    // If no document file linked or file doesn't exist → NotStarted
+    let filename = match &req.document_filename {
+        Some(f) if dir.join(f).exists() => f.clone(),
+        _ => return DocumentStatus::NotStarted,
+    };
+
+    let basename = filename.trim_end_matches(".docx").trim_end_matches(".DOCX");
+
+    // Check for EXECUTED PDF (case-insensitive "executed" in filename)
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            if name.ends_with(".pdf")
+                && name.contains("executed")
+                && name.contains(&basename.to_lowercase())
+            {
+                return DocumentStatus::Executed;
+            }
+        }
+    }
+
+    // Check for regular PDF → Complete
+    let pdf_name = format!("{}.pdf", basename);
+    if dir.join(&pdf_name).exists() {
+        return DocumentStatus::Complete;
+    }
+
+    // Check variable fill state
+    if let Some(doc_meta) = lily.documents.get(&filename) {
+        if !doc_meta.variable_names.is_empty() {
+            let all_filled = doc_meta.variable_names.iter().all(|name| {
+                lily.variables
+                    .get(name)
+                    .is_some_and(|v| !v.is_empty())
+            });
+            if all_filled {
+                return DocumentStatus::Reviewing;
+            }
+        }
+    }
+
+    DocumentStatus::Drafting
+}
+
+/// Run auto-detection for all required documents, returning id + detected status.
+#[tauri::command]
+pub fn detect_document_statuses(
+    working_dir: String,
+) -> Result<Vec<(String, DocumentStatus)>, String> {
+    let lily = read_lily_file(&working_dir)?;
+    let results: Vec<(String, DocumentStatus)> = lily
+        .required_documents
+        .iter()
+        .map(|req| {
+            let status = detect_single_status(&working_dir, req, &lily);
+            (req.id.clone(), status)
+        })
+        .collect();
+    Ok(results)
+}
+
+// ─── Client summary for aggregate views ─────────────────────────────────
+
+/// Lightweight summary of a client for the Clients module.
+#[derive(Debug, Serialize)]
+pub struct ClientSummary {
+    pub directory: String,
+    pub client_name: String,
+    pub total_documents: usize,
+    pub required_documents: Vec<RequiredDocumentSummary>,
+    pub contacts_count: usize,
+    pub has_questionnaire: bool,
+}
+
+/// Lightweight summary of a required document's status.
+#[derive(Debug, Serialize)]
+pub struct RequiredDocumentSummary {
+    pub template_rel_path: String,
+    pub status: DocumentStatus,
+    pub document_filename: Option<String>,
+}
+
+/// Extract the folder name from a directory path.
+fn folder_name(dir: &str) -> String {
+    Path::new(dir)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default()
+}
+
+/// Build a ClientSummary from a .lily file in the given directory.
+/// Returns None if the directory doesn't exist or has no .lily file data.
+fn summarize_client(directory: &str) -> Option<ClientSummary> {
+    let lily = read_lily_file(directory).ok()?;
+    Some(ClientSummary {
+        directory: directory.to_string(),
+        client_name: folder_name(directory),
+        total_documents: lily.documents.len(),
+        required_documents: lily
+            .required_documents
+            .iter()
+            .map(|r| RequiredDocumentSummary {
+                template_rel_path: r.template_rel_path.clone(),
+                status: r.status.clone(),
+                document_filename: r.document_filename.clone(),
+            })
+            .collect(),
+        contacts_count: lily.contacts.len(),
+        has_questionnaire: lily.questionnaire_id.is_some(),
+    })
+}
+
+/// Load summaries for multiple client directories.
+#[tauri::command]
+pub fn load_client_summaries(directories: Vec<String>) -> Vec<ClientSummary> {
+    directories
+        .iter()
+        .filter_map(|dir| summarize_client(dir))
+        .collect()
+}
+
+/// Discover clients in a library directory by scanning for subdirectories
+/// containing `.lily` files.
+#[tauri::command]
+pub fn list_clients_in_library(library_dir: String) -> Result<Vec<ClientSummary>, String> {
+    let path = Path::new(&library_dir);
+    if !path.is_dir() {
+        return Err(format!("Not a directory: {}", library_dir));
+    }
+
+    let entries =
+        fs::read_dir(path).map_err(|e| format!("Failed to read directory: {}", e))?;
+
+    let mut summaries = Vec::new();
+    for entry in entries.flatten() {
+        let entry_path = entry.path();
+        if !entry_path.is_dir() {
+            continue;
+        }
+        let dir_str = entry_path.to_string_lossy().to_string();
+        // Check if this subdirectory has a .lily file
+        if let Ok(lily_files) = find_lily_files(&dir_str) {
+            if !lily_files.is_empty() {
+                if let Some(summary) = summarize_client(&dir_str) {
+                    summaries.push(summary);
+                }
+            }
+        }
+    }
+    summaries.sort_by(|a, b| a.client_name.cmp(&b.client_name));
+    Ok(summaries)
+}
+
+// ─── Export / Import ─────────────────────────────────────────────────────
 
 /// Import client data from a JSON file, merging into the existing .lily file.
 /// Variables, contacts, and contact bindings from the import are merged (import wins on conflict).

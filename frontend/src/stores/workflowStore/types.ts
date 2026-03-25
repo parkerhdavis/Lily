@@ -34,6 +34,7 @@ export interface WorkflowState {
 	goToHub: () => void;
 	goToSettings: () => void;
 	goToPipeline: () => void;
+	goToClients: () => void;
 	goToQuestionnaireEditor: () => void;
 	reset: () => void;
 
