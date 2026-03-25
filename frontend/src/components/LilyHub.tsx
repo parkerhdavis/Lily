@@ -173,7 +173,7 @@ export default function LilyHub() {
 						Lily
 					</h1>
 					<p className="text-xs text-base-content/40">
-						Legal Drafting and Client Management Toolset
+						Legal Drafting and Client Management
 						— Developed by{" "}
 						<a
 							href="https://github.com/parkerhdavis"
