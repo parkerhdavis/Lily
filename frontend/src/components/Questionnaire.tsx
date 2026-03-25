@@ -330,22 +330,20 @@ export default function Questionnaire() {
 				title={`${folderName} \u2014 Questionnaire`}
 				onBack={returnToHub}
 			>
-				<span className="text-sm text-base-content/60">
-					{stats.filled} / {stats.total} fields filled
-				</span>
-				<div className="text-xs w-28 text-right">
+				<span className="text-sm text-base-content/60 flex items-center gap-2 whitespace-nowrap">
 					{saveStatus === "saving" && (
-						<span className="text-warning flex items-center justify-end gap-1">
+						<span className="text-warning flex items-center gap-1 text-xs">
 							<span className="loading loading-spinner loading-xs" />
 							Saving...
 						</span>
 					)}
 					{saveStatus === "saved" && (
-						<span className="text-success">
+						<span className="text-success text-xs">
 							All changes saved
 						</span>
 					)}
-				</div>
+					{stats.filled} / {stats.total} fields filled
+				</span>
 			</PageHeader>
 
 			{/* Tab bar — sticky below header */}

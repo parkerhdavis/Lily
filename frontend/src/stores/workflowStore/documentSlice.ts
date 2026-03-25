@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { LilyFile, VariableInfo, VariableSchema } from "@/types";
 import { useUndoStore } from "@/stores/undoStore";
 import { extractFilename } from "@/utils/path";
-import { pushNav, toastError, toastSuccess } from "./helpers";
+import { mergeStoredVariables, pushNav, toastError, toastSuccess } from "./helpers";
 import type { WorkflowSlice } from "./types";
 
 export const createDocumentSlice: WorkflowSlice = (set, get) => ({
@@ -132,17 +132,9 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				docxPath: docPath,
 			});
 
-			if (variables.length === 0) {
-				const storedNames =
-					lilyFile?.documents[filename]?.variable_names ?? [];
-				if (storedNames.length > 0) {
-					variables = storedNames.map((name) => ({
-						display_name: name,
-						variants: [name],
-						is_conditional: false,
-					}));
-				}
-			}
+			// Merge with stored names to restore nested variables inside
+			// false conditionals, preserving document order and contact-role variants.
+			variables = mergeStoredVariables(variables, filename, lilyFile);
 
 			const conditionalSet = new Set(
 				lilyFile?.conditional_variables ?? [],

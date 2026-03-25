@@ -693,12 +693,13 @@ export default function VariableEditor() {
 										handleVariableChange(varName, value);
 									}}
 									onApplyToQuestionnaire={async () => {
-										// Write current override values back to questionnaire (client-level variables)
+										// Capture override values before any mutations
+										const overrideValues: Record<string, string> = {};
 										for (const p of group.properties) {
-											const val = variableValues[p.displayName] ?? "";
-											await saveClientVariable(p.displayName, val);
+											overrideValues[p.displayName] = variableValues[p.displayName] ?? "";
 										}
-										// Find or set the contact binding at the questionnaire level
+										// Set the contact binding first (triggers resolve_contact_variables,
+										// which overwrites client vars with contact properties)
 										const overrideData = roleOverrides[group.role];
 										if (overrideData?.contact_id) {
 											await setContactBinding(group.role, {
@@ -709,6 +710,10 @@ export default function VariableEditor() {
 														group.properties.map((p) => [p.displayName, p.property]),
 													),
 											});
+										}
+										// Now write override values — these win over resolved contact values
+										for (const p of group.properties) {
+											await saveClientVariable(p.displayName, overrideValues[p.displayName]);
 										}
 										// Remove the document override (re-link)
 										await setRoleOverride(group.role, null);
