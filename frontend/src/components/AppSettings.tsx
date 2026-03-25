@@ -24,7 +24,7 @@ export default function AppSettings() {
 	const pickTemplatesDir = async () => {
 		const selected = await open({
 			directory: true,
-			title: "Select Templates Folder",
+			title: "Select Template Library Path",
 			defaultPath: settings.templates_dir ?? undefined,
 		});
 		if (selected) {
@@ -35,7 +35,7 @@ export default function AppSettings() {
 	const addClientLibraryDir = async () => {
 		const selected = await open({
 			directory: true,
-			title: "Select Client Library Folder",
+			title: "Select Client Library Path",
 		});
 		if (selected) {
 			const dirs = settings.client_library_dirs ?? [];
@@ -55,7 +55,7 @@ export default function AppSettings() {
 	const pickQuestionnairesDir = async () => {
 		const selected = await open({
 			directory: true,
-			title: "Select Questionnaires Folder",
+			title: "Select Questionnaire Library Path",
 			defaultPath: settings.questionnaires_dir ?? undefined,
 		});
 		if (selected) {
@@ -235,9 +235,6 @@ export default function AppSettings() {
 								<p className="text-sm font-medium mb-1">
 									Client Libraries
 								</p>
-								<p className="text-xs text-base-content/40 mb-2">
-									Folders containing client subfolders
-								</p>
 								{(settings.client_library_dirs ?? [])
 									.length > 0 ? (
 									<div className="space-y-1.5 mb-2">
@@ -286,13 +283,13 @@ export default function AppSettings() {
 									className="btn btn-outline btn-sm"
 									onClick={addClientLibraryDir}
 								>
-									Add Client Library
+									Add Client Library Path
 								</button>
 							</div>
 							<div className="border-t border-base-300 my-3" />
 							<div>
 								<p className="text-sm font-medium mb-1">
-									Templates Folder
+									Template Libraries
 								</p>
 								<p className="text-xs text-base-content/40 font-mono break-all">
 									{settings.templates_dir ?? "Not configured"}
@@ -303,13 +300,12 @@ export default function AppSettings() {
 								className="btn btn-outline btn-sm"
 								onClick={pickTemplatesDir}
 							>
-								{settings.templates_dir ? "Change" : "Set"}{" "}
-								Templates Folder
+								Add Template Library Path
 							</button>
 							<div className="border-t border-base-300 my-3" />
 							<div>
 								<p className="text-sm font-medium mb-1">
-									Questionnaires Folder
+									Questionnaire Libraries
 								</p>
 								<p className="text-xs text-base-content/40 font-mono break-all">
 									{settings.questionnaires_dir ??
@@ -321,10 +317,7 @@ export default function AppSettings() {
 								className="btn btn-outline btn-sm"
 								onClick={pickQuestionnairesDir}
 							>
-								{settings.questionnaires_dir
-									? "Change"
-									: "Set"}{" "}
-								Questionnaires Folder
+								Add Questionnaire Library Path
 							</button>
 						</div>
 					</section>
@@ -345,7 +338,7 @@ export default function AppSettings() {
 									</p>
 									<p className="text-xs text-base-content/40">
 										Legal Drafting and Client
-										Management Toolset — Developed
+										Management — Developed
 										by{" "}
 										<a
 											href="https://github.com/parkerhdavis"

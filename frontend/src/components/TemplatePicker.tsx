@@ -380,7 +380,7 @@ export default function TemplatePicker() {
 	if (!settings.templates_dir) {
 		return (
 			<div className="flex flex-col items-center justify-center h-full gap-6 p-8">
-				<h2 className="text-2xl font-bold">Set Templates Folder</h2>
+				<h2 className="text-2xl font-bold">Set Template Library Path</h2>
 				<p className="text-base-content/70 text-center max-w-md">
 					Before selecting a template, you need to choose the folder where
 					your template documents are stored.
