@@ -3,7 +3,7 @@ import type { LilyFile, VariableInfo } from "@/types";
 import { useUndoStore } from "@/stores/undoStore";
 import { useToastStore } from "@/stores/toastStore";
 import { extractFilename } from "@/utils/path";
-import { pushNav } from "./helpers";
+import { mergeStoredVariables, pushNav } from "./helpers";
 import type { WorkflowSlice } from "./types";
 
 export const createProjectSlice: WorkflowSlice = (set, get) => ({
@@ -153,6 +153,14 @@ export const createProjectSlice: WorkflowSlice = (set, get) => ({
 					{ docxPath: entry.documentPath },
 				);
 				const { lilyFile } = get();
+
+				// Merge with stored names to restore nested variables inside
+				// false conditionals, preserving document order and contact-role variants.
+				const filename = entry.documentPath
+					? extractFilename(entry.documentPath)
+					: "";
+				variables = mergeStoredVariables(variables, filename, lilyFile);
+
 				const conditionalSet = new Set(
 					lilyFile?.conditional_variables ?? [],
 				);
@@ -162,20 +170,6 @@ export const createProjectSlice: WorkflowSlice = (set, get) => ({
 							? { ...v, is_conditional: true }
 							: v,
 					);
-				}
-				if (variables.length === 0) {
-					const filename = entry.documentPath
-						? extractFilename(entry.documentPath)
-						: "";
-					const storedNames =
-						lilyFile?.documents[filename]?.variable_names ?? [];
-					if (storedNames.length > 0) {
-						variables = storedNames.map((name) => ({
-							display_name: name,
-							variants: [name],
-							is_conditional: conditionalSet.has(name),
-						}));
-					}
 				}
 				const savedVars = lilyFile?.variables ?? {};
 				const variableValues: Record<string, string> = {};

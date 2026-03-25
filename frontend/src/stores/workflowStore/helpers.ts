@@ -1,4 +1,13 @@
-import type { WorkflowStep, PersistedNavEntry } from "@/types";
+import type {
+	WorkflowStep,
+	PersistedNavEntry,
+	VariableInfo,
+	LilyFile,
+} from "@/types";
+import {
+	CONTACT_PROPERTIES,
+	PROPERTY_LABELS,
+} from "@/components/VariableEditor/variableHelpers";
 import { useNavigationStore } from "@/stores/navigationStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
@@ -107,4 +116,101 @@ function debouncedPersistNavEntry(entry: Parameters<typeof persistNavEntry>[0]) 
 		persistTimer = null;
 		persistNavEntry(entry);
 	}, 500);
+}
+
+/**
+ * Merge extracted variables with stored variable names from the .lily file.
+ *
+ * Handles two problems that arise when a conditional was saved as false and
+ * its true-branch contained nested variables:
+ *   1. The nested variables are missing from `extract_variables` output
+ *      because their placeholders were replaced by a zero-width bookmark.
+ *   2. Even when re-added, they need correct contact-role dot-notation
+ *      variants so the UI recognises them as contact-role fields.
+ *
+ * Returns a merged list in `storedNames` order (original document order),
+ * using the richer extracted VariableInfo where available and reconstructing
+ * entries for any that are missing.
+ */
+export function mergeStoredVariables(
+	extracted: VariableInfo[],
+	filename: string,
+	lilyFile: LilyFile | null,
+): VariableInfo[] {
+	const storedNames =
+		lilyFile?.documents[filename]?.variable_names ?? [];
+	if (storedNames.length === 0) return extracted;
+
+	// Build reverse lookup: display_name → dot-notation variant from contact bindings
+	const bindingLookup: Record<string, string> = {};
+	for (const [role, binding] of Object.entries(
+		lilyFile?.contact_bindings ?? {},
+	)) {
+		for (const [displayName, property] of Object.entries(
+			binding.variable_mappings,
+		)) {
+			bindingLookup[displayName] = `${role}.${property}`;
+		}
+	}
+
+	// Also scan conditional_definitions for nested {Role.property} references.
+	// This covers the case where no contact binding exists yet (no contact
+	// assigned), but the template still uses dot-notation inside a conditional.
+	const nestedDotLookup: Record<string, string> = {};
+	for (const defs of Object.values(
+		lilyFile?.conditional_definitions ?? {},
+	)) {
+		for (const def of defs) {
+			for (const m of def.matchAll(/\{([^{}]+)\}/g)) {
+				const inner = m[1].trim();
+				if (inner.includes("??")) continue;
+				const dotIdx = inner.lastIndexOf(".");
+				if (dotIdx <= 0) continue;
+				const role = inner.substring(0, dotIdx).trim();
+				const property = inner
+					.substring(dotIdx + 1)
+					.trim()
+					.toLowerCase();
+				if (!CONTACT_PROPERTIES.has(property)) continue;
+				const label = PROPERTY_LABELS[property] ?? property;
+				nestedDotLookup[`${role} ${label}`] = inner;
+			}
+		}
+	}
+
+	// Index extracted variables by display name
+	const extractedMap = new Map<string, VariableInfo>();
+	for (const v of extracted) {
+		extractedMap.set(v.display_name, v);
+	}
+
+	// Rebuild in storedNames order, supplementing missing entries
+	const merged: VariableInfo[] = [];
+	const seen = new Set<string>();
+	for (const name of storedNames) {
+		seen.add(name);
+		const existing = extractedMap.get(name);
+		if (existing) {
+			merged.push(existing);
+		} else {
+			// Reconstruct dot-notation variant from bindings or conditional defs
+			const dotVariant =
+				bindingLookup[name] ?? nestedDotLookup[name];
+			const variants = dotVariant ? [dotVariant] : [name];
+			merged.push({
+				display_name: name,
+				variants,
+				is_conditional: false,
+			});
+		}
+	}
+
+	// Append any extracted variables not in storedNames (e.g. manually added)
+	for (const v of extracted) {
+		if (!seen.has(v.display_name)) {
+			merged.push(v);
+		}
+	}
+
+	return merged;
 }
