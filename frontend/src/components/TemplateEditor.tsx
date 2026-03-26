@@ -4,6 +4,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useToastStore } from "@/stores/toastStore";
 import type { VariableInfo, VariableType, VariableSchema, TextOccurrence } from "@/types";
 import { extractFilename } from "@/utils/path";
 
@@ -204,12 +205,16 @@ export default function TemplateEditor() {
 	// Handle replace all
 	const handleReplaceAll = async () => {
 		if (!selectedText || !variableName.trim()) return;
-		await insertTemplateVariable(selectedText, variableName.trim(), undefined, true);
-		await saveToSchema(variableName.trim(), variableType, variableRequired);
-		setSelectedText(null);
-		setVariableName("");
-		setVariableType("text");
-		setVariableRequired(false);
+		try {
+			await insertTemplateVariable(selectedText, variableName.trim(), undefined, true);
+			await saveToSchema(variableName.trim(), variableType, variableRequired);
+			setSelectedText(null);
+			setVariableName("");
+			setVariableType("text");
+			setVariableRequired(false);
+		} catch (err) {
+			useToastStore.getState().addToast("error", `Replace all failed: ${err}`);
+		}
 	};
 
 	// Handle disambiguation pick

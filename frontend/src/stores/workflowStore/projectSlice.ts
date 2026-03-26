@@ -13,6 +13,9 @@ export const createProjectSlice: WorkflowSlice = (set, get) => ({
 
 		invoke<LilyFile>("load_lily_file_cmd", { workingDir: dir })
 			.then((lilyFile) => {
+				// Guard against race: if the user switched dirs while loading,
+				// discard this stale result.
+				if (get().workingDir !== dir) return;
 				set({ lilyFile });
 				for (const w of lilyFile.warnings ?? []) {
 					useToastStore.getState().addToast("warning", w);
@@ -178,6 +181,19 @@ export const createProjectSlice: WorkflowSlice = (set, get) => ({
 					variableValues[v.display_name] =
 						savedVars[v.display_name] ?? defaultVal;
 				}
+
+				// Apply per-document role overrides
+				const docMeta = lilyFile?.documents[filename];
+				if (docMeta?.role_overrides) {
+					for (const ro of Object.values(docMeta.role_overrides)) {
+						for (const [varName, value] of Object.entries(
+							ro.values,
+						)) {
+							variableValues[varName] = value;
+						}
+					}
+				}
+
 				set({ documentHtml, variables, variableValues, dirty: false });
 			} catch (err) {
 				console.error("Failed to reload document:", err);

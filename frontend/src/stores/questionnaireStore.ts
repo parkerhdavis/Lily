@@ -82,26 +82,38 @@ export const useQuestionnaireStore = create<QuestionnaireState>((set, get) => ({
 	},
 
 	createQuestionnaire: async (name) => {
-		const def = await invoke<QuestionnaireDefFile>(
-			"create_questionnaire",
-			{ name },
-		);
-		// Refresh index
-		const index =
-			await invoke<QuestionnaireIndex>("load_questionnaire_index");
-		set({ index, currentDef: def });
-		return def;
+		try {
+			const def = await invoke<QuestionnaireDefFile>(
+				"create_questionnaire",
+				{ name },
+			);
+			// Refresh index
+			const index =
+				await invoke<QuestionnaireIndex>("load_questionnaire_index");
+			set({ index, currentDef: def });
+			return def;
+		} catch (err) {
+			set({ error: String(err) });
+			useToastStore.getState().addToast("error", "Failed to create questionnaire");
+			throw err;
+		}
 	},
 
 	duplicateQuestionnaire: async (id, name) => {
-		const def = await invoke<QuestionnaireDefFile>(
-			"duplicate_questionnaire",
-			{ id, name },
-		);
-		const index =
-			await invoke<QuestionnaireIndex>("load_questionnaire_index");
-		set({ index, currentDef: def });
-		return def;
+		try {
+			const def = await invoke<QuestionnaireDefFile>(
+				"duplicate_questionnaire",
+				{ id, name },
+			);
+			const index =
+				await invoke<QuestionnaireIndex>("load_questionnaire_index");
+			set({ index, currentDef: def });
+			return def;
+		} catch (err) {
+			set({ error: String(err) });
+			useToastStore.getState().addToast("error", "Failed to duplicate questionnaire");
+			throw err;
+		}
 	},
 
 	deleteQuestionnaire: async (id) => {

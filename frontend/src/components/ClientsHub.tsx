@@ -53,11 +53,11 @@ export default function ClientsHub() {
 	const [loading, setLoading] = useState(false);
 	const [search, setSearch] = useState("");
 
-	const libraryDirs = settings.client_library_dirs ?? [];
+	const libraryDirs = settings.client_library_dirs;
 
 	// Load clients from library dirs
 	const loadClients = useCallback(async () => {
-		if (libraryDirs.length === 0) {
+		if (!libraryDirs || libraryDirs.length === 0) {
 			setClients([]);
 			return;
 		}
