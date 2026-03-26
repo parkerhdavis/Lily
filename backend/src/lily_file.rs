@@ -1064,6 +1064,83 @@ pub fn list_clients_in_library(library_dir: String) -> Result<Vec<ClientSummary>
     Ok(summaries)
 }
 
+// ─── Client library folder tree ──────────────────────────────────────────
+
+/// A node in the client library folder tree.
+/// Every subdirectory is included (even those without .lily files).
+#[derive(Debug, Serialize)]
+pub struct ClientTreeNode {
+    pub name: String,
+    pub path: String,
+    pub is_client: bool,
+    pub client_summary: Option<ClientSummary>,
+    pub children: Vec<ClientTreeNode>,
+}
+
+/// Recursively build a tree of all subdirectories under the given path.
+fn build_library_tree(dir: &Path) -> Vec<ClientTreeNode> {
+    let mut nodes = Vec::new();
+
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return nodes,
+    };
+
+    for entry in entries.flatten() {
+        let entry_path = entry.path();
+        if !entry_path.is_dir() {
+            continue;
+        }
+
+        let name = entry_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        // Skip hidden directories
+        if name.starts_with('.') {
+            continue;
+        }
+
+        let dir_str = entry_path.to_string_lossy().to_string();
+        let has_lily = find_lily_files(&dir_str)
+            .map(|files| !files.is_empty())
+            .unwrap_or(false);
+
+        let summary = if has_lily {
+            summarize_client(&dir_str)
+        } else {
+            None
+        };
+
+        let children = build_library_tree(&entry_path);
+
+        nodes.push(ClientTreeNode {
+            name,
+            path: dir_str,
+            is_client: has_lily,
+            client_summary: summary,
+            children,
+        });
+    }
+
+    // Sort: folders with children first, then alphabetical
+    nodes.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+    nodes
+}
+
+/// List all subdirectories in a library directory as a tree structure.
+/// Includes all folders, even those without .lily files.
+#[tauri::command]
+pub fn list_library_tree(library_dir: String) -> Result<Vec<ClientTreeNode>, String> {
+    let path = Path::new(&library_dir);
+    if !path.is_dir() {
+        return Err(format!("Not a directory: {}", library_dir));
+    }
+    Ok(build_library_tree(path))
+}
+
 // ─── Export / Import ─────────────────────────────────────────────────────
 
 /// Import client data from a JSON file, merging into the existing .lily file.

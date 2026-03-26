@@ -53,7 +53,7 @@ export default function ClientHub() {
 		openTemplateFile,
 		loadTemplates,
 		reloadLilyFile,
-		reset,
+		goToClients,
 	} = useWorkflowStore();
 	const { settings } = useSettingsStore();
 	const { loadActiveQuestionnaire } = useQuestionnaireStore();
@@ -90,7 +90,7 @@ export default function ClientHub() {
 		})();
 	}, [lilyFile?.questionnaire_id, loadActiveQuestionnaire]);
 
-	// Build client documents list from .lily file, sorted by modification date
+	// Build client documents list from .lily file, sorted alphabetically A-Z
 	const allDocs = useMemo(() => {
 		if (!lilyFile?.documents) return [];
 		return Object.entries(lilyFile.documents)
@@ -99,11 +99,7 @@ export default function ClientHub() {
 				templateRelPath: meta.template_rel_path,
 				modifiedAt: meta.modified_at,
 			}))
-			.sort(
-				(a, b) =>
-					new Date(b.modifiedAt).getTime() -
-					new Date(a.modifiedAt).getTime(),
-			);
+			.sort((a, b) => a.filename.localeCompare(b.filename));
 	}, [lilyFile]);
 
 	// Compute questionnaire completion stats from the definition + variables
@@ -205,7 +201,7 @@ export default function ClientHub() {
 			<PageHeader
 				title={folderName}
 				subtitle={workingDir ?? undefined}
-				onBack={reset}
+				onBack={goToClients}
 			>
 				<div className="flex gap-2">
 					<div className="dropdown dropdown-end">

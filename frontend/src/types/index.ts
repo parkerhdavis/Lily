@@ -28,6 +28,14 @@ export interface RequiredDocumentSummary {
 	document_filename: string | null;
 }
 
+export interface ClientTreeNode {
+	name: string;
+	path: string;
+	is_client: boolean;
+	client_summary: ClientSummary | null;
+	children: ClientTreeNode[];
+}
+
 export interface PersistedNavEntry {
 	step: string;
 	working_dir: string | null;

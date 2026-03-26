@@ -1,6 +1,6 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
@@ -354,11 +354,50 @@ pub fn replace_variables(
     conditional_definitions: HashMap<String, Vec<String>>,
 ) -> Result<(), String> {
     info!(%docx_path, var_count = variables.len(), "Replacing variables in document");
-    // First, extract the variable info so we know all case variants
-    let raw_xml = read_document_xml(&docx_path)?;
-    let xml_content = normalize_split_variables(&raw_xml);
-    let text = extract_text_from_xml(&xml_content);
-    let var_infos = find_variables(&text);
+
+    let file_bytes = fs::read(&docx_path).map_err(|e| format!("Failed to read docx: {}", e))?;
+
+    let cursor = Cursor::new(&file_bytes);
+    let mut archive =
+        ZipArchive::new(cursor).map_err(|e| format!("Failed to open docx as zip: {}", e))?;
+
+    // Read all entries from the archive
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("Failed to read zip entry: {}", e))?;
+        let name = entry.name().to_string();
+        let mut buf = Vec::new();
+        entry
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("Failed to read entry content: {}", e))?;
+        entries.push((name, buf));
+    }
+
+    // Extract variables from ALL XML parts (document, headers, footers)
+    // so the placeholder map covers every variable in the file.
+    // Uses find_all_variables (the same function that extract_variables uses)
+    // to ensure display names are consistent with what the frontend stores
+    // — in particular, contact-role dot notation like {Role.property} is
+    // correctly flattened to "Role Property" display names.
+    let mut var_infos: Vec<VariableInfo> = Vec::new();
+    let mut seen_keys: HashSet<String> = HashSet::new();
+    for (name, content) in &entries {
+        if name == "word/document.xml"
+            || name.starts_with("word/header")
+            || name.starts_with("word/footer")
+        {
+            let xml_str = String::from_utf8_lossy(content);
+            let normalized = normalize_split_variables(&xml_str);
+            for info in find_all_variables(&normalized) {
+                let key = info.display_name.to_lowercase();
+                if seen_keys.insert(key) {
+                    var_infos.push(info);
+                }
+            }
+        }
+    }
 
     // Build a map from each original-cased variant to (display_name, cased_value)
     // for fresh {Placeholder} replacement
@@ -409,26 +448,6 @@ pub fn replace_variables(
     // Also pass the full variables map so conditionals with nested
     // {Var} references can be resolved during SDT/bookmark updates.
     let all_variables = variables.clone();
-
-    let file_bytes = fs::read(&docx_path).map_err(|e| format!("Failed to read docx: {}", e))?;
-
-    let cursor = Cursor::new(&file_bytes);
-    let mut archive =
-        ZipArchive::new(cursor).map_err(|e| format!("Failed to open docx as zip: {}", e))?;
-
-    // Read all entries from the archive
-    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
-    for i in 0..archive.len() {
-        let mut entry = archive
-            .by_index(i)
-            .map_err(|e| format!("Failed to read zip entry: {}", e))?;
-        let name = entry.name().to_string();
-        let mut buf = Vec::new();
-        entry
-            .read_to_end(&mut buf)
-            .map_err(|e| format!("Failed to read entry content: {}", e))?;
-        entries.push((name, buf));
-    }
 
     // If the output file is .docx, ensure [Content_Types].xml declares the
     // main document part with the document (not template) content type.
@@ -1908,43 +1927,9 @@ fn twips_to_pt(twips: i32) -> f64 {
     twips as f64 / 20.0
 }
 
-/// Extract plain text runs from Word XML.
-/// Word often splits text across multiple <w:r>/<w:t> elements even within
-/// a single logical string. We concatenate all <w:t> text within each
-/// paragraph, then join paragraphs with newlines.
-fn extract_text_from_xml(xml: &str) -> String {
-    let mut result = String::new();
-    let mut in_t = false;
-
-    let reader = xml::reader::EventReader::from_str(xml);
-    for event in reader {
-        match event {
-            Ok(xml::reader::XmlEvent::StartElement { name, .. }) => {
-                if name.local_name == "t" {
-                    in_t = true;
-                } else if name.local_name == "p" && !result.is_empty() {
-                    result.push('\n');
-                }
-            }
-            Ok(xml::reader::XmlEvent::Characters(text)) => {
-                if in_t {
-                    result.push_str(&text);
-                }
-            }
-            Ok(xml::reader::XmlEvent::EndElement { name, .. }) => {
-                if name.local_name == "t" {
-                    in_t = false;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    result
-}
-
 /// Find all {Variable Name} patterns in text, grouping by case-insensitive key.
 /// Returns a list of VariableInfo ordered by first appearance in the document.
+#[cfg(test)]
 fn find_variables(text: &str) -> Vec<VariableInfo> {
     // Preserves insertion order: each entry is (lowercased key, distinct original casings)
     let mut keys_in_order: Vec<String> = Vec::new();
@@ -2402,9 +2387,10 @@ fn replace_placeholders_with_sdt(
 
     // We need to find <w:r>...</w:r> runs that contain {Variable} text and
     // wrap them in SDTs. We use regex to find runs containing placeholders.
-    let run_re = Regex::new(r#"<w:r\b[^>]*>.*?</w:r>"#).expect("invalid regex");
+    // (?s) enables DOTALL so `.` matches newlines in case the XML is pretty-printed.
+    let run_re = Regex::new(r#"(?s)<w:r\b[^>]*>.*?</w:r>"#).expect("invalid regex");
     let t_content_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
-    let rpr_re = Regex::new(r#"<w:rPr>.*?</w:rPr>"#).expect("invalid regex");
+    let rpr_re = Regex::new(r#"(?s)<w:rPr>.*?</w:rPr>"#).expect("invalid regex");
 
     let mut result = String::new();
     let mut last_end = 0;
@@ -2564,12 +2550,13 @@ fn update_sdt_and_bookmark_values(
 
     // Single-pass replacement: match both SDTs and bookmarks in document
     // order using a combined regex so occurrence counters stay correct.
+    // (?s) enables DOTALL so `.` matches newlines in case the XML is pretty-printed.
     let combined_re = Regex::new(
-        r#"(?:<w:sdt>(.*?)</w:sdt>|<w:bookmarkStart\s+w:id="\d+"\s+w:name="lily:([^"]*)"\s*/><w:bookmarkEnd\s+w:id="\d+"\s*/>)"#
+        r#"(?s)(?:<w:sdt>(.*?)</w:sdt>|<w:bookmarkStart\s+w:id="\d+"\s+w:name="lily:([^"]*)"\s*/><w:bookmarkEnd\s+w:id="\d+"\s*/>)"#
     ).expect("invalid regex");
     let tag_re = Regex::new(r#"<w:tag\s+w:val="lily:([^"]*)"\s*/>"#).expect("invalid regex");
     let t_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
-    let rpr_re = Regex::new(r#"<w:rPr>(.*?)</w:rPr>"#).expect("invalid regex");
+    let rpr_re = Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#).expect("invalid regex");
 
     let mut result = String::new();
     let mut last_end = 0;
@@ -3684,6 +3671,55 @@ mod tests {
         );
         // The next_id counter should have been incremented
         assert_eq!(next_bid, 2);
+    }
+
+    #[test]
+    fn test_contact_role_variable_replacement() {
+        // Regression test: contact-role variables like {Role.property} must be
+        // found by find_all_variables (used in the save path) with a flattened
+        // display name that matches the frontend key, so the value lookup succeeds.
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{Healthcare POA Agent.full_name}</w:t></w:r></w:p></w:body></w:document>"#;
+        let vars = find_all_variables(xml);
+        assert_eq!(vars.len(), 1, "Expected 1 variable, got: {:?}", vars);
+        assert_eq!(vars[0].display_name, "Healthcare POA Agent Full Name");
+        assert_eq!(vars[0].variants, vec!["Healthcare POA Agent.full_name"]);
+
+        // The variant must match the raw template text so placeholder replacement works
+        let mut replacements = HashMap::new();
+        replacements.insert(
+            "Healthcare POA Agent.full_name".to_string(),
+            ("Healthcare POA Agent Full Name".to_string(), "John Doe".to_string()),
+        );
+        let mut next_id = 1u64;
+        let result = replace_placeholders_with_sdt(xml, &replacements, &mut next_id);
+        assert!(
+            result.contains("John Doe"),
+            "Expected contact-role variable to be replaced, got: {}",
+            result
+        );
+        assert!(
+            result.contains("lily:Healthcare POA Agent Full Name"),
+            "Expected flattened display name in SDT tag, got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_multiline_xml_replacement() {
+        // Regression test: ensure regex handles newlines within <w:r> elements
+        let xml = "<w:r>\n  <w:rPr>\n    <w:b/>\n  </w:rPr>\n  <w:t>{Client Name}</w:t>\n</w:r>";
+        let mut replacements = HashMap::new();
+        replacements.insert(
+            "Client Name".to_string(),
+            ("Client Name".to_string(), "Jane Doe".to_string()),
+        );
+        let mut next_id = 1u64;
+        let result = replace_placeholders_with_sdt(xml, &replacements, &mut next_id);
+        assert!(
+            result.contains("Jane Doe"),
+            "Expected replacement in multiline XML, got: {}",
+            result
+        );
     }
 
     #[test]

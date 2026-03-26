@@ -680,9 +680,9 @@ function ContactEditForm({
 		label: string;
 		span: 6 | 3 | 2;
 	}[] = [
+		{ key: "full_name", label: "Full Legal Name", span: 6 },
 		{ key: "first_name", label: "First Name", span: 3 },
 		{ key: "last_name", label: "Last Name", span: 3 },
-		{ key: "full_name", label: "Full Legal Name", span: 6 },
 		{ key: "relationship", label: "Relationship", span: 6 },
 		{ key: "phone", label: "Phone", span: 3 },
 		{ key: "email", label: "Email", span: 3 },
@@ -707,7 +707,8 @@ function ContactEditForm({
 						}
 					>
 						<label className="label pb-0.5">
-							<span className="label-text text-xs">
+							<span className="label-text text-xs flex items-center gap-1">
+								<StatusDot filled={Boolean(form[key as keyof typeof form].trim())} />
 								{label}
 							</span>
 						</label>
