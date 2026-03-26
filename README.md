@@ -3,7 +3,7 @@
 
 Legal document drafting and client info management toolset, created custom for an estate-planning law firm.
 
-Lily streamlines the process of gathering client information and using it to populate initial drafts of client documents derived from Word documents (.docx) templated with a custom syntax, which legal professionals can then polish and supervise to execution. Users select a working directory (typically a client folder), choose a template, and fill in variables; Lily handles copying, previewing, and saving the completed document, which can be edited like any normal Word document and re-opened at any time to adjust variables.
+Lily streamlines the process of gathering client information and using it to populate initial drafts of client documents derived from Word documents (.docx/.dotx) templated with a custom syntax, which legal professionals can then polish and supervise to execution. Users select a working directory (typically a client folder), choose a template, and fill in variables; Lily handles copying, previewing, and saving the completed document, which can be edited like any normal Word document and re-opened at any time to adjust variables.
 
 
 ![Screenshot from v0.3.0 dev build 2026-03-25](./.github/assets/lily_screenshot_hpoa.png)
@@ -24,12 +24,29 @@ Lily streamlines the process of gathering client information and using it to pop
 
 
 ## Workflow
-1. Select a working directory (client folder)
-2. Choose a template document from the configured templates folder
-3. A copy of the template is placed in the working directory
-4. Fill in template variables (e.g. `{Client First Name}`) via the sidebar form
-5. Preview updates live as variables are filled in
-6. Save and close—the completed .docx is ready for further editing in any word processor
+
+### Client Management
+- Configure one or more **client library directories** to browse all clients from the Clients Hub
+- Or open any folder directly — Lily creates a `.lily` project file to track client data
+- **Questionnaire-based intake** walks through structured sections (organized by tabs) to gather client info upfront
+- **Contacts** can be added and assigned to roles (e.g., "Healthcare POA Agent"); their properties auto-fill across documents via `{Role.property}` syntax
+
+### Document Drafting
+1. Choose a template (`.docx` / `.dotx`) from the configured templates folder
+2. A copy is placed in the client folder — the original is never modified
+3. Fill in variables via the sidebar form — the preview updates live
+4. Variables are **shared across all documents** for the same client — fill in `{Client Full Name}` once and it carries over everywhere
+
+### Variable Types
+- **Replacement** — `{Variable Name}` with case-aware substitution (ALL CAPS, Title Case, lowercase)
+- **Conditional** — `{Label ?? "true text" :: "false text"}` controlled by a toggle
+- **Contact-role** — `{Role.property}` auto-filled from assigned contacts
+
+### Save and Track
+- **Autosave** writes changes after a 2-second pause (or manual `Ctrl+S`)
+- Track documents through statuses: Not Started → Drafting → Reviewing → Complete → Executed
+- Create **dated versions** of documents to preserve history
+- The completed `.docx` is a standard Word file, ready for editing in any word processor
 
 
 ## Development
