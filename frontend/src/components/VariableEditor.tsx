@@ -532,7 +532,7 @@ export default function VariableEditor() {
 								<div
 									key={name}
 									data-var-entry={name}
-									className={`w-full rounded-lg border bg-base-100 shadow-md shadow-black/15 ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+									className={`w-full rounded-lg border bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 								>
 									{/* Name header */}
 									<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300 rounded-t-lg">
@@ -739,7 +739,7 @@ export default function VariableEditor() {
 							<div
 								key={name}
 								data-var-entry={name}
-								className={`w-full rounded-lg border bg-base-100 shadow-md shadow-black/15 ${selectedVariable === name ? "ring-2 ring-warning border-warning" : isMalformed ? "border-warning/50" : "border-base-300"}`}
+								className={`w-full rounded-lg border bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] ${selectedVariable === name ? "ring-2 ring-warning border-warning" : isMalformed ? "border-warning/50" : "border-base-300"}`}
 							>
 								{/* Name header */}
 								<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300 rounded-t-lg">

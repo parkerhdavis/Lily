@@ -270,7 +270,7 @@ function ClientsListTab({
 						</p>
 					</div>
 				) : (
-					<div className="rounded-xl border border-base-300 bg-base-100 shadow-sm divide-y divide-base-200 overflow-hidden">
+					<div className="rounded-xl border border-base-300 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] divide-y divide-base-200 overflow-hidden">
 						{clients.map((client) => (
 							<ClientRow
 								key={client.directory}
@@ -444,7 +444,7 @@ function ProgressTab({
 							No clients found.
 						</p>
 					) : (
-						<div className="rounded-xl border border-base-300 bg-base-100 shadow-sm divide-y divide-base-200 overflow-hidden">
+						<div className="rounded-xl border border-base-300 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] divide-y divide-base-200 overflow-hidden">
 							{clients.map((client) => (
 								<div
 									key={client.directory}

@@ -403,7 +403,7 @@ export default function Questionnaire() {
 						return (
 							<div
 								key={section.title}
-								className="card bg-base-100 border border-base-300 shadow-sm"
+								className="card bg-base-100 border border-base-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)]"
 							>
 								{/* Section header */}
 								<button
