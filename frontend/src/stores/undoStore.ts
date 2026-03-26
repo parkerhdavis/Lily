@@ -16,6 +16,8 @@ interface UndoState {
 	redoStack: UndoableAction[];
 	canUndo: boolean;
 	canRedo: boolean;
+	/** True while an undo or redo operation is in progress. */
+	busy: boolean;
 	/** Push a new undoable action. Clears the redo stack. */
 	push: (action: UndoableAction) => void;
 	/** Undo the most recent action. */
@@ -31,6 +33,7 @@ export const useUndoStore = create<UndoState>((set, get) => ({
 	redoStack: [],
 	canUndo: false,
 	canRedo: false,
+	busy: false,
 
 	push: (action) => {
 		const { undoStack } = get();
@@ -73,16 +76,18 @@ export const useUndoStore = create<UndoState>((set, get) => ({
 	},
 
 	undo: async () => {
-		const { undoStack, redoStack } = get();
-		if (undoStack.length === 0) return;
+		const { undoStack, redoStack, busy } = get();
+		if (undoStack.length === 0 || busy) return;
 
 		const action = undoStack[undoStack.length - 1];
 		const newUndo = undoStack.slice(0, -1);
 
+		set({ busy: true });
 		try {
 			await action.undo();
 		} catch (err) {
 			console.error("Undo failed:", err);
+			set({ busy: false });
 			return;
 		}
 
@@ -92,20 +97,23 @@ export const useUndoStore = create<UndoState>((set, get) => ({
 			redoStack: newRedo,
 			canUndo: newUndo.length > 0,
 			canRedo: true,
+			busy: false,
 		});
 	},
 
 	redo: async () => {
-		const { undoStack, redoStack } = get();
-		if (redoStack.length === 0) return;
+		const { undoStack, redoStack, busy } = get();
+		if (redoStack.length === 0 || busy) return;
 
 		const action = redoStack[redoStack.length - 1];
 		const newRedo = redoStack.slice(0, -1);
 
+		set({ busy: true });
 		try {
 			await action.redo();
 		} catch (err) {
 			console.error("Redo failed:", err);
+			set({ busy: false });
 			return;
 		}
 
@@ -115,6 +123,7 @@ export const useUndoStore = create<UndoState>((set, get) => ({
 			redoStack: newRedo,
 			canUndo: true,
 			canRedo: newRedo.length > 0,
+			busy: false,
 		});
 	},
 

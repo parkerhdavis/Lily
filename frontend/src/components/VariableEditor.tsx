@@ -528,6 +528,8 @@ export default function VariableEditor() {
 						if (varInfo.is_conditional) {
 							const isTrue =
 								variableValues[name] === "true";
+							const isFalse =
+								variableValues[name] === "false";
 							return (
 								<div
 									key={name}
@@ -601,7 +603,7 @@ export default function VariableEditor() {
 										<button
 											type="button"
 											className={`flex-1 text-xs font-semibold py-1.5 transition-colors ${
-												!isTrue
+												isFalse
 													? "bg-error text-error-content"
 													: "bg-base-200 text-base-content/40 hover:bg-base-300"
 											}`}

@@ -68,8 +68,10 @@ export const createNavigationSlice: WorkflowSlice = (set, get) => ({
 			variableValues: {},
 			templates: [],
 			templateRelPath: null,
+			templateSchema: null,
 			lilyFile: null,
 			dirty: false,
+			loading: false,
 			error: null,
 		});
 	},

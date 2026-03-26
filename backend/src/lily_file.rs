@@ -593,7 +593,10 @@ pub fn new_version_document(working_dir: String, filename: String) -> Result<Str
         .ok_or_else(|| format!("Document '{}' not found in .lily file", filename))?;
 
     // Build the new filename with today's date
-    let basename = filename.trim_end_matches(".docx").trim_end_matches(".DOCX");
+    let basename = Path::new(&filename)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| filename.clone());
     let date_str = Utc::now().format("%Y%m%d").to_string();
     let mut new_filename = format!("{}-{}.docx", basename, date_str);
 
@@ -911,7 +914,10 @@ fn detect_single_status(
         _ => return DocumentStatus::NotStarted,
     };
 
-    let basename = filename.trim_end_matches(".docx").trim_end_matches(".DOCX");
+    let basename = Path::new(&filename)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| filename.clone());
 
     // Check for EXECUTED PDF (case-insensitive "executed" in filename)
     if let Ok(entries) = fs::read_dir(dir) {

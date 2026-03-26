@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 use crate::lily_file::atomic_write;
-use tracing::info;
+use tracing::{info, warn};
 
 // ─── Data structures ─────────────────────────────────────────────────────────
 
@@ -94,12 +94,18 @@ fn require_questionnaires_dir() -> Result<PathBuf, String> {
 }
 
 /// Strip characters that are invalid in filenames on Windows/macOS/Linux.
-fn sanitize_filename(name: &str) -> String {
-	name.chars()
+/// Returns an error if the sanitized name is empty.
+fn sanitize_filename(name: &str) -> Result<String, String> {
+	let sanitized: String = name
+		.chars()
 		.filter(|c| !matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'))
 		.collect::<String>()
 		.trim()
-		.to_string()
+		.to_string();
+	if sanitized.is_empty() {
+		return Err("Name must contain at least one valid character".to_string());
+	}
+	Ok(sanitized)
 }
 
 /// Extract the display name from a .lily file path (filename stem).
@@ -186,7 +192,7 @@ fn write_questionnaire_file(path: &Path, def: &QuestionnaireDefFile) -> Result<(
 
 /// Build the target path for a questionnaire with the given name.
 fn questionnaire_file_path(dir: &Path, name: &str) -> PathBuf {
-	dir.join(format!("{}.lily", sanitize_filename(name)))
+	dir.join(format!("{}.lily", sanitize_filename(name).unwrap_or_else(|_| "Untitled".to_string())))
 }
 
 /// Check if a filename would conflict with an existing file (different UUID).
@@ -285,13 +291,15 @@ pub fn save_questionnaire(mut questionnaire: QuestionnaireDefFile) -> Result<(),
 	questionnaire.version += 1;
 	questionnaire.lily_type = "questionnaire".to_string();
 
-	// Handle rename if name changed
+	// Handle rename if name changed: write to new path first, then remove old file
 	let target_path = if questionnaire.name != old_name {
 		check_name_conflict(&dir, &questionnaire.name, &questionnaire.id)?;
 		let new_path = questionnaire_file_path(&dir, &questionnaire.name);
-		fs::rename(&old_path, &new_path)
-			.map_err(|e| format!("Failed to rename questionnaire file: {}", e))?;
-		new_path
+		write_questionnaire_file(&new_path, &questionnaire)?;
+		if let Err(e) = fs::remove_file(&old_path) {
+			warn!("Failed to remove old questionnaire file after rename: {}", e);
+		}
+		return Ok(());
 	} else {
 		old_path
 	};
@@ -317,7 +325,7 @@ pub fn create_questionnaire(name: String) -> Result<QuestionnaireDefFile, String
 	let q = QuestionnaireDefFile {
 		lily_type: "questionnaire".to_string(),
 		id: id.clone(),
-		name: sanitize_filename(&name),
+		name: sanitize_filename(&name)?,
 		version: 1,
 		tabs: vec![
 			TabDef {
@@ -360,7 +368,7 @@ pub fn duplicate_questionnaire(id: String, name: String) -> Result<Questionnaire
 	let q = QuestionnaireDefFile {
 		lily_type: "questionnaire".to_string(),
 		id: new_id,
-		name: sanitize_filename(&name),
+		name: sanitize_filename(&name)?,
 		version: 1,
 		tabs: source.tabs,
 		sections: source.sections,
@@ -498,7 +506,7 @@ pub fn migrate_questionnaires() -> Result<u32, String> {
 		}
 
 		// Determine target filename, handling conflicts
-		let sanitized = sanitize_filename(&name);
+		let sanitized = sanitize_filename(&name)?;
 		let mut target_name = sanitized.clone();
 		let mut suffix = 2;
 		while questionnaire_file_path(&target_dir, &target_name).exists() {

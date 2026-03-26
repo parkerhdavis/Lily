@@ -894,15 +894,23 @@ pub fn insert_template_variable(
             vec![matches[0]]
         };
 
-        // Replace in reverse order to preserve byte offsets
+        // Replace one match at a time, re-finding after each replacement
+        // because replacing text can shift paragraph indices and byte offsets.
         let mut modified = normalized;
-        let mut sorted = to_replace.clone();
-        sorted.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.cmp(&a.0)));
+        let replace_count = to_replace.len();
 
-        for (pi, offset) in sorted {
+        for _ in 0..replace_count {
+            let maps = build_paragraph_text_maps(&modified);
+            let current_matches = find_text_in_paragraphs(&maps, &search_text);
+            if current_matches.is_empty() {
+                break;
+            }
+            // Always replace the last remaining match to avoid invalidating
+            // earlier byte offsets (reverse order).
+            let (pi, offset) = current_matches[current_matches.len() - 1];
             modified = replace_text_in_xml(
                 &modified,
-                &build_paragraph_text_maps(&modified)[pi],
+                &maps[pi],
                 offset,
                 search_text.len(),
                 &replacement,
@@ -1002,14 +1010,21 @@ pub fn remove_template_variable(
             vec![matches[0]]
         };
 
+        // Replace one match at a time, re-finding after each replacement
+        // because replacing text can shift paragraph indices and byte offsets.
         let mut modified = normalized;
-        let mut sorted = to_replace.clone();
-        sorted.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.cmp(&a.0)));
+        let replace_count = to_replace.len();
 
-        for (pi, offset) in sorted {
+        for _ in 0..replace_count {
+            let maps = build_paragraph_text_maps(&modified);
+            let current_matches = find_text_in_paragraphs(&maps, &search_text);
+            if current_matches.is_empty() {
+                break;
+            }
+            let (pi, offset) = current_matches[current_matches.len() - 1];
             modified = replace_text_in_xml(
                 &modified,
-                &build_paragraph_text_maps(&modified)[pi],
+                &maps[pi],
                 offset,
                 search_text.len(),
                 &replacement_text,
@@ -2145,6 +2160,20 @@ fn normalize_quotes(s: &str) -> String {
         .replace(['\u{2018}', '\u{2019}'], "'")
 }
 
+/// Find the first unescaped double-quote in `s`.
+/// A quote preceded by a backslash (`\"`) is treated as escaped and skipped.
+fn find_unescaped_quote(s: &str) -> Option<usize> {
+    let mut chars = s.char_indices().peekable();
+    while let Some((i, ch)) = chars.next() {
+        if ch == '\\' {
+            chars.next(); // skip escaped character
+        } else if ch == '"' {
+            return Some(i);
+        }
+    }
+    None
+}
+
 /// Parse a conditional variable's raw content into (label, true_text, false_text).
 ///
 /// Expected syntax:
@@ -2170,17 +2199,22 @@ fn parse_conditional_variable(raw_content: &str) -> Option<(String, String, Stri
         return None;
     }
 
-    // Find the closing quote for the true-text
+    // Find the closing quote for the true-text (skip escaped quotes)
     let after_open = &rest[1..];
-    let close_idx = after_open.find('"')?;
-    let true_text = after_open[..close_idx].to_string();
+    let close_idx = find_unescaped_quote(after_open)?;
+    let true_text = after_open[..close_idx].replace("\\\"", "\"");
 
     // After the closing quote, look for ::
     let remainder = after_open[close_idx + 1..].trim();
     let false_text = if let Some(after_sep) = remainder.strip_prefix("::") {
         let after_sep = after_sep.trim();
-        if after_sep.starts_with('"') && after_sep.ends_with('"') {
-            after_sep[1..after_sep.len() - 1].to_string()
+        if after_sep.starts_with('"') {
+            let inner = &after_sep[1..];
+            if let Some(end) = find_unescaped_quote(inner) {
+                inner[..end].replace("\\\"", "\"")
+            } else {
+                String::new()
+            }
         } else {
             String::new()
         }

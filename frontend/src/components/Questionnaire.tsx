@@ -182,7 +182,7 @@ export default function Questionnaire() {
 	// Sections for the active tab
 	const tabSections = useMemo(
 		() => questionnaireDef.filter((s) => s.tab === activeTab),
-		[activeTab],
+		[activeTab, questionnaireDef],
 	);
 
 	// All sections start collapsed
@@ -291,7 +291,7 @@ export default function Questionnaire() {
 			}
 		}
 		return { total, filled };
-	}, [variables, contacts]);
+	}, [variables, contacts, questionnaireDef]);
 
 	// Per-section stats
 	const sectionStats = useMemo(() => {
@@ -316,7 +316,7 @@ export default function Questionnaire() {
 			map[section.title] = { total, filled, label: null };
 		}
 		return map;
-	}, [variables, contacts]);
+	}, [variables, contacts, questionnaireDef]);
 
 	const folderName = workingDir ? extractFolderName(workingDir) : "Client";
 
@@ -941,6 +941,7 @@ function ConditionalQuestion({
 	searchQuery?: string;
 }) {
 	const isTrue = value === "true";
+	const isFalse = value === "false";
 	const trueLabel = question.trueLabel ?? "True";
 	const falseLabel = question.falseLabel ?? "False";
 
@@ -966,7 +967,7 @@ function ConditionalQuestion({
 				<button
 					type="button"
 					className={`flex-1 text-xs font-semibold py-2 transition-colors ${
-						!isTrue
+						isFalse
 							? "bg-error text-error-content"
 							: "bg-base-200 text-base-content/40 hover:bg-base-300"
 					}`}

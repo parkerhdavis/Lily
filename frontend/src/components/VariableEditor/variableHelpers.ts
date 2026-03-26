@@ -97,6 +97,18 @@ export function normalizeQuotes(s: string): string {
  * Expected syntax: `Label ?? "true text" :: "false text"`
  * Both branch texts must be wrapped in double quotes (straight or smart).
  */
+/** Find the index of the first unescaped double-quote in `s`. */
+function findUnescapedQuote(s: string): number {
+	for (let i = 0; i < s.length; i++) {
+		if (s[i] === "\\" && i + 1 < s.length) {
+			i++; // skip escaped character
+		} else if (s[i] === '"') {
+			return i;
+		}
+	}
+	return -1;
+}
+
 export function parseConditionalDef(
 	def: string,
 ): { trueText: string; falseText: string } | null {
@@ -106,16 +118,21 @@ export function parseConditionalDef(
 	const rest = normalized.substring(qqIdx + 4).trim();
 
 	if (!rest.startsWith('"')) return null;
-	const closeIdx = rest.indexOf('"', 1);
+	const inner = rest.substring(1);
+	const closeIdx = findUnescapedQuote(inner);
 	if (closeIdx < 0) return null;
-	const trueText = rest.substring(1, closeIdx);
+	const trueText = inner.substring(0, closeIdx).replaceAll('\\"', '"');
 
-	let remainder = rest.substring(closeIdx + 1).trim();
+	let remainder = inner.substring(closeIdx + 1).trim();
 	let falseText = "";
 	if (remainder.startsWith("::")) {
 		remainder = remainder.substring(2).trim();
-		if (remainder.startsWith('"') && remainder.endsWith('"')) {
-			falseText = remainder.substring(1, remainder.length - 1);
+		if (remainder.startsWith('"')) {
+			const falseInner = remainder.substring(1);
+			const falseClose = findUnescapedQuote(falseInner);
+			if (falseClose >= 0) {
+				falseText = falseInner.substring(0, falseClose).replaceAll('\\"', '"');
+			}
 		}
 	}
 	return { trueText, falseText };

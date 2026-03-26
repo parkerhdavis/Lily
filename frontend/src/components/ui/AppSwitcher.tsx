@@ -28,6 +28,7 @@ export default function AppSwitcher({
 	const goToPipeline = useWorkflowStore((s) => s.goToPipeline);
 	const goToSettings = useWorkflowStore((s) => s.goToSettings);
 	const setStep = useWorkflowStore((s) => s.setStep);
+	const setWorkingDir = useWorkflowStore((s) => s.setWorkingDir);
 	const [open, setOpen] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
 
@@ -139,7 +140,7 @@ export default function AppSwitcher({
 									type="button"
 									className="text-primary"
 									onClick={() =>
-										navigate(() => setStep("client-hub"))
+										navigate(() => setWorkingDir(workingDir!))
 									}
 								>
 									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="size-4">
