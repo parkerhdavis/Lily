@@ -82,6 +82,7 @@ Bun.serve({
 		// Serve from dist/
 		const filePath = url.pathname === "/" ? "/index.html" : url.pathname;
 		const file = Bun.file(`${DIST}${filePath}`);
+		if (!(await file.exists())) return new Response("Not found", { status: 404 });
 		return new Response(file);
 	},
 	websocket: {

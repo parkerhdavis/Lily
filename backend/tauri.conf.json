@@ -4,6 +4,10 @@
 	"version": "0.3.0",
 	"identifier": "com.parkerhdavis.lily",
 	"build": {
+		"beforeDevCommand": {
+			"script": "bun run dev",
+			"cwd": "../frontend"
+		},
 		"devUrl": "http://localhost:5173",
 		"frontendDist": "../frontend/dist"
 	},
