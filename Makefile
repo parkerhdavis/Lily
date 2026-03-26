@@ -117,33 +117,18 @@ dev:
 		kill $$EXISTING_PID 2>/dev/null || true; \
 		sleep 1; \
 	fi
-	@echo "  -> Starting Bun dev server in background..."
-	@cd frontend && setsid $(BUN) run dev > $(NULL) 2>&1 & echo $$! > .dev.pid
-	@sleep 2
-	@echo "  -> Starting Tauri..."
-	@cd backend && $(TAURI) dev; \
-	DEV_PID=$$(cat ../.dev.pid 2>/dev/null); \
-	if [ -n "$$DEV_PID" ]; then \
-		kill -- -$$DEV_PID 2>/dev/null || kill $$DEV_PID 2>/dev/null || true; \
-	fi; \
-	rm -f ../.dev.pid
+	@echo "  -> Starting Tauri (frontend dev server started by Tauri via beforeDevCommand)..."
+	@cd backend && $(TAURI) dev
 
 down:
 	@echo "Stopping Lily dev server..."
-	@DEV_PID=$$(cat .dev.pid 2>/dev/null); \
-	if [ -n "$$DEV_PID" ]; then \
-		kill -- -$$DEV_PID 2>/dev/null || kill $$DEV_PID 2>/dev/null || true; \
-		rm -f .dev.pid; \
-		echo "  -> Killed dev server process group (pid $$DEV_PID)"; \
+	@echo "  -> Checking port 5173..."
+	@PORT_PID=$$(lsof -ti :5173 2>/dev/null); \
+	if [ -n "$$PORT_PID" ]; then \
+		kill $$PORT_PID 2>/dev/null || true; \
+		echo "  -> Killed process on port 5173 (pid $$PORT_PID)"; \
 	else \
-		echo "  -> No .dev.pid found, checking port 5173..."; \
-		PORT_PID=$$(lsof -ti :5173 2>/dev/null); \
-		if [ -n "$$PORT_PID" ]; then \
-			kill $$PORT_PID 2>/dev/null || true; \
-			echo "  -> Killed process on port 5173 (pid $$PORT_PID)"; \
-		else \
-			echo "  -> No dev server running"; \
-		fi; \
+		echo "  -> No dev server running"; \
 	fi
 
 dev-frontend:
