@@ -255,7 +255,7 @@ export default function ClientHub() {
 					{/* Questionnaire card */}
 					<button
 						type="button"
-						className="w-full text-left p-5 rounded-xl border-2 border-primary/40 bg-base-100 shadow-sm hover:shadow-md transition-shadow"
+						className="w-full text-left p-5 rounded-xl border-2 border-primary/40 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_8px_28px_rgba(0,0,0,0.35)] transition-shadow"
 						onClick={openQuestionnaire}
 					>
 						<div className="flex items-center gap-4">
@@ -332,7 +332,7 @@ export default function ClientHub() {
 								</button>
 							</div>
 						) : (
-							<div className="rounded-xl border border-base-300 bg-base-100 shadow-sm divide-y divide-base-200 overflow-hidden">
+							<div className="rounded-xl border border-base-300 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] divide-y divide-base-200 overflow-hidden">
 								{allDocs
 									.filter((doc) => {
 										if (!docSearch.trim()) return true;

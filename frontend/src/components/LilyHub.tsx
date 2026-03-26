@@ -145,7 +145,7 @@ export default function LilyHub() {
 					return false;
 				return true;
 			})
-			.slice(0, 8);
+			.slice(0, 5);
 	}, [settings.navigation_history, settings.last_step, settings.last_working_dir]);
 
 	const dirName = (path: string) => extractFolderName(path);
@@ -211,12 +211,24 @@ export default function LilyHub() {
 			{/* Main content */}
 			<div className="flex-1 overflow-y-auto flex items-center justify-center">
 				<div className="max-w-4xl w-full px-6 py-8 space-y-6">
+					{/* Branding */}
+					<div className="flex flex-col items-center gap-2 pb-6">
+						<img
+							src={lilyIcon}
+							alt="Lily"
+							className="size-14 drop-shadow-sm"
+						/>
+						<span className="text-2xl font-bold tracking-tight">
+							Lily
+						</span>
+					</div>
+
 					{/* Module panels */}
 					<div className="grid grid-cols-3 gap-5">
 						{/* Clients */}
 						<button
 							type="button"
-							className="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md hover:bg-base-200/50 hover:border-base-content/20 transition-all cursor-pointer text-left"
+							className="card bg-base-100 border border-base-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_8px_28px_rgba(0,0,0,0.35)] hover:bg-base-200/50 hover:border-base-content/20 transition-all cursor-pointer text-left"
 							onClick={goToClients}
 						>
 							<div className="card-body p-8 gap-3">
@@ -244,7 +256,7 @@ export default function LilyHub() {
 						{/* Pipeline */}
 						<button
 							type="button"
-							className="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md hover:bg-base-200/50 hover:border-base-content/20 transition-all cursor-pointer text-left"
+							className="card bg-base-100 border border-base-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_8px_28px_rgba(0,0,0,0.35)] hover:bg-base-200/50 hover:border-base-content/20 transition-all cursor-pointer text-left"
 							onClick={goToPipeline}
 						>
 							<div className="card-body p-8 gap-3">
@@ -271,7 +283,7 @@ export default function LilyHub() {
 						{/* Settings */}
 						<button
 							type="button"
-							className="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md hover:bg-base-200/50 hover:border-base-content/20 transition-all cursor-pointer text-left"
+							className="card bg-base-100 border border-base-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_8px_28px_rgba(0,0,0,0.35)] hover:bg-base-200/50 hover:border-base-content/20 transition-all cursor-pointer text-left"
 							onClick={goToSettings}
 						>
 							<div className="card-body p-8 gap-3">
@@ -305,7 +317,7 @@ export default function LilyHub() {
 					{resumeLabel && (
 						<button
 							type="button"
-							className="w-full card bg-primary/10 border border-primary/20 shadow-sm hover:shadow-md hover:bg-primary/15 hover:border-primary/30 transition-all cursor-pointer text-left"
+							className="w-full card bg-primary/10 border border-primary/20 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_8px_28px_rgba(0,0,0,0.35)] hover:bg-primary/15 hover:border-primary/30 transition-all cursor-pointer text-left"
 							onClick={resumeLastSession}
 						>
 							<div className="card-body p-6 gap-3">
@@ -395,7 +407,7 @@ export default function LilyHub() {
 							<SectionHeading className="mb-3">
 								Recent
 							</SectionHeading>
-							<div className="rounded-xl border border-base-300 bg-base-100 shadow-sm divide-y divide-base-200 overflow-hidden">
+							<div className="rounded-xl border border-base-300 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] divide-y divide-base-200 overflow-hidden">
 								{recentPages.map((entry, i) => (
 									<button
 										key={`${entry.step}-${entry.working_dir}-${i}`}

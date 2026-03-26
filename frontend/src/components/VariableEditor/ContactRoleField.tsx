@@ -82,7 +82,7 @@ export default function ContactRoleField({
 
 	return (
 		<div
-			className={`w-full rounded-lg border bg-base-100 shadow-md shadow-black/15 ${isSelected ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+			className={`w-full rounded-lg border bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] ${isSelected ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
 			data-var-entry={group.properties[0]?.displayName}
 		>
 			{/* Name header */}
