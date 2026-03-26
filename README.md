@@ -18,12 +18,11 @@ Lily streamlines the process of gathering client information and using it to pop
 - **Styling:** Tailwind CSS + daisyUI
 
 
+## Workflow
+
 ![Screenshot from v0.3.0 dev build 2026-03-25](./.github/assets/lily_screenshot_hpoa.png)
 
 *Screenshot from v0.3.0 dev build 2026-03-25*
-
-
-## Workflow
 
 ### Client Management
 - Configure one or more **client library directories** to browse all clients from the Clients Hub
