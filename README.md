@@ -5,9 +5,11 @@ Legal document drafting and client info management toolset, created custom for a
 
 Lily streamlines the process of gathering client information and using it to populate initial drafts of client documents derived from Word documents (.docx) templated with a custom syntax, which legal professionals can then polish and supervise to execution. Users select a working directory (typically a client folder), choose a template, and fill in variables; Lily handles copying, previewing, and saving the completed document, which can be edited like any normal Word document and re-opened at any time to adjust variables.
 
-![Screenshot from v0.3.0 dev build 2026-03-25](./.github/assets/lily_screenshot_home.png)
+
+![Screenshot from v0.3.0 dev build 2026-03-25](./.github/assets/lily_screenshot_hpoa.png)
 
 *Screenshot from v0.3.0 dev build 2026-03-25*
+
 
 ## Stack
 - **Runtime / Package Manager:** Bun
@@ -16,10 +18,10 @@ Lily streamlines the process of gathering client information and using it to pop
 - **Styling:** Tailwind CSS + daisyUI
 
 
-
-![Screenshot from v0.3.0 dev build 2026-03-25](./.github/assets/lily_screenshot_hpoa.png)
+![Screenshot from v0.3.0 dev build 2026-03-25](./.github/assets/lily_screenshot_home.png)
 
 *Screenshot from v0.3.0 dev build 2026-03-25*
+
 
 ## Workflow
 1. Select a working directory (client folder)
