@@ -4,7 +4,7 @@ import { useWorkflowStore } from "@/stores/workflowStore";
 import { useNavigationStore } from "@/stores/navigationStore";
 import { useUndoStore } from "@/stores/undoStore";
 import LilyHub from "@/components/LilyHub";
-import ClientHub from "@/components/ClientHub";
+
 import TemplatePicker from "@/components/TemplatePicker";
 import VariableEditor from "@/components/VariableEditor";
 import Questionnaire from "@/components/Questionnaire";
@@ -136,8 +136,6 @@ export default function App() {
 				return <LilyHub />;
 			case "clients":
 				return <ClientsHub />;
-			case "client-hub":
-				return <ClientHub />;
 			case "questionnaire":
 				return <Questionnaire />;
 			case "select-template":

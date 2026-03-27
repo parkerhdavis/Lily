@@ -42,6 +42,7 @@ export default function ContactPicker({
 	const binding = bindings[question.role] as ContactBinding | undefined;
 
 	const boundContactId = binding?.contact_id ?? null;
+	const isNone = boundContactId === "__none__";
 	const isOther = binding !== undefined && boundContactId === null;
 
 	// Determine which contact is currently selected
@@ -70,7 +71,13 @@ export default function ContactPicker({
 
 	const handleSelectChange = useCallback(
 		async (value: string) => {
-			if (value === "__other__") {
+			if (value === "__none__") {
+				// Explicitly "no one" for this role
+				await setContactBinding(question.role, {
+					contact_id: "__none__",
+					variable_mappings: question.variableMappings,
+				});
+			} else if (value === "__other__") {
 				// Switch to manual entry — clear contact_id but keep mappings
 				await setContactBinding(question.role, {
 					contact_id: null,
@@ -104,9 +111,11 @@ export default function ContactPicker({
 	// Build the select value
 	const selectValue = selectedContact
 		? selectedContact.id
-		: isOther
-			? "__other__"
-			: "";
+		: isNone
+			? "__none__"
+			: isOther
+				? "__other__"
+				: "";
 
 	return (
 		<div className="form-control w-full">
@@ -123,6 +132,7 @@ export default function ContactPicker({
 				onChange={(e) => handleSelectChange(e.target.value)}
 			>
 				<option value="">Select a contact...</option>
+				<option value="__none__">None</option>
 				{contacts.map((c) => (
 					<option key={c.id} value={c.id}>
 						{c.full_name}
@@ -134,6 +144,13 @@ export default function ContactPicker({
 					<option value="__add__">+ New Contact...</option>
 				)}
 			</select>
+
+			{/* None selected */}
+			{isNone && (
+				<div className="mt-2 pl-3 border-l-2 border-base-content/20 text-sm text-base-content/50 italic">
+					No one assigned to this role
+				</div>
+			)}
 
 			{/* Show resolved values when a contact is selected */}
 			{selectedContact && (

@@ -22,7 +22,7 @@ export const createNavigationSlice: WorkflowSlice = (set, get) => ({
 	returnToHub: () => {
 		pushNav(get());
 		set({
-			step: "client-hub",
+			step: "clients",
 			documentPath: null,
 			documentHtml: "",
 			variables: [],

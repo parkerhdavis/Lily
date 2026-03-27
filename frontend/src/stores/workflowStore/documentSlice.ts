@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { LilyFile, VariableInfo, VariableSchema } from "@/types";
 import { useUndoStore } from "@/stores/undoStore";
 import { extractFilename } from "@/utils/path";
-import { mergeStoredVariables, pushNav, toastError, toastSuccess } from "./helpers";
+import { buildDocumentFilename, mergeStoredVariables, pushNav, toastError, toastSuccess } from "./helpers";
 import type { WorkflowSlice } from "./types";
 
 export const createDocumentSlice: WorkflowSlice = (set, get) => ({
@@ -27,10 +27,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 		try {
 			const fullTemplatePath = `${templatesDir}/${templateRelPath}`;
 
-			let filename = extractFilename(templateRelPath);
-			if (filename.toLowerCase().endsWith(".dotx")) {
-				filename = `${filename.slice(0, -5)}.docx`;
-			}
+			const filename = buildDocumentFilename(templateRelPath, lilyFile);
 
 			const docPath = await invoke<string>("copy_template", {
 				templatePath: fullTemplatePath,
@@ -72,6 +69,10 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 					.map((v) => v.display_name),
 				conditionalDefinitions: conditionalDefs,
 			});
+
+			// Resolve contact variables so that any new relationship-based
+			// conditionals (e.g. "Has Spouse") pick up values immediately.
+			await invoke("resolve_contact_variables", { workingDir });
 
 			const updatedLilyFile = await invoke<LilyFile>(
 				"load_lily_file_cmd",
@@ -117,6 +118,90 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 		} catch (err) {
 			set({ error: String(err), loading: false });
 			toastError("Failed to prepare document", err);
+		}
+	},
+
+	addMultipleDocuments: async (templateRelPaths, templatesDir) => {
+		const { workingDir, lilyFile } = get();
+		if (!workingDir) return;
+
+		set({ loading: true, error: null });
+		try {
+			// Track used filenames to avoid collisions within the batch
+			const usedFilenames = new Set<string>(
+				Object.keys(lilyFile?.documents ?? {}),
+			);
+
+			for (const templateRelPath of templateRelPaths) {
+				const fullTemplatePath = `${templatesDir}/${templateRelPath}`;
+				let filename = buildDocumentFilename(
+					templateRelPath,
+					lilyFile,
+				);
+
+				// De-duplicate filename
+				let candidate = filename;
+				let counter = 2;
+				while (usedFilenames.has(candidate)) {
+					const base = filename.replace(/\.docx$/i, "");
+					candidate = `${base} (${counter}).docx`;
+					counter++;
+				}
+				filename = candidate;
+				usedFilenames.add(filename);
+
+				const docPath = await invoke<string>("copy_template", {
+					templatePath: fullTemplatePath,
+					destDir: workingDir,
+					filename,
+					templateRelPath,
+				});
+
+				const variables = await invoke<VariableInfo[]>(
+					"extract_variables",
+					{ docxPath: docPath },
+				);
+
+				const conditionalDefs: Record<string, string[]> = {};
+				for (const v of variables) {
+					if (v.is_conditional) {
+						conditionalDefs[v.display_name] = v.variants;
+					}
+				}
+
+				await invoke("set_document_variables", {
+					workingDir,
+					filename,
+					variableNames: variables.map((v) => v.display_name),
+					conditionalNames: variables
+						.filter((v) => v.is_conditional)
+						.map((v) => v.display_name),
+					conditionalDefinitions: conditionalDefs,
+				});
+			}
+
+			// Resolve contact variables so new relationship-based
+			// conditionals pick up values immediately.
+			await invoke("resolve_contact_variables", { workingDir });
+
+			// Reload once at the end
+			const updatedLilyFile = await invoke<LilyFile>(
+				"load_lily_file_cmd",
+				{ workingDir },
+			);
+
+			pushNav(get());
+			set({
+				lilyFile: updatedLilyFile,
+				step: "clients",
+				loading: false,
+			});
+			toastSuccess(
+				`Added ${templateRelPaths.length} document${templateRelPaths.length !== 1 ? "s" : ""}`,
+			);
+		} catch (err) {
+			set({ error: String(err), loading: false });
+			toastError("Failed to add documents", err);
 		}
 	},
 
@@ -167,6 +252,14 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 					)) {
 						variableValues[varName] = value;
 					}
+				}
+			}
+			// Apply per-document variable overrides
+			if (docMeta?.variable_overrides) {
+				for (const [varName, value] of Object.entries(
+					docMeta.variable_overrides,
+				)) {
+					variableValues[varName] = value;
 				}
 			}
 

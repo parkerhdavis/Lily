@@ -1,17 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { useToastStore } from "@/stores/toastStore";
+import { useQuestionnaireStore } from "@/stores/questionnaireStore";
+import { questionnaireDef as fallbackDef } from "@/data/questionnaireDef";
 import type {
 	ClientSummary,
 	ClientTreeNode,
 	DocumentStatus,
 } from "@/types";
+import type { QuestionnaireSectionDef } from "@/types/questionnaire";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
-import { extractFolderName } from "@/utils/path";
+import { extractFilename, extractFolderName } from "@/utils/path";
 
 // ─── Status helpers ──────────────────────────────────────────────────────
 
@@ -40,9 +44,22 @@ function extractTemplateName(relPath: string): string {
 	return stripDocx(parts[parts.length - 1] || relPath);
 }
 
+function formatDate(iso: string): string {
+	try {
+		return new Date(iso).toLocaleDateString(undefined, {
+			month: "short",
+			day: "numeric",
+			year: "numeric",
+			hour: "numeric",
+			minute: "2-digit",
+		});
+	} catch {
+		return iso;
+	}
+}
+
 // ─── Tree helpers ────────────────────────────────────────────────────────
 
-/** Recursively extract all ClientSummary objects from a tree. */
 function extractClientsFromTree(nodes: ClientTreeNode[]): ClientSummary[] {
 	const clients: ClientSummary[] = [];
 	for (const node of nodes) {
@@ -64,18 +81,37 @@ interface LibraryTree {
 	nodes: ClientTreeNode[];
 }
 
+interface ClientDoc {
+	filename: string;
+	templateRelPath: string;
+	modifiedAt: string;
+}
+
 // ─── Main component ──────────────────────────────────────────────────────
 
 export default function ClientsHub() {
 	const { settings, save, addRecentDirectory } = useSettingsStore();
-	const { setWorkingDir, loadTemplates, goToHub, goToSettings } =
-		useWorkflowStore();
+	const {
+		workingDir,
+		lilyFile,
+		setWorkingDir,
+		loadTemplates,
+		goToHub,
+		goToSettings,
+		openDocument,
+		openQuestionnaire,
+		startAddDocument,
+		deleteDocument,
+		newVersionDocument,
+		openTemplateFile,
+		reloadLilyFile,
+	} = useWorkflowStore();
+	const { loadActiveQuestionnaire } = useQuestionnaireStore();
 	const lilyIcon = useLilyIcon();
 
 	const [activeTab, setActiveTab] = useState<ClientsTab>("clients");
 	const [trees, setTrees] = useState<LibraryTree[]>([]);
-	const [loading, setLoading] = useState(false);
-	const [selectedDir, setSelectedDir] = useState<string | null>(null);
+	const [treeLoading, setTreeLoading] = useState(false);
 
 	const libraryDirs = settings.client_library_dirs;
 
@@ -85,7 +121,7 @@ export default function ClientsHub() {
 			setTrees([]);
 			return;
 		}
-		setLoading(true);
+		setTreeLoading(true);
 		try {
 			const results: LibraryTree[] = [];
 			for (const dir of libraryDirs) {
@@ -108,7 +144,7 @@ export default function ClientsHub() {
 			}
 			setTrees(results);
 		} finally {
-			setLoading(false);
+			setTreeLoading(false);
 		}
 	}, [libraryDirs]);
 
@@ -123,13 +159,7 @@ export default function ClientsHub() {
 		return all;
 	}, [trees]);
 
-	// Find the selected client summary from the tree
-	const selectedClient = useMemo(() => {
-		if (!selectedDir) return null;
-		return clients.find((c) => c.directory === selectedDir) ?? null;
-	}, [selectedDir, clients]);
-
-	const openClient = async (dir: string) => {
+	const selectClient = async (dir: string) => {
 		await addRecentDirectory(dir);
 		save({ last_working_dir: dir });
 		if (settings.templates_dir) {
@@ -145,7 +175,7 @@ export default function ClientsHub() {
 			defaultPath: settings.last_working_dir ?? undefined,
 		});
 		if (selected) {
-			await openClient(selected);
+			await selectClient(selected);
 		}
 	};
 
@@ -202,14 +232,23 @@ export default function ClientsHub() {
 				{activeTab === "clients" && (
 					<ClientsTreeTab
 						trees={trees}
-						loading={loading}
+						loading={treeLoading}
 						hasLibraryDirs={libraryDirs.length > 0}
-						selectedDir={selectedDir}
-						selectedClient={selectedClient}
-						onSelectDir={setSelectedDir}
-						onOpenClient={openClient}
+						workingDir={workingDir}
+						lilyFile={lilyFile}
+						onSelectClient={selectClient}
 						onGoToSettings={goToSettings}
 						lilyIcon={lilyIcon}
+						settings={settings}
+						onOpenQuestionnaire={openQuestionnaire}
+						onStartAddDocument={startAddDocument}
+						onOpenDocument={openDocument}
+						onDeleteDocument={deleteDocument}
+						onNewVersionDocument={newVersionDocument}
+						onOpenTemplateFile={openTemplateFile}
+						onReloadLilyFile={reloadLilyFile}
+						onLoadTemplates={loadTemplates}
+						loadActiveQuestionnaire={loadActiveQuestionnaire}
 					/>
 				)}
 				{activeTab === "progress" && (
@@ -232,22 +271,40 @@ function ClientsTreeTab({
 	trees,
 	loading,
 	hasLibraryDirs,
-	selectedDir,
-	selectedClient,
-	onSelectDir,
-	onOpenClient,
+	workingDir,
+	lilyFile,
+	onSelectClient,
 	onGoToSettings,
 	lilyIcon,
+	settings,
+	onOpenQuestionnaire,
+	onStartAddDocument,
+	onOpenDocument,
+	onDeleteDocument,
+	onNewVersionDocument,
+	onOpenTemplateFile,
+	onReloadLilyFile,
+	onLoadTemplates,
+	loadActiveQuestionnaire,
 }: {
 	trees: LibraryTree[];
 	loading: boolean;
 	hasLibraryDirs: boolean;
-	selectedDir: string | null;
-	selectedClient: ClientSummary | null;
-	onSelectDir: (dir: string) => void;
-	onOpenClient: (dir: string) => void;
+	workingDir: string | null;
+	lilyFile: import("@/types").LilyFile | null;
+	onSelectClient: (dir: string) => void;
 	onGoToSettings: () => void;
 	lilyIcon: string;
+	settings: import("@/types").AppSettings;
+	onOpenQuestionnaire: () => void;
+	onStartAddDocument: () => void;
+	onOpenDocument: (filename: string, templateRelPath: string) => void;
+	onDeleteDocument: (filename: string) => Promise<void>;
+	onNewVersionDocument: (filename: string) => Promise<void>;
+	onOpenTemplateFile: (templateRelPath: string) => Promise<void>;
+	onReloadLilyFile: () => Promise<void>;
+	onLoadTemplates: (templatesDir: string) => Promise<void>;
+	loadActiveQuestionnaire: () => Promise<import("@/types/questionnaire").QuestionnaireDefFile | null>;
 }) {
 	if (!hasLibraryDirs) {
 		return (
@@ -302,9 +359,8 @@ function ClientsTreeTab({
 									<ClientTreeItem
 										key={node.path}
 										node={node}
-										selectedDir={selectedDir}
-										onSelectDir={onSelectDir}
-										onOpenClient={onOpenClient}
+										selectedDir={workingDir}
+										onSelectDir={onSelectClient}
 									/>
 								))}
 							</div>
@@ -313,20 +369,550 @@ function ClientsTreeTab({
 				))}
 			</div>
 
-			{/* Right pane: client details */}
-			<div className="flex-1 overflow-y-auto p-6">
-				{selectedClient ? (
-					<ClientDetails
-						client={selectedClient}
-						onOpen={onOpenClient}
-					/>
-				) : (
-					<div className="flex items-center justify-center h-full text-base-content/40 text-sm">
-						Select a client to view details
+			{/* Right pane: client content */}
+			{workingDir && lilyFile ? (
+				<ClientContentPane
+					workingDir={workingDir}
+					lilyFile={lilyFile}
+					lilyIcon={lilyIcon}
+					settings={settings}
+					onOpenQuestionnaire={onOpenQuestionnaire}
+					onStartAddDocument={onStartAddDocument}
+					onOpenDocument={onOpenDocument}
+					onDeleteDocument={onDeleteDocument}
+					onNewVersionDocument={onNewVersionDocument}
+					onOpenTemplateFile={onOpenTemplateFile}
+					onReloadLilyFile={onReloadLilyFile}
+					onLoadTemplates={onLoadTemplates}
+					loadActiveQuestionnaire={loadActiveQuestionnaire}
+				/>
+			) : (
+				<div className="flex-1 flex items-center justify-center text-base-content/40 text-sm">
+					Select a client to view details
+				</div>
+			)}
+		</div>
+	);
+}
+
+// ─── Client Content Pane (merged from ClientHub) ────────────────────────
+
+function ClientContentPane({
+	workingDir,
+	lilyFile,
+	lilyIcon,
+	settings,
+	onOpenQuestionnaire,
+	onStartAddDocument,
+	onOpenDocument,
+	onDeleteDocument,
+	onNewVersionDocument,
+	onOpenTemplateFile,
+	onReloadLilyFile,
+	onLoadTemplates,
+	loadActiveQuestionnaire,
+}: {
+	workingDir: string;
+	lilyFile: import("@/types").LilyFile;
+	lilyIcon: string;
+	settings: import("@/types").AppSettings;
+	onOpenQuestionnaire: () => void;
+	onStartAddDocument: () => void;
+	onOpenDocument: (filename: string, templateRelPath: string) => void;
+	onDeleteDocument: (filename: string) => Promise<void>;
+	onNewVersionDocument: (filename: string) => Promise<void>;
+	onOpenTemplateFile: (templateRelPath: string) => Promise<void>;
+	onReloadLilyFile: () => Promise<void>;
+	onLoadTemplates: (templatesDir: string) => Promise<void>;
+	loadActiveQuestionnaire: () => Promise<import("@/types/questionnaire").QuestionnaireDefFile | null>;
+}) {
+	const [docSearch, setDocSearch] = useState("");
+
+	// Dynamic questionnaire definition for stats
+	const [qDef, setQDef] = useState<QuestionnaireSectionDef[]>(fallbackDef);
+	useEffect(() => {
+		(async () => {
+			try {
+				let def = null;
+				if (lilyFile.questionnaire_id) {
+					try {
+						def = await invoke<
+							import("@/types/questionnaire").QuestionnaireDefFile
+						>("load_questionnaire", {
+							id: lilyFile.questionnaire_id,
+						});
+					} catch {
+						// Fall through
+					}
+				}
+				if (!def) {
+					def = await loadActiveQuestionnaire();
+				}
+				if (def) {
+					setQDef(def.sections);
+				}
+			} catch {
+				// Use fallback
+			}
+		})();
+	}, [lilyFile.questionnaire_id, loadActiveQuestionnaire]);
+
+	const allDocs = useMemo(() => {
+		if (!lilyFile.documents) return [];
+		return Object.entries(lilyFile.documents)
+			.map(([filename, meta]) => ({
+				filename,
+				templateRelPath: meta.template_rel_path,
+				modifiedAt: meta.modified_at,
+			}))
+			.sort((a, b) => a.filename.localeCompare(b.filename));
+	}, [lilyFile]);
+
+	const questionnaireStats = useMemo(() => {
+		const vars = lilyFile.variables ?? {};
+		const contactCount = lilyFile.contacts?.length ?? 0;
+		let total = 0;
+		let filled = 0;
+		for (const section of qDef) {
+			if (section.kind === "contacts") {
+				total++;
+				if (contactCount > 0) filled++;
+				continue;
+			}
+			for (const q of section.questions) {
+				if (q.kind === "text") {
+					total++;
+					if (vars[q.variable]?.trim()) filled++;
+				}
+			}
+		}
+		return { total, filled };
+	}, [lilyFile, qDef]);
+
+	const handleAddDocument = () => {
+		if (settings.templates_dir) {
+			onLoadTemplates(settings.templates_dir);
+		}
+		onStartAddDocument();
+	};
+
+	const handleExport = async () => {
+		const folderName = extractFolderName(workingDir);
+		const path = await saveDialog({
+			title: "Export Client Data",
+			defaultPath: `${folderName} - Export.json`,
+			filters: [{ name: "JSON", extensions: ["json"] }],
+		});
+		if (path) {
+			try {
+				await invoke("export_client_data", {
+					workingDir,
+					exportPath: path,
+				});
+				useToastStore
+					.getState()
+					.addToast("success", "Client data exported");
+			} catch (err) {
+				useToastStore
+					.getState()
+					.addToast("error", `Export failed: ${err}`);
+			}
+		}
+	};
+
+	const handleImport = async () => {
+		const path = await open({
+			title: "Import Client Data",
+			filters: [
+				{ name: "JSON / Lily", extensions: ["json", "lily"] },
+			],
+		});
+		if (path) {
+			try {
+				const updated = await invoke<import("@/types").LilyFile>(
+					"import_client_data",
+					{ workingDir, importPath: path },
+				);
+				useWorkflowStore.setState({ lilyFile: updated });
+				useToastStore
+					.getState()
+					.addToast("success", "Client data imported");
+			} catch (err) {
+				useToastStore
+					.getState()
+					.addToast("error", `Import failed: ${err}`);
+			}
+		}
+	};
+
+	const handleOpenFolder = async () => {
+		try {
+			await invoke("open_file_in_os", { filePath: workingDir });
+		} catch (err) {
+			console.error("Failed to open folder:", err);
+		}
+	};
+
+	const folderName = extractFolderName(workingDir);
+	const contactCount = lilyFile.contacts?.length ?? 0;
+	const docCount = allDocs.length;
+
+	return (
+		<div className="flex-1 flex flex-col min-w-0">
+			{/* Pinned header */}
+			<div className="shrink-0 border-b border-base-300 px-6 py-4">
+				<div className="flex items-start justify-between gap-4">
+					<div className="min-w-0">
+						<h2 className="text-xl font-semibold truncate">
+							{folderName}
+						</h2>
+						<p className="text-xs text-base-content/40 font-mono truncate mt-0.5">
+							{workingDir}
+						</p>
+						<p className="text-sm text-base-content/50 mt-1">
+							{docCount} document{docCount !== 1 ? "s" : ""}
+							{contactCount > 0 &&
+								` \u00B7 ${contactCount} contact${contactCount !== 1 ? "s" : ""}`}
+						</p>
 					</div>
-				)}
+					<div className="flex gap-2 shrink-0">
+						<button
+							type="button"
+							className="btn btn-ghost btn-sm"
+							onClick={handleOpenFolder}
+							title="Open in file manager"
+						>
+							Open Folder
+						</button>
+						<button
+							type="button"
+							className="btn btn-primary btn-sm"
+							onClick={handleAddDocument}
+						>
+							+ Add Document
+						</button>
+						<div className="dropdown dropdown-end">
+							<button
+								type="button"
+								className="btn btn-ghost btn-sm"
+								tabIndex={0}
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-4">
+									<title>More</title>
+									<path d="M8 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM8 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM9.5 12.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0Z" />
+								</svg>
+							</button>
+							{/* biome-ignore lint/a11y/noNoninteractiveTabindex: daisyUI dropdown pattern */}
+							<ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-1 z-50">
+								<li>
+									<button type="button" onClick={handleExport}>
+										Export Client Data
+									</button>
+								</li>
+								<li>
+									<button type="button" onClick={handleImport}>
+										Import Client Data
+									</button>
+								</li>
+							</ul>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			{/* Scrollable content */}
+			<div className="flex-1 overflow-y-auto p-6">
+				<div className="max-w-3xl space-y-6">
+					{/* Questionnaire card */}
+					<button
+						type="button"
+						className="w-full text-left p-5 rounded-xl border-2 border-primary/40 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_8px_28px_rgba(0,0,0,0.35)] transition-shadow"
+						onClick={onOpenQuestionnaire}
+					>
+						<div className="flex items-center gap-4">
+							<img
+								src={lilyIcon}
+								alt=""
+								className="size-9 opacity-60"
+							/>
+							<div className="flex-1 min-w-0">
+								<div className="font-semibold text-base">
+									Client Questionnaire
+								</div>
+								<div className="text-sm text-base-content/50 mt-0.5">
+									{questionnaireStats.total > 0
+										? `${questionnaireStats.filled} of ${questionnaireStats.total} fields filled`
+										: "Fill out client information"}
+									{contactCount > 0 &&
+										` \u00B7 ${contactCount} contact${contactCount !== 1 ? "s" : ""}`}
+								</div>
+							</div>
+							{questionnaireStats.total > 0 && (
+								<div
+									className="radial-progress text-primary text-sm"
+									style={
+										{
+											"--value": Math.round(
+												(questionnaireStats.filled /
+													questionnaireStats.total) *
+													100,
+											),
+											"--size": "3rem",
+											"--thickness": "3px",
+										} as React.CSSProperties
+									}
+									role="progressbar"
+								>
+									{questionnaireStats.filled}/
+									{questionnaireStats.total}
+								</div>
+							)}
+						</div>
+					</button>
+
+					{/* Documents section */}
+					<div>
+						<SectionHeading className="mb-3">
+							Documents
+						</SectionHeading>
+
+						{allDocs.length > 3 && (
+							<input
+								type="text"
+								className="input input-bordered input-sm w-full mb-3"
+								placeholder="Search documents..."
+								value={docSearch}
+								onChange={(e) =>
+									setDocSearch(e.target.value)
+								}
+							/>
+						)}
+
+						{allDocs.length === 0 ? (
+							<div className="rounded-xl border border-base-300 bg-base-100 p-8 text-center text-base-content/50">
+								<p className="text-base">
+									No documents in this folder yet.
+								</p>
+								<button
+									type="button"
+									className="btn btn-primary btn-sm mt-4"
+									onClick={handleAddDocument}
+								>
+									Add New Document
+								</button>
+							</div>
+						) : (
+							<div className="rounded-xl border border-base-300 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] divide-y divide-base-200 overflow-hidden">
+								{allDocs
+									.filter((doc) => {
+										if (!docSearch.trim()) return true;
+										const q = docSearch
+											.trim()
+											.toLowerCase();
+										return doc.filename
+											.toLowerCase()
+											.includes(q);
+									})
+									.map((doc) => (
+										<DocumentRow
+											key={doc.filename}
+											doc={doc}
+											onOpen={onOpenDocument}
+											onDelete={onDeleteDocument}
+											onNewVersion={
+												onNewVersionDocument
+											}
+											onOpenTemplate={
+												onOpenTemplateFile
+											}
+											onReload={onReloadLilyFile}
+										/>
+									))}
+							</div>
+						)}
+					</div>
+				</div>
 			</div>
 		</div>
+	);
+}
+
+// ─── Document Row (from ClientHub) ──────────────────────────────────────
+
+function DocumentRow({
+	doc,
+	onOpen,
+	onDelete,
+	onNewVersion,
+	onOpenTemplate,
+	onReload,
+}: {
+	doc: ClientDoc;
+	onOpen: (filename: string, templateRelPath: string) => void;
+	onDelete: (filename: string) => Promise<void>;
+	onNewVersion: (filename: string) => Promise<void>;
+	onOpenTemplate: (templateRelPath: string) => Promise<void>;
+	onReload: () => Promise<void>;
+}) {
+	const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(
+		null,
+	);
+	const [confirmingDelete, setConfirmingDelete] = useState(false);
+	const menuRef = useRef<HTMLDivElement>(null);
+	const deleteDialogRef = useRef<HTMLDialogElement>(null);
+
+	useEffect(() => {
+		if (!menuPos) return;
+		const handleClick = (e: MouseEvent) => {
+			if (
+				menuRef.current &&
+				!menuRef.current.contains(e.target as Node)
+			) {
+				setMenuPos(null);
+			}
+		};
+		const handleEscape = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setMenuPos(null);
+		};
+		document.addEventListener("mousedown", handleClick);
+		document.addEventListener("keydown", handleEscape);
+		return () => {
+			document.removeEventListener("mousedown", handleClick);
+			document.removeEventListener("keydown", handleEscape);
+		};
+	}, [menuPos]);
+
+	const handleContextMenu = (e: React.MouseEvent) => {
+		e.preventDefault();
+		const menuW = 192;
+		const menuH = 140;
+		const x = Math.min(e.clientX, window.innerWidth - menuW);
+		const y = Math.min(e.clientY, window.innerHeight - menuH);
+		setMenuPos({ x, y });
+	};
+
+	return (
+		<>
+			<button
+				type="button"
+				className="w-full text-left px-5 py-4 hover:bg-base-200/60 transition-colors"
+				onClick={() => onOpen(doc.filename, doc.templateRelPath)}
+				onContextMenu={handleContextMenu}
+			>
+				<div className="flex flex-col gap-0.5">
+					<span className="font-medium text-base">
+						{stripDocx(doc.filename)}
+					</span>
+					<span className="text-sm text-base-content/40">
+						from{" "}
+						{stripDocx(
+							extractFilename(doc.templateRelPath),
+						)}
+						{" \u00B7 "}
+						{formatDate(doc.modifiedAt)}
+					</span>
+				</div>
+			</button>
+
+			{menuPos && (
+				<div
+					ref={menuRef}
+					className="fixed z-50 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-1"
+					style={{ left: menuPos.x, top: menuPos.y }}
+				>
+					<li>
+						<button
+							type="button"
+							className="text-sm"
+							onClick={() => {
+								setMenuPos(null);
+								onNewVersion(doc.filename);
+							}}
+						>
+							New Version
+						</button>
+					</li>
+					<li>
+						<button
+							type="button"
+							className="text-sm text-error"
+							onClick={() => {
+								setMenuPos(null);
+								setConfirmingDelete(true);
+								setTimeout(
+									() =>
+										deleteDialogRef.current?.showModal(),
+									0,
+								);
+							}}
+						>
+							Delete
+						</button>
+					</li>
+					<div className="divider my-0" />
+					<li>
+						<button
+							type="button"
+							className="text-sm"
+							onClick={() => {
+								setMenuPos(null);
+								onOpenTemplate(doc.templateRelPath);
+							}}
+						>
+							Open Template
+						</button>
+					</li>
+				</div>
+			)}
+
+			{confirmingDelete && (
+				// biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close is a convenience
+				<dialog
+					ref={deleteDialogRef}
+					className="modal"
+					onClick={(e) => {
+						if (e.target === deleteDialogRef.current) {
+							deleteDialogRef.current?.close();
+							setConfirmingDelete(false);
+						}
+					}}
+				>
+					<div className="modal-box">
+						<h3 className="text-lg font-bold mb-2">
+							Delete document?
+						</h3>
+						<p className="text-base-content/70 mb-4">
+							Are you sure you want to delete{" "}
+							<strong>{doc.filename}</strong>? This cannot
+							be undone.
+						</p>
+						<div className="modal-action">
+							<button
+								type="button"
+								className="btn btn-ghost btn-sm"
+								onClick={() => {
+									deleteDialogRef.current?.close();
+									setConfirmingDelete(false);
+								}}
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								className="btn btn-error btn-sm"
+								onClick={async () => {
+									deleteDialogRef.current?.close();
+									setConfirmingDelete(false);
+									await onDelete(doc.filename);
+								}}
+							>
+								Delete
+							</button>
+						</div>
+					</div>
+				</dialog>
+			)}
+		</>
 	);
 }
 
@@ -336,12 +922,10 @@ function ClientTreeItem({
 	node,
 	selectedDir,
 	onSelectDir,
-	onOpenClient,
 }: {
 	node: ClientTreeNode;
 	selectedDir: string | null;
 	onSelectDir: (dir: string) => void;
-	onOpenClient: (dir: string) => void;
 }) {
 	const hasChildren = node.children.length > 0;
 
@@ -352,7 +936,6 @@ function ClientTreeItem({
 				isSelected={selectedDir === node.path}
 				hasChildren={hasChildren}
 				onSelect={onSelectDir}
-				onOpen={onOpenClient}
 				selectedDir={selectedDir}
 			/>
 		);
@@ -364,12 +947,10 @@ function ClientTreeItem({
 				node={node}
 				selectedDir={selectedDir}
 				onSelectDir={onSelectDir}
-				onOpenClient={onOpenClient}
 			/>
 		);
 	}
 
-	// Empty non-client folder
 	return (
 		<div className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal gap-2 text-base-content/30 cursor-default">
 			<FolderIcon open={false} />
@@ -382,12 +963,10 @@ function ClientTreeFolder({
 	node,
 	selectedDir,
 	onSelectDir,
-	onOpenClient,
 }: {
 	node: ClientTreeNode;
 	selectedDir: string | null;
 	onSelectDir: (dir: string) => void;
-	onOpenClient: (dir: string) => void;
 }) {
 	const [expanded, setExpanded] = useState(false);
 
@@ -412,7 +991,6 @@ function ClientTreeFolder({
 							node={child}
 							selectedDir={selectedDir}
 							onSelectDir={onSelectDir}
-							onOpenClient={onOpenClient}
 						/>
 					))}
 				</div>
@@ -426,14 +1004,12 @@ function ClientTreeClient({
 	isSelected,
 	hasChildren,
 	onSelect,
-	onOpen,
 	selectedDir,
 }: {
 	node: ClientTreeNode;
 	isSelected: boolean;
 	hasChildren: boolean;
 	onSelect: (dir: string) => void;
-	onOpen: (dir: string) => void;
 	selectedDir: string | null;
 }) {
 	const [expanded, setExpanded] = useState(false);
@@ -446,7 +1022,6 @@ function ClientTreeClient({
 					isSelected ? "bg-primary/10 text-primary font-medium" : ""
 				}`}
 				onClick={() => onSelect(node.path)}
-				onDoubleClick={() => onOpen(node.path)}
 			>
 				{hasChildren ? (
 					<span
@@ -480,7 +1055,6 @@ function ClientTreeClient({
 							node={child}
 							selectedDir={selectedDir}
 							onSelectDir={onSelect}
-							onOpenClient={onOpen}
 						/>
 					))}
 				</div>
@@ -540,101 +1114,6 @@ function ClientIcon() {
 	);
 }
 
-// ─── Client Details Panel ───────────────────────────────────────────────
-
-function ClientDetails({
-	client,
-	onOpen,
-}: {
-	client: ClientSummary;
-	onOpen: (dir: string) => void;
-}) {
-	const reqCount = client.required_documents.length;
-	const completedCount = client.required_documents.filter(
-		(r) => r.status === "complete" || r.status === "executed",
-	).length;
-
-	return (
-		<div className="max-w-lg">
-			<h3 className="text-xl font-semibold mb-1">
-				{client.client_name}
-			</h3>
-			<p className="text-xs text-base-content/40 mb-4 font-mono">
-				{client.directory}
-			</p>
-
-			<button
-				type="button"
-				className="btn btn-primary btn-sm mb-6"
-				onClick={() => onOpen(client.directory)}
-			>
-				Open Client
-			</button>
-
-			{/* Summary cards */}
-			<div className="flex gap-4 mb-6">
-				<div className="px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
-					<div className="text-2xl font-bold">
-						{client.total_documents}
-					</div>
-					<div className="text-xs text-base-content/50">
-						Documents
-					</div>
-				</div>
-				<div className="px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
-					<div className="text-2xl font-bold">
-						{client.contacts_count}
-					</div>
-					<div className="text-xs text-base-content/50">
-						Contacts
-					</div>
-				</div>
-				{reqCount > 0 && (
-					<div className="px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
-						<div className="text-2xl font-bold">
-							{Math.round(
-								(completedCount / reqCount) * 100,
-							)}
-							%
-						</div>
-						<div className="text-xs text-base-content/50">
-							Complete
-						</div>
-					</div>
-				)}
-			</div>
-
-			{/* Required documents */}
-			{reqCount > 0 && (
-				<div>
-					<SectionHeading className="mb-2">
-						Required Documents
-					</SectionHeading>
-					<div className="rounded-xl border border-base-300 divide-y divide-base-200">
-						{client.required_documents.map((req, i) => (
-							<div
-								key={`${req.template_rel_path}-${i}`}
-								className="px-3 py-2 text-sm flex items-center justify-between gap-2"
-							>
-								<span>
-									{extractTemplateName(
-										req.template_rel_path,
-									)}
-								</span>
-								<span
-									className={`badge badge-sm ${STATUS_BADGES[req.status]}`}
-								>
-									{STATUS_LABELS[req.status]}
-								</span>
-							</div>
-						))}
-					</div>
-				</div>
-			)}
-		</div>
-	);
-}
-
 // ─── Progress Tab ────────────────────────────────────────────────────────
 
 function ProgressTab({
@@ -683,7 +1162,6 @@ function ProgressTab({
 	return (
 		<div className="flex-1 overflow-y-auto p-6">
 			<div className="max-w-3xl mx-auto space-y-6">
-				{/* Summary cards */}
 				<div className="flex gap-4">
 					<div className="flex-1 px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
 						<div className="text-2xl font-bold">
@@ -711,7 +1189,6 @@ function ProgressTab({
 					</div>
 				</div>
 
-				{/* Status breakdown */}
 				{stats.totalDocs > 0 && (
 					<div className="flex gap-2 flex-wrap">
 						{(
@@ -734,7 +1211,6 @@ function ProgressTab({
 					</div>
 				)}
 
-				{/* Per-client breakdown */}
 				<div>
 					<SectionHeading className="mb-3">
 						By Client
