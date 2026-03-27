@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -37,7 +37,6 @@ function buildTree(paths: string[]): TemplateTreeNode[] {
 		}
 	}
 
-	// Sort: folders first (alphabetical), then files (alphabetical)
 	sortTree(root);
 	return root;
 }
@@ -86,7 +85,6 @@ function filterTree(
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** Check whether a template rel path has any existing documents in the .lily file. */
 function hasExistingDocs(
 	templateRelPath: string,
 	lilyFile: LilyFile | null,
@@ -97,41 +95,6 @@ function hasExistingDocs(
 	);
 }
 
-/** Collect existing documents for a template from the .lily file. */
-function getExistingDocs(
-	templateRelPath: string,
-	lilyFile: LilyFile | null,
-): { filename: string; modifiedAt: string }[] {
-	if (!lilyFile?.documents) return [];
-	const docs: { filename: string; modifiedAt: string }[] = [];
-	for (const [filename, meta] of Object.entries(lilyFile.documents)) {
-		if (meta.template_rel_path === templateRelPath) {
-			docs.push({ filename, modifiedAt: meta.modified_at });
-		}
-	}
-	docs.sort(
-		(a, b) =>
-			new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime(),
-	);
-	return docs;
-}
-
-/** Format an ISO date string to a readable local format. */
-function formatDate(iso: string): string {
-	try {
-		return new Date(iso).toLocaleDateString(undefined, {
-			month: "short",
-			day: "numeric",
-			year: "numeric",
-			hour: "numeric",
-			minute: "2-digit",
-		});
-	} catch {
-		return iso;
-	}
-}
-
-/** Strip the .docx extension from a filename for display. */
 function stripDocx(name: string): string {
 	return name.replace(/\.docx$/i, "");
 }
@@ -192,11 +155,13 @@ function DocIcon() {
 function TemplateFolder({
 	node,
 	lilyFile,
-	onTemplateClick,
+	selectedTemplates,
+	onToggleTemplate,
 }: {
 	node: TemplateTreeNode & { kind: "folder" };
 	lilyFile: LilyFile | null;
-	onTemplateClick: (relPath: string) => void;
+	selectedTemplates: Set<string>;
+	onToggleTemplate: (relPath: string) => void;
 }) {
 	const [expanded, setExpanded] = useState(false);
 
@@ -217,10 +182,15 @@ function TemplateFolder({
 				<div className="ml-4 border-l border-base-300 pl-1">
 					{node.children.map((child) => (
 						<TemplateTreeItem
-							key={child.kind === "file" ? child.relPath : child.name}
+							key={
+								child.kind === "file"
+									? child.relPath
+									: child.name
+							}
 							node={child}
 							lilyFile={lilyFile}
-							onTemplateClick={onTemplateClick}
+							selectedTemplates={selectedTemplates}
+							onToggleTemplate={onToggleTemplate}
 						/>
 					))}
 				</div>
@@ -232,11 +202,13 @@ function TemplateFolder({
 function TemplateFile({
 	node,
 	lilyFile,
-	onTemplateClick,
+	isSelected,
+	onToggle,
 }: {
 	node: TemplateTreeNode & { kind: "file" };
 	lilyFile: LilyFile | null;
-	onTemplateClick: (relPath: string) => void;
+	isSelected: boolean;
+	onToggle: () => void;
 }) {
 	const hasDocs = hasExistingDocs(node.relPath, lilyFile);
 
@@ -244,10 +216,17 @@ function TemplateFile({
 		<button
 			type="button"
 			className={`btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal gap-2 ${
-				hasDocs ? "text-success" : ""
-			}`}
-			onClick={() => onTemplateClick(node.relPath)}
+				isSelected ? "bg-primary/10 border-primary/30" : ""
+			} ${hasDocs ? "text-success" : ""}`}
+			onClick={onToggle}
 		>
+			<input
+				type="checkbox"
+				className="checkbox checkbox-sm checkbox-primary"
+				checked={isSelected}
+				readOnly
+				tabIndex={-1}
+			/>
 			<DocIcon />
 			<span className="truncate">{stripDocx(node.name)}</span>
 			{hasDocs && (
@@ -262,18 +241,21 @@ function TemplateFile({
 function TemplateTreeItem({
 	node,
 	lilyFile,
-	onTemplateClick,
+	selectedTemplates,
+	onToggleTemplate,
 }: {
 	node: TemplateTreeNode;
 	lilyFile: LilyFile | null;
-	onTemplateClick: (relPath: string) => void;
+	selectedTemplates: Set<string>;
+	onToggleTemplate: (relPath: string) => void;
 }) {
 	if (node.kind === "folder") {
 		return (
 			<TemplateFolder
 				node={node}
 				lilyFile={lilyFile}
-				onTemplateClick={onTemplateClick}
+				selectedTemplates={selectedTemplates}
+				onToggleTemplate={onToggleTemplate}
 			/>
 		);
 	}
@@ -281,7 +263,8 @@ function TemplateTreeItem({
 		<TemplateFile
 			node={node}
 			lilyFile={lilyFile}
-			onTemplateClick={onTemplateClick}
+			isSelected={selectedTemplates.has(node.relPath)}
+			onToggle={() => onToggleTemplate(node.relPath)}
 		/>
 	);
 }
@@ -295,14 +278,12 @@ export default function TemplatePicker() {
 		lilyFile,
 		loading,
 		error,
-		selectTemplate,
-		openDocument,
+		addMultipleDocuments,
 		loadTemplates,
 		returnToHub,
 	} = useWorkflowStore();
 	const { settings, save } = useSettingsStore();
 
-	// Build tree from flat paths
 	const tree = useMemo(() => buildTree(templates), [templates]);
 	const [templateSearch, setTemplateSearch] = useState("");
 	const filteredTree = useMemo(
@@ -310,12 +291,30 @@ export default function TemplatePicker() {
 		[tree, templateSearch],
 	);
 
-	// Conflict dialog state
-	const [conflictDocs, setConflictDocs] = useState<
-		{ filename: string; modifiedAt: string }[]
-	>([]);
-	const [pendingTemplate, setPendingTemplate] = useState<string | null>(null);
-	const dialogRef = useRef<HTMLDialogElement>(null);
+	// Multi-select state
+	const [selectedTemplates, setSelectedTemplates] = useState<Set<string>>(
+		new Set(),
+	);
+
+	const toggleTemplate = (relPath: string) => {
+		setSelectedTemplates((prev) => {
+			const next = new Set(prev);
+			if (next.has(relPath)) {
+				next.delete(relPath);
+			} else {
+				next.add(relPath);
+			}
+			return next;
+		});
+	};
+
+	const handleAddDocuments = async () => {
+		if (selectedTemplates.size === 0) return;
+		await addMultipleDocuments(
+			Array.from(selectedTemplates),
+			settings.templates_dir!,
+		);
+	};
 
 	const pickTemplatesDir = async () => {
 		const selected = await open({
@@ -327,42 +326,6 @@ export default function TemplatePicker() {
 			await save({ templates_dir: selected });
 			loadTemplates(selected);
 		}
-	};
-
-	const handleTemplateClick = (templateRelPath: string) => {
-		const existing = getExistingDocs(templateRelPath, lilyFile);
-
-		if (existing.length > 0) {
-			setConflictDocs(existing);
-			setPendingTemplate(templateRelPath);
-			dialogRef.current?.showModal();
-		} else {
-			selectTemplate(templateRelPath, settings.templates_dir!);
-		}
-	};
-
-	const handleOpenExisting = (filename: string) => {
-		dialogRef.current?.close();
-		if (pendingTemplate) {
-			openDocument(filename, pendingTemplate);
-		}
-		setConflictDocs([]);
-		setPendingTemplate(null);
-	};
-
-	const handleCreateNew = () => {
-		dialogRef.current?.close();
-		if (pendingTemplate) {
-			selectTemplate(pendingTemplate, settings.templates_dir!);
-		}
-		setConflictDocs([]);
-		setPendingTemplate(null);
-	};
-
-	const handleCancelDialog = () => {
-		dialogRef.current?.close();
-		setConflictDocs([]);
-		setPendingTemplate(null);
 	};
 
 	if (loading) {
@@ -380,10 +343,12 @@ export default function TemplatePicker() {
 	if (!settings.templates_dir) {
 		return (
 			<div className="flex flex-col items-center justify-center h-full gap-6 p-8">
-				<h2 className="text-2xl font-bold">Set Template Library Path</h2>
+				<h2 className="text-2xl font-bold">
+					Set Template Library Path
+				</h2>
 				<p className="text-base-content/70 text-center max-w-md">
-					Before selecting a template, you need to choose the folder where
-					your template documents are stored.
+					Before selecting a template, you need to choose the
+					folder where your template documents are stored.
 				</p>
 				<button
 					type="button"
@@ -405,7 +370,7 @@ export default function TemplatePicker() {
 
 	return (
 		<div className="flex flex-col h-full">
-			<PageHeader title="Add New Document" onBack={returnToHub} />
+			<PageHeader title="Add Documents" onBack={returnToHub} />
 
 			{error && (
 				<div className="alert alert-error m-2">
@@ -439,75 +404,53 @@ export default function TemplatePicker() {
 					<div className="flex flex-col gap-0.5">
 						{filteredTree.map((node) => (
 							<TemplateTreeItem
-								key={node.kind === "file" ? node.relPath : node.name}
+								key={
+									node.kind === "file"
+										? node.relPath
+										: node.name
+								}
 								node={node}
 								lilyFile={lilyFile}
-								onTemplateClick={handleTemplateClick}
+								selectedTemplates={selectedTemplates}
+								onToggleTemplate={toggleTemplate}
 							/>
 						))}
 					</div>
 				)}
 			</div>
 
-			{/* Conflict dialog: existing document(s) found for this template */}
-			{/* biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close is a convenience, not primary interaction */}
-			<dialog
-				ref={dialogRef}
-				className="modal"
-				onClick={(e) => {
-					if (e.target === dialogRef.current) handleCancelDialog();
-				}}
-			>
-				<div className="modal-box">
-					<h3 className="text-lg font-bold mb-2">
-						Existing document found
-					</h3>
-					<p className="text-base-content/70 mb-4">
-						This folder already has{" "}
-						{conflictDocs.length === 1
-							? "a document"
-							: `${conflictDocs.length} documents`}{" "}
-						created from this template. Would you like to open{" "}
-						{conflictDocs.length === 1 ? "it" : "one"} or create a
-						fresh copy?
-					</p>
-
-					<div className="flex flex-col gap-2 mb-4">
-						{conflictDocs.map((doc) => (
-							<button
-								type="button"
-								key={doc.filename}
-								className="btn btn-outline btn-sm justify-between h-auto py-2"
-								onClick={() => handleOpenExisting(doc.filename)}
-							>
-								<span className="font-medium truncate">
-									{doc.filename}
-								</span>
-								<span className="text-xs text-base-content/50 shrink-0 ml-2">
-									Modified {formatDate(doc.modifiedAt)}
-								</span>
-							</button>
-						))}
-					</div>
-
-					<div className="modal-action">
+			{/* Sticky footer: selection bar */}
+			{selectedTemplates.size > 0 && (
+				<div className="sticky bottom-0 border-t border-base-300 bg-base-100 px-5 py-3 flex items-center justify-between shadow-[0_-4px_16px_rgba(0,0,0,0.15)]">
+					<span className="text-sm text-base-content/70">
+						{selectedTemplates.size} template
+						{selectedTemplates.size !== 1 ? "s" : ""} selected
+					</span>
+					<div className="flex gap-2">
 						<button
 							type="button"
 							className="btn btn-ghost btn-sm"
-							onClick={handleCancelDialog}
+							onClick={() =>
+								setSelectedTemplates(new Set())
+							}
 						>
-							Cancel
+							Clear
 						</button>
 						<button
 							type="button"
 							className="btn btn-primary btn-sm"
-							onClick={handleCreateNew}
+							onClick={handleAddDocuments}
+							disabled={loading}
 						>
-							Create New Copy
+							{loading ? (
+								<span className="loading loading-spinner loading-xs" />
+							) : (
+								`Add ${selectedTemplates.size} Document${selectedTemplates.size !== 1 ? "s" : ""}`
+							)}
 						</button>
 					</div>
 				</div>
-			</dialog>
+			)}
 		</div>
 	);
 }

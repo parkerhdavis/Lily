@@ -161,11 +161,12 @@ export default function ContactRoleField({
 				<div className="p-3">
 					<select
 						className="select select-bordered select-sm w-full opacity-50 pointer-events-none"
-						value={qContact ? qContact.id : ""}
+						value={qContactId === "__none__" ? "__none__" : qContact ? qContact.id : ""}
 						disabled
 						tabIndex={-1}
 					>
 						<option value="">Not assigned</option>
+						<option value="__none__">None</option>
 						{contacts.map((c) => (
 							<option key={c.id} value={c.id}>
 								{c.full_name}
@@ -175,6 +176,11 @@ export default function ContactRoleField({
 							</option>
 						))}
 					</select>
+					{qContactId === "__none__" && (
+						<div className="mt-2 text-xs text-base-content/50 italic pl-3">
+							No one assigned to this role
+						</div>
+					)}
 					{qContact && (
 						<div className="mt-2 pl-3 border-l-2 border-primary/30 opacity-75">
 							<div className="space-y-1">

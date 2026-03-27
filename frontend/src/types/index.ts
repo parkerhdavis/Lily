@@ -65,7 +65,6 @@ export interface AppSettings {
 export type WorkflowStep =
 	| "hub"
 	| "clients"
-	| "client-hub"
 	| "questionnaire"
 	| "select-template"
 	| "edit-variables"
@@ -100,6 +99,8 @@ export interface DocumentMeta {
 	variable_names: string[];
 	/** Per-document role overrides (roles that diverge from the questionnaire). */
 	role_overrides: Record<string, RoleOverride>;
+	/** Per-document variable overrides (variables that diverge from client-level values). */
+	variable_overrides: Record<string, string>;
 }
 
 /** A contact associated with a client (family member, agent, trustee, etc.). */

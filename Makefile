@@ -1,4 +1,4 @@
-.PHONY: help dev dev-frontend down build build-linux build-windows build-macos setup install lint lint-fix format check test typecheck clean
+.PHONY: help dev dev-frontend down build build-linux build-windows build-macos setup install lint lint-fix format check test typecheck clean version
 
 # ==================================================================
 # OS DETECTION
@@ -51,6 +51,11 @@ else
     MKDIR := mkdir -p
     RM := rm -rf
     NULL := /dev/null
+    ifeq ($(DETECTED_OS),macos)
+        SED_INPLACE := sed -i ''
+    else
+        SED_INPLACE := sed -i
+    endif
 endif
 
 help:
@@ -80,6 +85,10 @@ help:
 	@echo "  format             - Format code with Biome and rustfmt"
 	@echo "  typecheck          - Run TypeScript type checking"
 	@echo "  test               - Run Rust tests"
+	@echo ""
+	@echo "Versioning:"
+	@echo "  version            - Show current version"
+	@echo "  version V=X.Y.Z   - Set version across all config files"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  clean              - Remove build artifacts and dependencies"
@@ -317,6 +326,43 @@ test:
 	@echo "Running Rust tests..."
 	@cd backend && cargo test
 	@echo "Tests complete"
+endif
+
+# -------------
+# Versioning
+# -------------
+
+ifeq ($(DETECTED_OS),windows)
+version:
+ifndef V
+	@echo "Current version:"
+	@cd backend; (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches.Groups[1].Value
+else
+	@echo "Updating version to $(V)..."
+	@(Get-Content backend\Cargo.toml -Raw) -replace '(?m)^version = ".*"', 'version = "$(V)"' | Set-Content backend\Cargo.toml -NoNewline
+	@(Get-Content backend\tauri.conf.json -Raw) -replace '"version": ".*"', '"version": "$(V)"' | Set-Content backend\tauri.conf.json -NoNewline
+	@(Get-Content frontend\package.json -Raw) -replace '"version": ".*"', '"version": "$(V)"' | Set-Content frontend\package.json -NoNewline
+	@echo "  -> backend/Cargo.toml"
+	@echo "  -> backend/tauri.conf.json"
+	@echo "  -> frontend/package.json"
+	@echo ""
+	@echo "Version updated to $(V)"
+endif
+else
+version:
+ifndef V
+	@echo "Current version: $$(grep '^version = ' backend/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')"
+else
+	@echo "Updating version to $(V)..."
+	@$(SED_INPLACE) 's/^version = ".*"/version = "$(V)"/' backend/Cargo.toml
+	@$(SED_INPLACE) 's/"version": ".*"/"version": "$(V)"/' backend/tauri.conf.json
+	@$(SED_INPLACE) 's/"version": ".*"/"version": "$(V)"/' frontend/package.json
+	@echo "  -> backend/Cargo.toml"
+	@echo "  -> backend/tauri.conf.json"
+	@echo "  -> frontend/package.json"
+	@echo ""
+	@echo "Version updated to $(V)"
+endif
 endif
 
 # -------------

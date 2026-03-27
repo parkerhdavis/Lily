@@ -1284,9 +1284,12 @@ fn normalize_split_variables(xml: &str) -> String {
 
         // Actually, the cleanest approach: just replace the text content in the
         // first <w:t> with the full merged text, and empty the intermediate <w:t> elements.
-
-        let escaped_merged = escape_xml_text(&merged_text);
-        let new_first_t = format!("{}{}</w:t>", new_opening, escaped_merged);
+        //
+        // The merged text was extracted via regex from valid XML text content, so
+        // it is already properly XML-encoded (entities like &amp; &lt; &gt; are
+        // preserved as-is). Do NOT re-escape — that would double-encode entities
+        // (e.g., &quot; → &amp;quot;).
+        let new_first_t = format!("{}{}</w:t>", new_opening, merged_text);
 
         // Replace the first <w:t>...</w:t>
         let mut new_xml = String::new();
@@ -3309,13 +3312,12 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
             },
             Ok(xml::reader::XmlEvent::Characters(text)) => {
                 if in_t {
-                    let escaped = escape_html(&text);
-
                     // If we're inside a Lily SDT content, wrap in a variable span.
                     // The span only gets data-variable and data-original-case;
                     // conditional logic is handled by the frontend using
                     // definitions from the .lily file.
                     let highlighted = if in_sdt_content {
+                        let escaped = escape_html(&text);
                         if let Some(ref var_name) = sdt_var_name {
                             let canonical = var_name.to_lowercase();
                             format!(
@@ -3326,7 +3328,10 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                             escaped
                         }
                     } else {
-                        highlight_variables(&escaped)
+                        // Pass raw text — highlight_variables handles HTML
+                        // escaping internally so that variable delimiters
+                        // (e.g. `"` in conditionals) are parsed before encoding.
+                        highlight_variables(&text)
                     };
 
                     // Apply run-level formatting
@@ -3471,6 +3476,10 @@ fn escape_html(text: &str) -> String {
 /// Conditional variables (`{Label ?? true :: false}`) get extra
 /// `data-conditional`, `data-true-text`, and `data-false-text` attributes
 /// so the frontend can toggle between the two text branches.
+///
+/// Expects **raw** (unescaped) text — the function handles HTML escaping
+/// internally so that variable delimiters like `"` are parsed correctly
+/// before any encoding is applied.
 fn highlight_variables(text: &str) -> String {
     let mut result = String::new();
     let mut chars = text.chars().peekable();
@@ -3513,12 +3522,12 @@ fn highlight_variables(text: &str) -> String {
                     };
                     result.push_str(&format!(
                         "<span class=\"variable-highlight\" data-variable=\"{}\" data-original-case=\"{}\">{{{}}}</span>",
-                        canonical, var_content, var_content
+                        escape_html(&canonical), escape_html(&var_content), escape_html(&var_content)
                     ));
                 } else {
                     // Contains nested braces but isn't a conditional — emit as-is
                     result.push('{');
-                    result.push_str(&var_content);
+                    result.push_str(&escape_html(&var_content));
                     result.push('}');
                 }
             } else {
@@ -3526,7 +3535,13 @@ fn highlight_variables(text: &str) -> String {
                 result.push('{');
             }
         } else {
-            result.push(c);
+            // Escape HTML special characters for non-variable text
+            match c {
+                '&' => result.push_str("&amp;"),
+                '<' => result.push_str("&lt;"),
+                '>' => result.push_str("&gt;"),
+                _ => result.push(c),
+            }
         }
     }
 
@@ -4143,6 +4158,73 @@ mod tests {
         assert!(
             result.contains("data-false-text=\"I am not married\""),
             "Expected false text, got: {}",
+            result
+        );
+    }
+
+    /// Verify that highlight_variables handles HTML-special characters in
+    /// non-variable text (e.g., `&` in "Smith & Jones") correctly.
+    #[test]
+    fn test_highlight_variables_escapes_html_specials() {
+        let result = highlight_variables("Smith & Jones said {Client Name} is <great>");
+        assert!(
+            result.contains("Smith &amp; Jones"),
+            "Expected & to be escaped, got: {}",
+            result
+        );
+        assert!(
+            result.contains("&lt;great&gt;"),
+            "Expected <> to be escaped, got: {}",
+            result
+        );
+        assert!(
+            result.contains("data-variable=\"client name\""),
+            "Expected variable span, got: {}",
+            result
+        );
+    }
+
+    /// Verify that straight ASCII quotes in conditional variables are parsed
+    /// correctly by highlight_variables (previously broken because escape_html
+    /// was called before highlight_variables, converting `"` to `&quot;`).
+    #[test]
+    fn test_highlight_variables_conditional_straight_quotes() {
+        // Straight ASCII quotes — the form generated by programmatic tools
+        let result = highlight_variables(
+            r#"{Has Alternate ?? "If primary is unable, appoint alternate." :: ""}"#,
+        );
+        assert!(
+            result.contains("data-conditional=\"true\""),
+            "Expected conditional with straight quotes, got: {}",
+            result
+        );
+        assert!(
+            result.contains("data-variable=\"has alternate\""),
+            "Expected canonical key, got: {}",
+            result
+        );
+        assert!(
+            result.contains("data-true-text=\"If primary is unable, appoint alternate.\""),
+            "Expected true text, got: {}",
+            result
+        );
+    }
+
+    /// Verify that curly/smart quotes in conditional variables are also parsed
+    /// (the form generated by Word's AutoFormat).
+    #[test]
+    fn test_highlight_variables_conditional_curly_quotes() {
+        let result = highlight_variables(
+            "{Has Alternate ?? \u{201C}If primary is unable, appoint alternate.\u{201D} :: \u{201C}\u{201D}}",
+        );
+        assert!(
+            result.contains("data-conditional=\"true\""),
+            "Expected conditional with curly quotes, got: {}",
+            result
+        );
+        assert!(
+            result.contains("data-true-text=\"If primary is unable, appoint alternate.\""),
+            "Expected true text, got: {}",
             result
         );
     }

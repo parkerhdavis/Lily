@@ -198,6 +198,10 @@ pub struct DocumentMeta {
     /// uses the override's values instead of the questionnaire's binding.
     #[serde(default)]
     pub role_overrides: HashMap<String, RoleOverride>,
+    /// Per-document variable overrides. When a variable name is present here,
+    /// the document uses this value instead of the client-level value.
+    #[serde(default)]
+    pub variable_overrides: HashMap<String, String>,
 }
 
 impl Default for LilyFile {
@@ -377,6 +381,7 @@ fn migrate_legacy_sidecar(working_dir: &str) -> Result<LilyFile, String> {
                 modified_at: meta.modified_at,
                 variable_names,
                 role_overrides: HashMap::new(),
+                variable_overrides: HashMap::new(),
             },
         );
     }
@@ -414,6 +419,7 @@ pub fn record_document(
             modified_at: now,
             variable_names: Vec::new(),
             role_overrides: HashMap::new(),
+            variable_overrides: HashMap::new(),
         },
     );
     write_lily_file(working_dir, &lily)
@@ -627,6 +633,7 @@ pub fn new_version_document(working_dir: String, filename: String) -> Result<Str
             modified_at: now,
             variable_names,
             role_overrides: HashMap::new(),
+            variable_overrides: HashMap::new(),
         },
     );
     write_lily_file(&working_dir, &lily)?;
@@ -735,9 +742,18 @@ pub fn save_contact_bindings(
 #[tauri::command]
 pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
     let mut lily = read_lily_file(&working_dir)?;
+
+    // ── Pass 1: Role-based conditionals ("Has {role}") ──────────────────
     for (role, binding) in &lily.contact_bindings {
         let has_key = format!("Has {}", role);
         match &binding.contact_id {
+            Some(id) if id == "__none__" => {
+                // Explicitly "None" — clear all mapped variables and mark role absent
+                for var_name in binding.variable_mappings.keys() {
+                    lily.variables.insert(var_name.clone(), String::new());
+                }
+                lily.variables.insert(has_key, "false".to_string());
+            }
             Some(id) => {
                 let contact = lily.contacts.iter().find(|c| &c.id == id);
                 if let Some(contact) = contact {
@@ -762,6 +778,34 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
             }
         }
     }
+
+    // ── Pass 2: Relationship-based conditionals ("Has {relationship}") ──
+    // For conditional variables named "Has {X}" where X doesn't match any
+    // contact binding role, check whether any contact has a `relationship`
+    // field matching X (case-insensitive).  This allows templates to use
+    // e.g. `{Has Spouse ?? ... :: ...}` which auto-derives from contacts.
+    let binding_roles: std::collections::HashSet<&str> =
+        lily.contact_bindings.keys().map(|k| k.as_str()).collect();
+    let relationship_conditionals: Vec<(String, String)> = lily
+        .conditional_variables
+        .iter()
+        .filter_map(|name| {
+            let suffix = name.strip_prefix("Has ")?;
+            if binding_roles.contains(suffix) {
+                return None; // Already handled by role-based pass
+            }
+            Some((name.clone(), suffix.to_string()))
+        })
+        .collect();
+    for (has_key, relationship) in relationship_conditionals {
+        let has_match = lily
+            .contacts
+            .iter()
+            .any(|c| c.relationship.eq_ignore_ascii_case(&relationship));
+        lily.variables
+            .insert(has_key, if has_match { "true" } else { "false" }.to_string());
+    }
+
     write_lily_file(&working_dir, &lily)
 }
 
@@ -788,6 +832,23 @@ pub fn set_role_override(
             meta.role_overrides.remove(&role);
         }
     }
+    write_lily_file(&working_dir, &lily)
+}
+
+/// Set per-document variable overrides.
+/// Replaces the full overrides map for the given document.
+#[tauri::command]
+pub fn set_variable_overrides(
+    working_dir: String,
+    filename: String,
+    overrides: HashMap<String, String>,
+) -> Result<(), String> {
+    let mut lily = read_lily_file(&working_dir)?;
+    let meta = lily
+        .documents
+        .get_mut(&filename)
+        .ok_or_else(|| format!("Document '{}' not found in .lily file", filename))?;
+    meta.variable_overrides = overrides;
     write_lily_file(&working_dir, &lily)
 }
 

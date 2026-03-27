@@ -11,7 +11,7 @@ import { extractFolderName } from "@/utils/path";
 
 /** Steps that operate on an individual client (require a working dir). */
 const CLIENT_STEPS = new Set([
-	"client-hub",
+	"clients",
 	"questionnaire",
 	"select-template",
 	"edit-variables",

@@ -70,7 +70,7 @@ await buildAll();
 // ---------------------------------------------------------------------------
 Bun.serve({
 	port: DEV_PORT,
-	fetch(req, server) {
+	async fetch(req, server) {
 		const url = new URL(req.url);
 
 		// WebSocket upgrade for live reload

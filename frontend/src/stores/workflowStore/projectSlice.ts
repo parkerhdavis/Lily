@@ -9,7 +9,7 @@ import type { WorkflowSlice } from "./types";
 export const createProjectSlice: WorkflowSlice = (set, get) => ({
 	setWorkingDir: (dir) => {
 		pushNav(get());
-		set({ workingDir: dir, step: "client-hub" });
+		set({ workingDir: dir, step: "clients" });
 
 		invoke<LilyFile>("load_lily_file_cmd", { workingDir: dir })
 			.then((lilyFile) => {
@@ -191,6 +191,14 @@ export const createProjectSlice: WorkflowSlice = (set, get) => ({
 						)) {
 							variableValues[varName] = value;
 						}
+					}
+				}
+				// Apply per-document variable overrides
+				if (docMeta?.variable_overrides) {
+					for (const [varName, value] of Object.entries(
+						docMeta.variable_overrides,
+					)) {
+						variableValues[varName] = value;
 					}
 				}
 

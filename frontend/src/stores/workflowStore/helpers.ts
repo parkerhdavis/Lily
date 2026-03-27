@@ -11,7 +11,7 @@ import {
 import { useNavigationStore } from "@/stores/navigationStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
-import { extractFolderName } from "@/utils/path";
+import { extractFilename, extractFolderName } from "@/utils/path";
 import type { WorkflowState } from "./types";
 
 const MAX_PERSISTED_HISTORY = 20;
@@ -37,9 +37,7 @@ export function navLabel(
 		case "hub":
 			return "Lily Hub";
 		case "clients":
-			return "Clients";
-		case "client-hub":
-			return folderName || "Client Hub";
+			return folderName ? `Clients \u203A ${folderName}` : "Clients";
 		case "questionnaire":
 			return `${folderName} \u203A Questionnaire`;
 		case "select-template":
@@ -116,6 +114,32 @@ function debouncedPersistNavEntry(entry: Parameters<typeof persistNavEntry>[0]) 
 		persistTimer = null;
 		persistNavEntry(entry);
 	}, 500);
+}
+
+/**
+ * Build a client-personalized document filename from a template path.
+ *
+ * Strips the extension and any " Template" suffix, then appends
+ * "- {First} {Last}" from client variables when available.
+ */
+export function buildDocumentFilename(
+	templateRelPath: string,
+	lilyFile: LilyFile | null,
+): string {
+	const raw = extractFilename(templateRelPath);
+	const extMatch = raw.match(/\.(docx|dotx)$/i);
+	let baseName = extMatch ? raw.slice(0, -extMatch[0].length) : raw;
+	baseName = baseName.replace(/ Template$/i, "");
+
+	const firstName =
+		lilyFile?.variables["Client First Name"]?.trim() ?? "";
+	const lastName =
+		lilyFile?.variables["Client Last Name"]?.trim() ?? "";
+	const clientName = [firstName, lastName].filter(Boolean).join(" ");
+
+	return clientName
+		? `${baseName} - ${clientName}.docx`
+		: `${baseName}.docx`;
 }
 
 /**

@@ -45,6 +45,10 @@ export interface WorkflowState {
 		templatesDir: string,
 	) => Promise<void>;
 	openDocument: (filename: string, templateRelPath: string) => Promise<void>;
+	addMultipleDocuments: (
+		templateRelPaths: string[],
+		templatesDir: string,
+	) => Promise<void>;
 	renameDocument: (newFilename: string) => Promise<void>;
 	saveDocument: () => Promise<void>;
 	refreshPreview: () => Promise<void>;

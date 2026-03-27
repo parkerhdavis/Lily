@@ -271,9 +271,7 @@ function getStepLabel(
 		case "hub":
 			return "Lily Hub";
 		case "clients":
-			return "Clients";
-		case "client-hub":
-			return folderName || "Client Hub";
+			return folderName ? `Clients \u203A ${folderName}` : "Clients";
 		case "questionnaire":
 			return `${folderName} \u203A Questionnaire`;
 		case "select-template":
