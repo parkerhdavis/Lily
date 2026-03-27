@@ -1,6 +1,6 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
@@ -382,7 +382,7 @@ pub fn replace_variables(
     // — in particular, contact-role dot notation like {Role.property} is
     // correctly flattened to "Role Property" display names.
     let mut var_infos: Vec<VariableInfo> = Vec::new();
-    let mut seen_keys: HashSet<String> = HashSet::new();
+    let mut seen_keys: HashMap<String, usize> = HashMap::new();
     for (name, content) in &entries {
         if name == "word/document.xml"
             || name.starts_with("word/header")
@@ -392,7 +392,21 @@ pub fn replace_variables(
             let normalized = normalize_split_variables(&xml_str);
             for info in find_all_variables(&normalized) {
                 let key = info.display_name.to_lowercase();
-                if seen_keys.insert(key) {
+                if let Some(&idx) = seen_keys.get(&key) {
+                    // Merge new variants into the existing entry so
+                    // case variants discovered in later XML parts
+                    // (e.g., {CLIENT FULL NAME} in document.xml when
+                    // footer.xml was processed first) aren't lost.
+                    for variant in info.variants {
+                        if !var_infos[idx].variants.contains(&variant) {
+                            var_infos[idx].variants.push(variant);
+                        }
+                    }
+                    if info.is_conditional {
+                        var_infos[idx].is_conditional = true;
+                    }
+                } else {
+                    seen_keys.insert(key, var_infos.len());
                     var_infos.push(info);
                 }
             }
@@ -2434,52 +2448,26 @@ fn replace_placeholders_with_sdt(
             let mut text = t_caps[1].to_string();
             let mut output_parts: Vec<String> = Vec::new();
 
-            // Process each placeholder in the text
+            // Process each placeholder in the text.
+            // We must always replace the EARLIEST match in the remaining
+            // text. This is critical when conditional expressions like
+            // {Label ?? "...{Nested}..." :: ""} are present: the outer
+            // conditional starts before its nested variables, so it must
+            // be matched first. Without this, a nested variable could be
+            // replaced individually, breaking the conditional pattern.
             loop {
-                // Find the next {Variable} in the remaining text
-                let mut found = false;
+                // Find the pattern whose match starts earliest in text
+                let mut best: Option<(usize, &str, &str, &str)> = None; // (pos, var_name, display_name, value)
                 for (var_name, (display_name, value)) in replacements {
                     let pattern = format!("{{{}}}", var_name);
                     if let Some(pos) = text.find(&pattern) {
-                        // Text before the placeholder (as a plain run)
-                        let before = &text[..pos];
-                        if !before.is_empty() {
-                            output_parts.push(format!(
-                                "<w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r>",
-                                rpr,
-                                escape_xml_text(before)
-                            ));
+                        if best.is_none() || pos < best.unwrap().0 {
+                            best = Some((pos, var_name, display_name, value));
                         }
-
-                        // The SDT-wrapped replacement.
-                        // The tag uses the display_name (label) for the SDT
-                        // identity. Definitions are stored in the .lily file.
-                        let escaped_val = escape_xml_text(value);
-                        let escaped_display = escape_xml_text(display_name);
-                        if value.is_empty() {
-                            let bid = *next_id;
-                            *next_id += 1;
-                            output_parts.push(format!(
-                                "<w:bookmarkStart w:id=\"{}\" w:name=\"{}{}\"/><w:bookmarkEnd w:id=\"{}\"/>",
-                                bid, BOOKMARK_PREFIX, escaped_display, bid
-                            ));
-                        } else {
-                            let sdt_id = *next_id;
-                            *next_id += 1;
-                            output_parts.push(format!(
-                                "<w:sdt><w:sdtPr><w:id w:val=\"{}\"/><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
-                                sdt_id, SDT_TAG_PREFIX, escaped_display, escaped_display, rpr, escaped_val
-                            ));
-                        }
-
-                        // Continue with the text after the placeholder
-                        text = text[pos + pattern.len()..].to_string();
-                        found = true;
-                        break;
                     }
                 }
 
-                if !found {
+                let Some((pos, var_name, display_name, value)) = best else {
                     // No more placeholders; emit remaining text as a plain run
                     if !text.is_empty() {
                         output_parts.push(format!(
@@ -2489,7 +2477,43 @@ fn replace_placeholders_with_sdt(
                         ));
                     }
                     break;
+                };
+
+                let pattern = format!("{{{}}}", var_name);
+
+                // Text before the placeholder (as a plain run)
+                let before = &text[..pos];
+                if !before.is_empty() {
+                    output_parts.push(format!(
+                        "<w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r>",
+                        rpr,
+                        escape_xml_text(before)
+                    ));
                 }
+
+                // The SDT-wrapped replacement.
+                // The tag uses the display_name (label) for the SDT
+                // identity. Definitions are stored in the .lily file.
+                let escaped_val = escape_xml_text(value);
+                let escaped_display = escape_xml_text(display_name);
+                if value.is_empty() {
+                    let bid = *next_id;
+                    *next_id += 1;
+                    output_parts.push(format!(
+                        "<w:bookmarkStart w:id=\"{}\" w:name=\"{}{}\"/><w:bookmarkEnd w:id=\"{}\"/>",
+                        bid, BOOKMARK_PREFIX, escaped_display, bid
+                    ));
+                } else {
+                    let sdt_id = *next_id;
+                    *next_id += 1;
+                    output_parts.push(format!(
+                        "<w:sdt><w:sdtPr><w:id w:val=\"{}\"/><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
+                        sdt_id, SDT_TAG_PREFIX, escaped_display, escaped_display, rpr, escaped_val
+                    ));
+                }
+
+                // Continue with the text after the placeholder
+                text = text[pos + pattern.len()..].to_string();
             }
 
             for part in &output_parts {
@@ -3733,6 +3757,176 @@ mod tests {
         assert!(
             result.contains("Jane Doe"),
             "Expected replacement in multiline XML, got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_replace_all_case_variants() {
+        // Regression test: when a variable appears in multiple casings
+        // (e.g., {CLIENT FULL NAME} and {Client Full Name}), ALL variants
+        // must be replaced, not just one.
+        let xml = r#"<w:p><w:r><w:rPr><w:b/><w:sz w:val="32"/></w:rPr><w:t xml:space="preserve">{CLIENT FULL NAME}</w:t></w:r></w:p><w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">{Client Full Name}</w:t></w:r></w:p>"#;
+
+        // First verify find_all_variables groups them correctly
+        let doc_xml = format!(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{}</w:body></w:document>"#,
+            xml
+        );
+        let vars = find_all_variables(&doc_xml);
+        assert_eq!(vars.len(), 1, "Expected 1 grouped variable, got: {:?}", vars);
+        assert_eq!(vars[0].display_name, "Client Full Name");
+        assert!(
+            vars[0].variants.contains(&"CLIENT FULL NAME".to_string()),
+            "Expected ALL CAPS variant, got: {:?}",
+            vars[0].variants
+        );
+        assert!(
+            vars[0].variants.contains(&"Client Full Name".to_string()),
+            "Expected title case variant, got: {:?}",
+            vars[0].variants
+        );
+
+        // Now test replacement — both variants must be replaced
+        let mut replacements = HashMap::new();
+        replacements.insert(
+            "CLIENT FULL NAME".to_string(),
+            ("Client Full Name".to_string(), "PARKER HOWELL DAVIS".to_string()),
+        );
+        replacements.insert(
+            "Client Full Name".to_string(),
+            ("Client Full Name".to_string(), "Parker Howell Davis".to_string()),
+        );
+        let mut next_id = 1u64;
+        let result = replace_placeholders_with_sdt(xml, &replacements, &mut next_id);
+
+        assert!(
+            !result.contains("{CLIENT FULL NAME}"),
+            "ALL CAPS variant was NOT replaced! Got: {}",
+            result
+        );
+        assert!(
+            !result.contains("{Client Full Name}"),
+            "Title case variant was NOT replaced! Got: {}",
+            result
+        );
+        assert!(
+            result.contains("PARKER HOWELL DAVIS"),
+            "Expected ALL CAPS value, got: {}",
+            result
+        );
+        assert!(
+            result.contains("Parker Howell Davis"),
+            "Expected title case value, got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_replace_all_case_variants_real_xml() {
+        // Test with actual HPOA template XML structure
+        let xml = concat!(
+            r#"<w:p w14:paraId="447C5B56" w14:textId="77777777">"#,
+            r#"<w:pPr><w:pStyle w:val="957" /><w:pBdr></w:pBdr><w:spacing />"#,
+            r#"<w:ind /><w:jc w:val="center" />"#,
+            r#"<w:rPr><w:b/><w:sz w:val="32" /><w:szCs w:val="22" /></w:rPr></w:pPr>"#,
+            r#"<w:r><w:rPr><w:b/><w:sz w:val="32" /><w:szCs w:val="22" /></w:rPr>"#,
+            r#"<w:t xml:space="preserve">{CLIENT FULL NAME}</w:t></w:r>"#,
+            r#"<w:r><w:rPr><w:b/><w:sz w:val="32" /><w:szCs w:val="22" /></w:rPr></w:r>"#,
+            r#"<w:r><w:rPr><w:b/><w:sz w:val="32" /><w:szCs w:val="22" /></w:rPr></w:r>"#,
+            r#"</w:p>"#,
+            r#"<w:p w14:paraId="3CBD90A9" w14:textId="77777777">"#,
+            r#"<w:pPr><w:pStyle w:val="957" /><w:pBdr></w:pBdr><w:spacing />"#,
+            r#"<w:ind /><w:jc w:val="both" /><w:rPr></w:rPr></w:pPr>"#,
+            r#"<w:r><w:t xml:space="preserve">I, </w:t></w:r>"#,
+            r#"<w:r><w:rPr><w:b/><w:bCs/></w:rPr>"#,
+            r#"<w:t xml:space="preserve">{Client Full Name}</w:t></w:r>"#,
+            r#"</w:p>"#,
+        );
+
+        let mut replacements = HashMap::new();
+        replacements.insert(
+            "CLIENT FULL NAME".to_string(),
+            ("Client Full Name".to_string(), "PARKER HOWELL DAVIS".to_string()),
+        );
+        replacements.insert(
+            "Client Full Name".to_string(),
+            ("Client Full Name".to_string(), "Parker Howell Davis".to_string()),
+        );
+        let mut next_id = 1u64;
+        let result = replace_placeholders_with_sdt(xml, &replacements, &mut next_id);
+
+        assert!(
+            !result.contains("{CLIENT FULL NAME}"),
+            "ALL CAPS variant was NOT replaced with real XML structure!"
+        );
+        assert!(
+            !result.contains("{Client Full Name}"),
+            "Title case variant was NOT replaced with real XML structure!"
+        );
+        assert!(
+            result.contains("PARKER HOWELL DAVIS"),
+            "Expected ALL CAPS value in output"
+        );
+        assert!(
+            result.contains("Parker Howell Davis"),
+            "Expected title case value in output"
+        );
+    }
+
+    #[test]
+    fn test_replace_variables_all_case_variants_full_flow() {
+        // End-to-end test mimicking replace_variables flow:
+        // find_all_variables → build placeholder_map → replace_placeholders_with_sdt
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:rPr><w:b/><w:sz w:val="32"/></w:rPr><w:t xml:space="preserve">{CLIENT FULL NAME}</w:t></w:r></w:p><w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">{Client Full Name}</w:t></w:r></w:p></w:body></w:document>"#;
+
+        // Step 1: find variables (same as replace_variables does)
+        let var_infos = find_all_variables(xml);
+        assert_eq!(var_infos.len(), 1);
+        assert_eq!(var_infos[0].display_name, "Client Full Name");
+
+        // Step 2: build placeholder_map (mimicking replace_variables logic)
+        let mut variables: HashMap<String, String> = HashMap::new();
+        variables.insert("Client Full Name".to_string(), "Parker Howell Davis".to_string());
+
+        let mut placeholder_map: HashMap<String, (String, String)> = HashMap::new();
+        for info in &var_infos {
+            if let Some(value) = variables.get(&info.display_name) {
+                if !value.is_empty() {
+                    for variant in &info.variants {
+                        let cased_value = apply_casing(value, variant);
+                        placeholder_map.insert(
+                            variant.clone(),
+                            (info.display_name.clone(), cased_value),
+                        );
+                    }
+                }
+            }
+        }
+
+        assert!(
+            placeholder_map.contains_key("CLIENT FULL NAME"),
+            "placeholder_map missing ALL CAPS key. Keys: {:?}",
+            placeholder_map.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            placeholder_map.contains_key("Client Full Name"),
+            "placeholder_map missing title case key. Keys: {:?}",
+            placeholder_map.keys().collect::<Vec<_>>()
+        );
+
+        // Step 3: replace
+        let mut next_id = 1u64;
+        let result = replace_placeholders_with_sdt(xml, &placeholder_map, &mut next_id);
+
+        assert!(
+            !result.contains("{CLIENT FULL NAME}"),
+            "ALL CAPS variant was NOT replaced in full flow! Got: {}",
+            result
+        );
+        assert!(
+            !result.contains("{Client Full Name}"),
+            "Title case variant was NOT replaced in full flow! Got: {}",
             result
         );
     }
