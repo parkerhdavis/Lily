@@ -8,9 +8,6 @@ Lily streamlines the process of gathering client information and using it to pop
 
 ![Screenshot from v0.3.0 dev build 2026-03-25](./.github/assets/lily_screenshot_home.png)
 
-*Screenshot from v0.3.0 dev build 2026-03-25*
-
-
 ## Stack
 - **Runtime / Package Manager:** Bun
 - **Desktop Framework:** Tauri 2 (Rust backend)
@@ -19,10 +16,6 @@ Lily streamlines the process of gathering client information and using it to pop
 
 
 ## Workflow
-
-![Screenshot from v0.3.0 dev build 2026-03-25](./.github/assets/lily_screenshot_hpoa.png)
-
-*Screenshot from v0.3.0 dev build 2026-03-25*
 
 ### Client Management
 - Configure one or more **client library directories** to browse all clients from the Clients Hub
@@ -46,6 +39,9 @@ Lily streamlines the process of gathering client information and using it to pop
 - Track documents through statuses: Not Started → Drafting → Reviewing → Complete → Executed
 - Create **dated versions** of documents to preserve history
 - The completed `.docx` is a standard Word file, ready for editing in any word processor
+
+![Screenshot from v0.3.0 dev build 2026-03-25](./.github/assets/lily_screenshot_hpoa.png)
+![](./.github/assets/lily_screenshot_saved.png)
 
 
 ## Development
