@@ -41,18 +41,6 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				{ docxPath: docPath },
 			);
 
-			const documentHtml = await invoke<string>("get_document_html", {
-				docxPath: docPath,
-			});
-
-			const savedVars = lilyFile?.variables ?? {};
-			const variableValues: Record<string, string> = {};
-			for (const v of variables) {
-				const defaultVal = v.is_conditional ? "false" : "";
-				variableValues[v.display_name] =
-					savedVars[v.display_name] ?? defaultVal;
-			}
-
 			const conditionalDefs: Record<string, string[]> = {};
 			for (const v of variables) {
 				if (v.is_conditional) {
@@ -79,6 +67,16 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				{ workingDir },
 			);
 
+			// Build variableValues from the updated .lily file so
+			// contact-resolved values are included
+			const mergedVars = updatedLilyFile?.variables ?? {};
+			const variableValues: Record<string, string> = {};
+			for (const v of variables) {
+				const defaultVal = v.is_conditional ? "false" : "";
+				variableValues[v.display_name] =
+					mergedVars[v.display_name] ?? defaultVal;
+			}
+
 			// Load template schema (if it exists) for type-specific inputs
 			let templateSchema: VariableSchema | null = null;
 			try {
@@ -101,6 +99,20 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 					}
 				}
 			}
+
+			// Write variable values into the .docx immediately so the
+			// document is populated from the start (not just on manual save)
+			await invoke("replace_variables", {
+				docxPath: docPath,
+				variables: variableValues,
+				conditionalDefinitions:
+					updatedLilyFile?.conditional_definitions ?? {},
+			});
+
+			// Refresh preview to reflect populated values
+			let documentHtml = await invoke<string>("get_document_html", {
+				docxPath: docPath,
+			});
 
 			pushNav(get());
 			set({
@@ -131,6 +143,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			const usedFilenames = new Set<string>(
 				Object.keys(lilyFile?.documents ?? {}),
 			);
+			const addedDocPaths: string[] = [];
 
 			for (const templateRelPath of templateRelPaths) {
 				const fullTemplatePath = `${templatesDir}/${templateRelPath}`;
@@ -156,6 +169,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 					filename,
 					templateRelPath,
 				});
+				addedDocPaths.push(docPath);
 
 				const variables = await invoke<VariableInfo[]>(
 					"extract_variables",
@@ -189,6 +203,19 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				"load_lily_file_cmd",
 				{ workingDir },
 			);
+
+			// Populate each added document with variable values from
+			// the questionnaire so they're saved into the .docx immediately
+			const allVars = updatedLilyFile?.variables ?? {};
+			const allCondDefs =
+				updatedLilyFile?.conditional_definitions ?? {};
+			for (const docPath of addedDocPaths) {
+				await invoke("replace_variables", {
+					docxPath: docPath,
+					variables: allVars,
+					conditionalDefinitions: allCondDefs,
+				});
+			}
 
 			pushNav(get());
 			set({
