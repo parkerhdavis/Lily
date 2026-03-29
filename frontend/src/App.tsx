@@ -121,9 +121,9 @@ export default function App() {
 				<img
 					src={lilyIcon}
 					alt="Loading Lily..."
-					className="size-16 animate-lily-spin"
+					className="size-24 animate-lily-spin"
 				/>
-				<span className="text-xl font-bold tracking-tight animate-fade-in-up">
+				<span className="text-3xl font-bold tracking-tight animate-fade-in-up">
 					Lily
 				</span>
 			</div>
