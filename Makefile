@@ -256,6 +256,17 @@ build-macos:
 	@echo "Build outputs in ./target/release/bundle/:"
 	@echo "  - DMG:  ./target/release/bundle/dmg/"
 	@echo "  - App:  ./target/release/bundle/macos/"
+	@if [ -f .env ]; then \
+		echo ""; \
+		echo "Verifying code signature..."; \
+		codesign --verify --deep --strict ./target/release/bundle/macos/Lily.app && \
+			echo "  -> Code signature: OK" || \
+			echo "  -> Code signature: FAILED"; \
+		echo "Verifying notarization..."; \
+		spctl --assess --type execute --verbose ./target/release/bundle/macos/Lily.app 2>&1 && \
+			echo "  -> Notarization: OK" || \
+			echo "  -> Notarization: FAILED"; \
+	fi
 endif
 
 ifeq ($(DETECTED_OS),windows)
