@@ -104,22 +104,46 @@ rm -rf "$ICO_TMPDIR"
 echo "  Generated icon.ico (multi-size)"
 
 # .icns for macOS
-if command -v png2icns &> /dev/null; then
-	ICNS_TMPDIR="$(mktemp -d)"
-	for s in 16 32 128 256 512; do
-		apply_shape "$APP_ICON" "$s" "$ICNS_TMPDIR/icon_${s}.png"
-	done
+ICNS_TMPDIR="$(mktemp -d)"
+for s in 16 32 128 256 512; do
+	apply_shape "$APP_ICON" "$s" "$ICNS_TMPDIR/icon_${s}.png"
+done
+
+if command -v iconutil &> /dev/null; then
+	# macOS: use built-in iconutil (requires an .iconset directory)
+	ICONSET_DIR="$ICNS_TMPDIR/icon.iconset"
+	mkdir -p "$ICONSET_DIR"
+	cp "$ICNS_TMPDIR/icon_16.png"  "$ICONSET_DIR/icon_16x16.png"
+	cp "$ICNS_TMPDIR/icon_32.png"  "$ICONSET_DIR/icon_16x16@2x.png"
+	cp "$ICNS_TMPDIR/icon_32.png"  "$ICONSET_DIR/icon_32x32.png"
+	# Generate a 64px icon for 32x32@2x
+	apply_shape "$APP_ICON" 64 "$ICONSET_DIR/icon_32x32@2x.png"
+	cp "$ICNS_TMPDIR/icon_128.png" "$ICONSET_DIR/icon_128x128.png"
+	cp "$ICNS_TMPDIR/icon_256.png" "$ICONSET_DIR/icon_128x128@2x.png"
+	cp "$ICNS_TMPDIR/icon_256.png" "$ICONSET_DIR/icon_256x256.png"
+	cp "$ICNS_TMPDIR/icon_512.png" "$ICONSET_DIR/icon_256x256@2x.png"
+	cp "$ICNS_TMPDIR/icon_512.png" "$ICONSET_DIR/icon_512x512.png"
+	# Generate a 1024px icon for 512x512@2x
+	apply_shape "$APP_ICON" 1024 "$ICONSET_DIR/icon_512x512@2x.png"
+	iconutil -c icns -o icon.icns "$ICONSET_DIR"
+	echo "  Generated icon.icns (via iconutil)"
+elif command -v png2icns &> /dev/null; then
+	# Linux: use png2icns from icnsutils
 	png2icns icon.icns \
 		"$ICNS_TMPDIR/icon_16.png" \
 		"$ICNS_TMPDIR/icon_32.png" \
 		"$ICNS_TMPDIR/icon_128.png" \
 		"$ICNS_TMPDIR/icon_256.png" \
 		"$ICNS_TMPDIR/icon_512.png"
-	rm -rf "$ICNS_TMPDIR"
-	echo "  Generated icon.icns"
+	echo "  Generated icon.icns (via png2icns)"
 else
-	echo "  Skipped icon.icns (install icnsutils: sudo apt install icnsutils)"
+	rm -rf "$ICNS_TMPDIR"
+	echo "Error: Cannot generate icon.icns — no supported tool found."
+	echo "  macOS:  iconutil is built-in (should always be available)"
+	echo "  Linux:  sudo apt install icnsutils"
+	exit 1
 fi
+rm -rf "$ICNS_TMPDIR"
 
 # ─── Frontend public/ assets ───────────────────────────────────────────
 
