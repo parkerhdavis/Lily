@@ -236,10 +236,20 @@ build-windows:
 
 build-macos:
 	@echo "Building macOS installers (.dmg, .app)..."
+	@if [ -f .env ]; then \
+		echo "  -> Loading signing/notarization config from .env"; \
+	else \
+		echo "  -> WARNING: No .env file found — build will not be signed or notarized"; \
+		echo "     Copy .env.example to .env and fill in your Apple credentials"; \
+	fi
 	@echo "  -> Building frontend..."
 	@cd frontend && $(BUN) run build
 	@echo "  -> Building Tauri app for macOS..."
-	@cd backend && $(TAURI) build
+	@if [ -f .env ]; then \
+		. ./.env && cd backend && $(TAURI) build; \
+	else \
+		cd backend && $(TAURI) build; \
+	fi
 	@echo ""
 	@echo "macOS build complete!"
 	@echo ""
