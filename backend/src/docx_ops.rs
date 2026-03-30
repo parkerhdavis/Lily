@@ -2210,8 +2210,7 @@ fn parse_conditional_variable(raw_content: &str) -> Option<(String, String, Stri
     let remainder = after_open[close_idx + 1..].trim();
     let false_text = if let Some(after_sep) = remainder.strip_prefix("::") {
         let after_sep = after_sep.trim();
-        if after_sep.starts_with('"') {
-            let inner = &after_sep[1..];
+        if let Some(inner) = after_sep.strip_prefix('"') {
             if let Some(end) = find_unescaped_quote(inner) {
                 inner[..end].replace("\\\"", "\"")
             } else {

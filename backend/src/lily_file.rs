@@ -70,20 +70,15 @@ pub struct ContactBinding {
 /// - Reviewing: all variables filled; ready for attorney review & polish
 /// - Complete: reviewed and ready for signature
 /// - Executed: signed (locked from editing unless user confirms)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum DocumentStatus {
+    #[default]
     NotStarted,
     Drafting,
     Reviewing,
     Complete,
     Executed,
-}
-
-impl Default for DocumentStatus {
-    fn default() -> Self {
-        Self::NotStarted
-    }
 }
 
 /// A document that a client needs prepared, with status tracking.
