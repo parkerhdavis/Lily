@@ -63,6 +63,10 @@
 			"../resources/icons/128x128@2x.png",
 			"../resources/icons/icon.icns",
 			"../resources/icons/icon.ico"
-		]
+		],
+		"macOS": {
+			"hardenedRuntime": true,
+			"entitlements": "entitlements.plist"
+		}
 	}
 }
