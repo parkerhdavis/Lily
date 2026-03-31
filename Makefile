@@ -1,4 +1,4 @@
-.PHONY: help dev dev-frontend down build build-linux build-windows build-macos setup install lint lint-fix format check test typecheck clean version
+.PHONY: help dev dev-frontend down build build-linux build-windows build-macos notarize setup install lint lint-fix format check test typecheck clean version
 
 # ==================================================================
 # OS DETECTION
@@ -77,6 +77,7 @@ help:
 	@echo "  build-linux        - Build Linux installers (.deb, .rpm, AppImage)"
 	@echo "  build-windows      - Build Windows installers (.msi, .exe)"
 	@echo "  build-macos        - Build macOS installers (.dmg, .app)"
+	@echo "  notarize     - Submit macOS build for Apple notarization"
 	@echo "  check              - Run Rust compiler checks without building"
 	@echo ""
 	@echo "Quality:"
@@ -215,6 +216,10 @@ build-windows:
 build-macos:
 	@echo "ERROR: macOS builds must be run on macOS"
 	@exit 1
+
+notarize:
+	@echo "ERROR: macOS notarization must be run on macOS"
+	@exit 1
 else
 build-linux:
 	@echo "Building Linux installers (.deb, .rpm, AppImage)..."
@@ -237,18 +242,53 @@ build-windows:
 build-macos:
 	@echo "Building macOS installers (.dmg, .app)..."
 	@if [ -f .env ]; then \
-		echo "  -> Loading signing/notarization config from .env"; \
+		echo "  -> Loading signing config from .env"; \
 	else \
-		echo "  -> WARNING: No .env file found — build will not be signed or notarized"; \
+		echo "  -> WARNING: No .env file found — build will not be signed"; \
 		echo "     Copy .env.example to .env and fill in your Apple credentials"; \
 	fi
 	@echo "  -> Building frontend..."
 	@cd frontend && $(BUN) run build
 	@echo "  -> Building Tauri app for macOS..."
 	@if [ -f .env ]; then \
-		. ./.env && cd backend && $(TAURI) build; \
+		. ./.env && \
+		( unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID && cd backend && $(TAURI) build ); \
 	else \
 		cd backend && $(TAURI) build; \
+	fi
+	@if [ -f .env ]; then \
+		. ./.env && \
+		echo "" && \
+		echo "Re-signing with hardened runtime and secure timestamp..." && \
+		echo "  (Tauri's bundler omits --timestamp; re-signing to fix)" && \
+		codesign --force --options runtime --timestamp \
+			--entitlements backend/entitlements.plist \
+			--sign "$$APPLE_SIGNING_IDENTITY" \
+			./target/release/bundle/macos/Lily.app/Contents/MacOS/lily && \
+		codesign --force --options runtime --timestamp \
+			--entitlements backend/entitlements.plist \
+			--sign "$$APPLE_SIGNING_IDENTITY" \
+			./target/release/bundle/macos/Lily.app && \
+		echo "  -> Re-signed .app bundle" && \
+		echo "" && \
+		echo "Rebuilding DMG from re-signed .app..." && \
+		VERSION=$$(grep '^version = ' backend/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/') && \
+		ARCH=$$(uname -m | sed 's/arm64/aarch64/') && \
+		DMG_NAME="Lily_$${VERSION}_$${ARCH}.dmg" && \
+		DMG_PATH="./target/release/bundle/dmg/$${DMG_NAME}" && \
+		rm -f "$${DMG_PATH}" && \
+		hdiutil create -volname "Lily" \
+			-srcfolder ./target/release/bundle/macos/Lily.app \
+			-ov -format UDZO \
+			"$${DMG_PATH}" && \
+		codesign --force --timestamp \
+			--sign "$$APPLE_SIGNING_IDENTITY" \
+			"$${DMG_PATH}" && \
+		echo "  -> DMG rebuilt and signed: $${DMG_PATH}" && \
+		echo "" && \
+		echo "Verifying code signature..." && \
+		codesign --verify --deep --strict ./target/release/bundle/macos/Lily.app && \
+		echo "  -> Code signature: OK"; \
 	fi
 	@echo ""
 	@echo "macOS build complete!"
@@ -257,16 +297,40 @@ build-macos:
 	@echo "  - DMG:  ./target/release/bundle/dmg/"
 	@echo "  - App:  ./target/release/bundle/macos/"
 	@if [ -f .env ]; then \
-		echo ""; \
-		echo "Verifying code signature..."; \
-		codesign --verify --deep --strict ./target/release/bundle/macos/Lily.app && \
-			echo "  -> Code signature: OK" || \
-			echo "  -> Code signature: FAILED"; \
-		echo "Verifying notarization..."; \
-		spctl --assess --type execute --verbose ./target/release/bundle/macos/Lily.app 2>&1 && \
-			echo "  -> Notarization: OK" || \
-			echo "  -> Notarization: FAILED"; \
+		echo "" && \
+		echo "To notarize, run: make notarize"; \
 	fi
+
+notarize:
+	@if [ ! -f .env ]; then \
+		echo "ERROR: .env file required for notarization"; \
+		echo "  Copy .env.example to .env and fill in your Apple credentials"; \
+		exit 1; \
+	fi
+	@. ./.env && \
+	VERSION=$$(grep '^version = ' backend/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/') && \
+	ARCH=$$(uname -m | sed 's/arm64/aarch64/') && \
+	DMG_NAME="Lily_$${VERSION}_$${ARCH}.dmg" && \
+	DMG_PATH="./target/release/bundle/dmg/$${DMG_NAME}" && \
+	if [ ! -f "$${DMG_PATH}" ]; then \
+		echo "ERROR: DMG not found at $${DMG_PATH}"; \
+		echo "  Run 'make build-macos' first"; \
+		exit 1; \
+	fi && \
+	echo "Submitting $${DMG_NAME} for notarization..." && \
+	xcrun notarytool submit "$${DMG_PATH}" \
+		--apple-id "$$APPLE_ID" \
+		--password "$$APPLE_PASSWORD" \
+		--team-id "$$APPLE_TEAM_ID" \
+		--wait && \
+	echo "" && \
+	echo "Stapling notarization ticket..." && \
+	xcrun stapler staple "$${DMG_PATH}" && \
+	echo "  -> Notarization complete: $${DMG_PATH}" && \
+	echo "" && \
+	echo "Verifying Gatekeeper assessment..." && \
+	spctl --assess --type open --context context:primary-signature "$${DMG_PATH}" 2>&1 && \
+	echo "  -> Gatekeeper: OK"
 endif
 
 ifeq ($(DETECTED_OS),windows)
