@@ -22,7 +22,7 @@
 				{ "kind": "text", "variable": "Client City", "label": "City", "third": true },
 				{ "kind": "text", "variable": "Client State", "label": "State", "placeholder": "e.g. CO", "third": true },
 				{ "kind": "text", "variable": "Client Zip", "label": "ZIP Code", "third": true },
-				{ "kind": "text", "variable": "County", "label": "County of Residence", "placeholder": "e.g. Denver County" }
+				{ "kind": "text", "variable": "Client County", "label": "County of Residence", "placeholder": "e.g. Denver County" }
 			]
 		},
 		{
@@ -85,7 +85,7 @@
 			"tab": "assignments",
 			"description": "Configure the family trust name and designate trustees to manage the trust upon the client's death or disability.",
 			"questions": [
-				{ "kind": "text", "variable": "Trust Name", "label": "Family Trust Name", "placeholder": "e.g. The Smith Family Trust" },
+				{ "kind": "text", "variable": "Pour-Over Trust Name", "label": "Family Trust Name", "placeholder": "e.g. The Smith Family Trust" },
 				{ "kind": "contact-role", "role": "Trustee", "label": "Primary Trustee", "variableMappings": { "Trustee Full Name": "full_name" } },
 				{ "kind": "contact-role", "role": "Alternate Trustee", "label": "Alternate Trustee", "variableMappings": { "Alternate Trustee Full Name": "full_name" } }
 			]
