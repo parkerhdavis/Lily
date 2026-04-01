@@ -10,6 +10,7 @@ import ContactPicker from "@/components/ContactPicker";
 import PageHeader from "@/components/ui/PageHeader";
 import StatusDot from "@/components/ui/StatusDot";
 import type { QuestionDef, QuestionnaireSectionDef } from "@/types/questionnaire";
+import { RELATIONSHIP_OPTIONS } from "@/types";
 import { extractFolderName } from "@/utils/path";
 
 /** Highlight search matches within text. */
@@ -537,6 +538,7 @@ function InlineContactList({
 		id: string;
 		full_name: string;
 		relationship: string;
+		other_relationship?: string;
 		phone: string;
 		email: string;
 	}[];
@@ -555,12 +557,14 @@ function InlineContactList({
 			first_name: "",
 			last_name: "",
 			relationship: "",
+			other_relationship: "",
 			phone: "",
 			email: "",
 			address: "",
 			city: "",
 			state: "",
 			zip: "",
+			is_minor: false,
 		});
 		setEditingId(created.id);
 	};
@@ -591,7 +595,13 @@ function InlineContactList({
 								{c.full_name || "Unnamed"}
 							</div>
 							<div className="text-xs text-base-content/50 truncate">
-								{[c.relationship, c.phone, c.email]
+								{[
+									c.relationship === "Other" && c.other_relationship
+										? c.other_relationship
+										: c.relationship,
+									c.phone,
+									c.email,
+								]
 									.filter(Boolean)
 									.join(" \u00B7 ") || "No details"}
 							</div>
@@ -646,22 +656,23 @@ function ContactEditForm({
 		first_name: existing?.first_name ?? "",
 		last_name: existing?.last_name ?? "",
 		relationship: existing?.relationship ?? "",
+		other_relationship: existing?.other_relationship ?? "",
 		phone: existing?.phone ?? "",
 		email: existing?.email ?? "",
 		address: existing?.address ?? "",
 		city: existing?.city ?? "",
 		state: existing?.state ?? "",
 		zip: existing?.zip ?? "",
+		is_minor: existing?.is_minor ?? false,
 	});
 
 	// Track the last-saved snapshot to avoid redundant saves
 	const savedRef = useRef({ ...form });
 
-	const update = (key: string, value: string) =>
+	const update = (key: string, value: string | boolean) =>
 		setForm((prev) => ({ ...prev, [key]: value }));
 
 	const handleFieldBlur = useCallback(async () => {
-		// Save if anything changed since last save
 		const current = form;
 		const saved = savedRef.current;
 		const changed = Object.keys(current).some(
@@ -675,7 +686,7 @@ function ContactEditForm({
 		}
 	}, [form, contactId, onSave]);
 
-	const fields: {
+	const textFields: {
 		key: string;
 		label: string;
 		span: 6 | 3 | 2;
@@ -683,7 +694,6 @@ function ContactEditForm({
 		{ key: "full_name", label: "Full Legal Name", span: 6 },
 		{ key: "first_name", label: "First Name", span: 3 },
 		{ key: "last_name", label: "Last Name", span: 3 },
-		{ key: "relationship", label: "Relationship", span: 6 },
 		{ key: "phone", label: "Phone", span: 3 },
 		{ key: "email", label: "Email", span: 3 },
 		{ key: "address", label: "Address", span: 6 },
@@ -695,7 +705,73 @@ function ContactEditForm({
 	return (
 		<div className="p-3 rounded-lg border border-primary/30 bg-primary/5 space-y-3">
 			<div className="grid grid-cols-6 gap-2">
-				{fields.map(({ key, label, span }) => (
+				{/* Relationship dropdown row */}
+				<div className={`col-span-${form.relationship === "Other" ? "3" : "6"}`}>
+					<label className="label pb-0.5">
+						<span className="label-text text-xs flex items-center gap-1">
+							<StatusDot filled={Boolean(form.relationship)} />
+							Relationship
+						</span>
+					</label>
+					<select
+						className="select select-bordered select-sm w-full"
+						value={form.relationship}
+						onChange={(e) => {
+							update("relationship", e.target.value);
+							if (e.target.value !== "Other") {
+								update("other_relationship", "");
+							}
+							if (e.target.value !== "Child") {
+								update("is_minor", false);
+							}
+						}}
+						onBlur={handleFieldBlur}
+					>
+						<option value="">Select relationship...</option>
+						{RELATIONSHIP_OPTIONS.map((opt) => (
+							<option key={opt} value={opt}>{opt}</option>
+						))}
+					</select>
+				</div>
+				{form.relationship === "Other" && (
+					<div className="col-span-3">
+						<label className="label pb-0.5">
+							<span className="label-text text-xs flex items-center gap-1">
+								<StatusDot filled={Boolean(form.other_relationship.trim())} />
+								Other Relationship
+							</span>
+						</label>
+						<input
+							type="text"
+							className="input input-bordered input-sm w-full"
+							placeholder="Specify relationship..."
+							value={form.other_relationship}
+							onChange={(e) => update("other_relationship", e.target.value)}
+							onBlur={handleFieldBlur}
+						/>
+					</div>
+				)}
+				{form.relationship === "Child" && (
+					<div className="col-span-6">
+						<label className="label cursor-pointer justify-start gap-2 py-0">
+							<input
+								type="checkbox"
+								className="checkbox checkbox-sm"
+								checked={form.is_minor}
+								onChange={(e) => {
+									update("is_minor", e.target.checked);
+									// Save immediately on toggle
+									const next = { ...form, is_minor: e.target.checked };
+									savedRef.current = { ...next };
+									onSave({ id: contactId ?? "", ...next });
+								}}
+							/>
+							<span className="label-text text-xs">Is Minor</span>
+						</label>
+					</div>
+				)}
+				{/* Text fields */}
+				{textFields.map(({ key, label, span }) => (
 					<div
 						key={key}
 						className={
@@ -708,14 +784,14 @@ function ContactEditForm({
 					>
 						<label className="label pb-0.5">
 							<span className="label-text text-xs flex items-center gap-1">
-								<StatusDot filled={Boolean(form[key as keyof typeof form].trim())} />
+								<StatusDot filled={Boolean((form[key as keyof typeof form] as string).trim())} />
 								{label}
 							</span>
 						</label>
 						<input
 							type="text"
 							className="input input-bordered input-sm w-full"
-							value={form[key as keyof typeof form]}
+							value={form[key as keyof typeof form] as string}
 							onChange={(e) => update(key, e.target.value)}
 							onBlur={handleFieldBlur}
 						/>

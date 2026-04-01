@@ -136,7 +136,9 @@ export default function ContactPicker({
 				{contacts.map((c) => (
 					<option key={c.id} value={c.id}>
 						{c.full_name}
-						{c.relationship ? ` (${c.relationship})` : ""}
+						{c.relationship
+							? ` (${c.relationship === "Other" && c.other_relationship ? c.other_relationship : c.relationship})`
+							: ""}
 					</option>
 				))}
 				<option value="__other__">Other (manual entry)</option>

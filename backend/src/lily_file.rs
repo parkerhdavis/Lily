@@ -41,12 +41,16 @@ pub struct Contact {
     pub first_name: String,
     pub last_name: String,
     pub relationship: String,
+    #[serde(default)]
+    pub other_relationship: String,
     pub phone: String,
     pub email: String,
     pub address: String,
     pub city: String,
     pub state: String,
     pub zip: String,
+    #[serde(default)]
+    pub is_minor: bool,
 }
 
 /// Maps a "role" (e.g., "Healthcare POA Agent") to a contact, plus a mapping
@@ -670,7 +674,14 @@ fn get_contact_property(contact: &Contact, key: &str) -> String {
         "full_name" => contact.full_name.clone(),
         "first_name" => contact.first_name.clone(),
         "last_name" => contact.last_name.clone(),
-        "relationship" => contact.relationship.clone(),
+        "relationship" => {
+            if contact.relationship == "Other" && !contact.other_relationship.is_empty() {
+                contact.other_relationship.clone()
+            } else {
+                contact.relationship.clone()
+            }
+        }
+        "other_relationship" => contact.other_relationship.clone(),
         "phone" => contact.phone.clone(),
         "email" => contact.email.clone(),
         "address" => contact.address.clone(),
@@ -800,6 +811,35 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
         lily.variables
             .insert(has_key, if has_match { "true" } else { "false" }.to_string());
     }
+
+    // ── Pass 3: Spouse and children derived variables ─────────────────────
+    // Populate variables that templates expect from spouse/children contacts.
+    let spouse = lily.contacts.iter().find(|c| c.relationship.eq_ignore_ascii_case("Spouse"));
+    lily.variables.insert(
+        "Client Spouse Name".to_string(),
+        spouse.map_or_else(String::new, |s| s.full_name.clone()),
+    );
+
+    let children: Vec<&Contact> = lily
+        .contacts
+        .iter()
+        .filter(|c| c.relationship.eq_ignore_ascii_case("Child"))
+        .collect();
+    let has_children = !children.is_empty();
+    lily.variables.insert(
+        "Client has Children".to_string(),
+        if has_children { "true" } else { "false" }.to_string(),
+    );
+    lily.variables.insert(
+        "Client Children Full Names".to_string(),
+        children.iter().map(|c| c.full_name.as_str()).collect::<Vec<_>>().join(", "),
+    );
+
+    let has_minor_children = children.iter().any(|c| c.is_minor);
+    lily.variables.insert(
+        "Has Minor Children".to_string(),
+        if has_minor_children { "true" } else { "false" }.to_string(),
+    );
 
     write_lily_file(&working_dir, &lily)
 }

@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { RELATIONSHIP_OPTIONS } from "@/types";
 import type { Contact } from "@/types";
 
 /** Basic format validation for contact fields. Returns an error message or null. */
@@ -20,12 +21,12 @@ function validateContactField(
 	return null;
 }
 
-/** The fields that make up a contact, in display order. */
-const CONTACT_FIELDS: { key: keyof Omit<Contact, "id">; label: string }[] = [
+/** The text fields that make up a contact, in display order.
+ *  Relationship is handled separately as a dropdown. */
+const CONTACT_FIELDS: { key: keyof Omit<Contact, "id" | "is_minor" | "other_relationship">; label: string }[] = [
 	{ key: "full_name", label: "Full Name" },
 	{ key: "first_name", label: "First Name" },
 	{ key: "last_name", label: "Last Name" },
-	{ key: "relationship", label: "Relationship" },
 	{ key: "phone", label: "Phone" },
 	{ key: "email", label: "Email" },
 	{ key: "address", label: "Address" },
@@ -39,12 +40,14 @@ const EMPTY_CONTACT: Omit<Contact, "id"> = {
 	first_name: "",
 	last_name: "",
 	relationship: "",
+	other_relationship: "",
 	phone: "",
 	email: "",
 	address: "",
 	city: "",
 	state: "",
 	zip: "",
+	is_minor: false,
 };
 
 export default function ContactManager({
@@ -107,7 +110,7 @@ export default function ContactManager({
 		setConfirmDeleteId(null);
 	};
 
-	const updateField = (key: keyof Contact, value: string) => {
+	const updateField = (key: keyof Contact, value: string | boolean) => {
 		if (!editingContact) return;
 		setEditingContact({ ...editingContact, [key]: value });
 	};
@@ -167,7 +170,9 @@ export default function ContactManager({
 									</div>
 									<div className="text-xs text-base-content/50 truncate">
 										{[
-											contact.relationship,
+											contact.relationship === "Other" && contact.other_relationship
+												? contact.other_relationship
+												: contact.relationship,
 											contact.phone,
 											contact.email,
 										]
@@ -232,11 +237,11 @@ export default function ContactManager({
 									</label>
 									<input
 										type={key === "email" ? "email" : key === "phone" ? "tel" : "text"}
-										className={`input input-bordered input-sm w-full ${validateContactField(key, editingContact[key as keyof Contact] ?? "") ? "input-warning" : ""}`}
+										className={`input input-bordered input-sm w-full ${validateContactField(key, String(editingContact[key as keyof Contact] ?? "")) ? "input-warning" : ""}`}
 										value={
-											editingContact[
+											String(editingContact[
 												key as keyof Contact
-											] ?? ""
+											] ?? "")
 										}
 										onChange={(e) =>
 											updateField(
@@ -245,13 +250,64 @@ export default function ContactManager({
 											)
 										}
 									/>
-									{validateContactField(key, editingContact[key as keyof Contact] ?? "") && (
+									{validateContactField(key, String(editingContact[key as keyof Contact] ?? "")) && (
 										<p className="text-xs text-warning mt-0.5">
-											{validateContactField(key, editingContact[key as keyof Contact] ?? "")}
+											{validateContactField(key, String(editingContact[key as keyof Contact] ?? ""))}
 										</p>
 									)}
 								</div>
 							))}
+							{/* Relationship dropdown */}
+							<div className={editingContact.relationship === "Other" ? "" : "col-span-2"}>
+								<label className="label pb-0.5">
+									<span className="label-text text-xs">Relationship</span>
+								</label>
+								<select
+									className="select select-bordered select-sm w-full"
+									value={editingContact.relationship}
+									onChange={(e) => {
+										updateField("relationship", e.target.value);
+										if (e.target.value !== "Other") {
+											updateField("other_relationship", "");
+										}
+										if (e.target.value !== "Child") {
+											updateField("is_minor", false);
+										}
+									}}
+								>
+									<option value="">Select relationship...</option>
+									{RELATIONSHIP_OPTIONS.map((opt) => (
+										<option key={opt} value={opt}>{opt}</option>
+									))}
+								</select>
+							</div>
+							{editingContact.relationship === "Other" && (
+								<div>
+									<label className="label pb-0.5">
+										<span className="label-text text-xs">Other Relationship</span>
+									</label>
+									<input
+										type="text"
+										className="input input-bordered input-sm w-full"
+										placeholder="Specify relationship..."
+										value={editingContact.other_relationship ?? ""}
+										onChange={(e) => updateField("other_relationship", e.target.value)}
+									/>
+								</div>
+							)}
+							{editingContact.relationship === "Child" && (
+								<div className="col-span-2">
+									<label className="label cursor-pointer justify-start gap-2 py-0">
+										<input
+											type="checkbox"
+											className="checkbox checkbox-sm"
+											checked={editingContact.is_minor ?? false}
+											onChange={(e) => setEditingContact((prev) => prev ? { ...prev, is_minor: e.target.checked } : prev)}
+										/>
+										<span className="label-text text-xs">Is Minor</span>
+									</label>
+								</div>
+							)}
 						</div>
 						<div className="modal-action">
 							<button
