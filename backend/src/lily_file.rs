@@ -930,6 +930,59 @@ pub fn export_client_data(working_dir: String, export_path: String) -> Result<()
     atomic_write(Path::new(&export_path), &content)
 }
 
+// ─── Document consistency check ─────────────────────────────────────────
+
+/// Report of file consistency between the .lily metadata and the actual
+/// files on disk in the working directory.
+#[derive(Debug, Serialize)]
+pub struct ConsistencyReport {
+    /// Filenames in the .lily documents map that no longer exist on disk.
+    pub missing_on_disk: Vec<String>,
+    /// .docx files found on disk that are not tracked in the .lily file.
+    pub untracked_on_disk: Vec<String>,
+}
+
+/// Compare the .lily file's document list against actual files on disk.
+#[tauri::command]
+pub fn check_document_consistency(working_dir: String) -> Result<ConsistencyReport, String> {
+    let lily = read_lily_file(&working_dir)?;
+
+    // Scan directory for actual .docx files
+    let dir = Path::new(&working_dir);
+    let actual_files: std::collections::HashSet<String> = fs::read_dir(dir)
+        .map_err(|e| format!("Failed to read directory: {}", e))?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.to_lowercase().ends_with(".docx") {
+                Some(name)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let tracked: std::collections::HashSet<&str> =
+        lily.documents.keys().map(|k| k.as_str()).collect();
+
+    let missing_on_disk = tracked
+        .iter()
+        .filter(|name| !actual_files.contains(**name))
+        .map(|s| s.to_string())
+        .collect();
+
+    let untracked_on_disk = actual_files
+        .iter()
+        .filter(|name| !tracked.contains(name.as_str()))
+        .cloned()
+        .collect();
+
+    Ok(ConsistencyReport {
+        missing_on_disk,
+        untracked_on_disk,
+    })
+}
+
 // ─── Required document CRUD ──────────────────────────────────────────────
 
 /// Add a required document to the client's .lily file.

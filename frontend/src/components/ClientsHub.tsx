@@ -428,6 +428,24 @@ function ClientContentPane({
 }) {
 	const [docSearch, setDocSearch] = useState("");
 
+	// Document consistency check: compare .lily metadata against actual files on disk
+	const [missingOnDisk, setMissingOnDisk] = useState<Set<string>>(new Set());
+	const [untrackedOnDisk, setUntrackedOnDisk] = useState<string[]>([]);
+	useEffect(() => {
+		(async () => {
+			try {
+				const report = await invoke<{
+					missing_on_disk: string[];
+					untracked_on_disk: string[];
+				}>("check_document_consistency", { workingDir });
+				setMissingOnDisk(new Set(report.missing_on_disk));
+				setUntrackedOnDisk(report.untracked_on_disk.sort());
+			} catch {
+				// Non-critical — continue without consistency info
+			}
+		})();
+	}, [workingDir, lilyFile]);
+
 	// Dynamic questionnaire definition for stats
 	const [qDef, setQDef] = useState<QuestionnaireSectionDef[]>(fallbackDef);
 	useEffect(() => {
@@ -717,6 +735,7 @@ function ClientContentPane({
 										<DocumentRow
 											key={doc.filename}
 											doc={doc}
+											isMissing={missingOnDisk.has(doc.filename)}
 											onOpen={onOpenDocument}
 											onDelete={onDeleteDocument}
 											onNewVersion={
@@ -728,6 +747,22 @@ function ClientContentPane({
 											onReload={onReloadLilyFile}
 										/>
 									))}
+								{untrackedOnDisk.map((filename) => (
+									<div
+										key={`untracked:${filename}`}
+										className="w-full text-left px-5 py-4 opacity-60"
+									>
+										<div className="flex flex-col gap-0.5">
+											<span className="font-medium text-base flex items-center gap-2">
+												{stripDocx(filename)}
+												<span className="badge badge-warning badge-sm">untracked</span>
+											</span>
+											<span className="text-sm text-base-content/40">
+												File exists on disk but is not tracked in project
+											</span>
+										</div>
+									</div>
+								))}
 							</div>
 						)}
 					</div>
@@ -741,6 +776,7 @@ function ClientContentPane({
 
 function DocumentRow({
 	doc,
+	isMissing,
 	onOpen,
 	onDelete,
 	onNewVersion,
@@ -748,6 +784,7 @@ function DocumentRow({
 	onReload,
 }: {
 	doc: ClientDoc;
+	isMissing?: boolean;
 	onOpen: (filename: string, templateRelPath: string) => void;
 	onDelete: (filename: string) => Promise<void>;
 	onNewVersion: (filename: string) => Promise<void>;
@@ -795,21 +832,29 @@ function DocumentRow({
 		<>
 			<button
 				type="button"
-				className="w-full text-left px-5 py-4 hover:bg-base-200/60 transition-colors"
-				onClick={() => onOpen(doc.filename, doc.templateRelPath)}
+				className={`w-full text-left px-5 py-4 hover:bg-base-200/60 transition-colors ${isMissing ? "opacity-50" : ""}`}
+				onClick={() => !isMissing && onOpen(doc.filename, doc.templateRelPath)}
 				onContextMenu={handleContextMenu}
+				disabled={isMissing}
 			>
 				<div className="flex flex-col gap-0.5">
-					<span className="font-medium text-base">
+					<span className="font-medium text-base flex items-center gap-2">
 						{stripDocx(doc.filename)}
+						{isMissing && <span className="badge badge-error badge-sm">missing</span>}
 					</span>
 					<span className="text-sm text-base-content/40">
-						from{" "}
-						{stripDocx(
-							extractFilename(doc.templateRelPath),
+						{isMissing ? (
+							"File no longer exists on disk"
+						) : (
+							<>
+								from{" "}
+								{stripDocx(
+									extractFilename(doc.templateRelPath),
+								)}
+								{" \u00B7 "}
+								{formatDate(doc.modifiedAt)}
+							</>
 						)}
-						{" \u00B7 "}
-						{formatDate(doc.modifiedAt)}
 					</span>
 				</div>
 			</button>
