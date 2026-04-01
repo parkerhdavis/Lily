@@ -401,7 +401,7 @@ export default function Questionnaire() {
 			</div>
 
 			{/* Sections */}
-			<div className="flex-1 overflow-y-auto p-6">
+			<div className="flex-1 overflow-y-auto p-6 pb-48">
 				<div className="max-w-2xl mx-auto flex flex-col gap-6">
 					{filteredSections.length === 0 && search && (
 						<p className="text-sm text-base-content/50 text-center py-8">
