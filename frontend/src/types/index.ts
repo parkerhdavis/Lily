@@ -103,6 +103,19 @@ export interface DocumentMeta {
 	variable_overrides: Record<string, string>;
 }
 
+/** Predefined relationship options for the contact dropdown. */
+export const RELATIONSHIP_OPTIONS = [
+	"Spouse",
+	"Child",
+	"Sibling",
+	"Parent",
+	"Niece/Nephew",
+	"Aunt/Uncle",
+	"Cousin",
+	"Friend",
+	"Other",
+] as const;
+
 /** A contact associated with a client (family member, agent, trustee, etc.). */
 export interface Contact {
 	id: string;
@@ -110,12 +123,14 @@ export interface Contact {
 	first_name: string;
 	last_name: string;
 	relationship: string;
+	other_relationship: string;
 	phone: string;
 	email: string;
 	address: string;
 	city: string;
 	state: string;
 	zip: string;
+	is_minor: boolean;
 }
 
 /** Maps a role (e.g., "Healthcare POA Agent") to a contact and defines which

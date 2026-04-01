@@ -171,7 +171,7 @@ export default function ContactRoleField({
 							<option key={c.id} value={c.id}>
 								{c.full_name}
 								{c.relationship
-									? ` (${c.relationship})`
+									? ` (${c.relationship === "Other" && c.other_relationship ? c.other_relationship : c.relationship})`
 									: ""}
 							</option>
 						))}
@@ -261,7 +261,7 @@ export default function ContactRoleField({
 							<option key={c.id} value={c.id}>
 								{c.full_name}
 								{c.relationship
-									? ` (${c.relationship})`
+									? ` (${c.relationship === "Other" && c.other_relationship ? c.other_relationship : c.relationship})`
 									: ""}
 							</option>
 						))}
