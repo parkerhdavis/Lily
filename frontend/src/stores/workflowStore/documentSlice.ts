@@ -259,11 +259,32 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				);
 			}
 
-			const documentHtml = await invoke<string>("get_document_html", {
-				docxPath: docPath,
+			// Record any new variables/conditionals from this document and
+			// resolve contact variables so derived values are up-to-date.
+			const conditionalDefs: Record<string, string[]> = {};
+			for (const v of variables) {
+				if (v.is_conditional) {
+					conditionalDefs[v.display_name] = v.variants;
+				}
+			}
+			await invoke("set_document_variables", {
+				workingDir,
+				filename,
+				variableNames: variables.map((v) => v.display_name),
+				conditionalNames: variables
+					.filter((v) => v.is_conditional)
+					.map((v) => v.display_name),
+				conditionalDefinitions: conditionalDefs,
 			});
+			await invoke("resolve_contact_variables", { workingDir });
 
-			const savedVars = lilyFile?.variables ?? {};
+			// Reload .lily to pick up resolved values
+			const updatedLilyFile = await invoke<LilyFile>(
+				"load_lily_file_cmd",
+				{ workingDir },
+			);
+
+			const savedVars = updatedLilyFile?.variables ?? {};
 			const variableValues: Record<string, string> = {};
 			for (const v of variables) {
 				const defaultVal = v.is_conditional ? "false" : "";
@@ -271,7 +292,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 					savedVars[v.display_name] ?? defaultVal;
 			}
 
-			const docMeta = lilyFile?.documents[filename];
+			const docMeta = updatedLilyFile?.documents[filename];
 			if (docMeta?.role_overrides) {
 				for (const override of Object.values(docMeta.role_overrides)) {
 					for (const [varName, value] of Object.entries(
@@ -289,6 +310,19 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 					variableValues[varName] = value;
 				}
 			}
+
+			// Sync current values into the .docx so it reflects the
+			// latest questionnaire data without requiring a manual save
+			await invoke("replace_variables", {
+				docxPath: docPath,
+				variables: variableValues,
+				conditionalDefinitions:
+					updatedLilyFile?.conditional_definitions ?? {},
+			});
+
+			const documentHtml = await invoke<string>("get_document_html", {
+				docxPath: docPath,
+			});
 
 			// Load template schema for type-specific inputs
 			let templateSchema: VariableSchema | null = null;
@@ -316,6 +350,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				variables,
 				variableValues,
 				documentHtml,
+				lilyFile: updatedLilyFile,
 				templateSchema,
 				dirty: false,
 				step: "edit-variables",
