@@ -347,6 +347,26 @@ fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
 ///
 /// Case-matching: ALL CAPS placeholders get uppercased values, all-lower get
 /// lowercased, otherwise as-is.
+///
+/// TODO: We currently handle a fixed set of named variables per template.
+/// Templates like the HIPAA authorization form have lists of arbitrary
+/// length (e.g., a variable number of authorized recipients) that don't
+/// map cleanly to this model. This is a challenge on two fronts:
+///
+/// 1. **Data**: We need a mechanism for list/repeating variables — possibly
+///    a special syntax (e.g., `{#Recipients}...{/Recipients}`) that can
+///    duplicate a paragraph or table row for each list entry. The frontend
+///    variable editor would need a UI for adding/removing list items, and
+///    the .lily file schema would need to store list values.
+///
+/// 2. **Formatting**: Variable replacement currently injects plain text
+///    into existing Word XML runs, inheriting the run's formatting. There
+///    is no way for a variable to produce rich formatting like numbered
+///    lists, bullet points, or multi-paragraph content within Word. This
+///    makes it difficult to set up variables that create formatted numbered
+///    lists in the output document. A solution would likely need to generate
+///    the appropriate `<w:p>`, `<w:numPr>`, etc. XML structures rather than
+///    simple text substitution.
 #[tauri::command]
 pub fn replace_variables(
     docx_path: String,
