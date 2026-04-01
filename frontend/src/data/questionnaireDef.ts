@@ -19,21 +19,21 @@ export const questionnaireDef: QuestionnaireDef = [
 		questions: [
 			{
 				kind: "text",
-				variable: "Client Full Name",
-				label: "Full Legal Name",
-				placeholder: "e.g. Jane M. Doe",
+				variable: "Client First Name",
+				label: "First Name",
+				third: true,
 			},
 			{
 				kind: "text",
-				variable: "Client First Name",
-				label: "First Name",
-				half: true,
+				variable: "Client Middle Name",
+				label: "Middle Name",
+				third: true,
 			},
 			{
 				kind: "text",
 				variable: "Client Last Name",
 				label: "Last Name",
-				half: true,
+				third: true,
 			},
 			{
 				kind: "text",
@@ -283,6 +283,20 @@ export const questionnaireDef: QuestionnaireDef = [
 					"Alternate Beneficiary Full Name": "full_name",
 					"Alternate Beneficiary Relationship": "relationship",
 				},
+			},
+		],
+	},
+	{
+		title: "Property Distribution",
+		tab: "assignments",
+		description:
+			"Specify recipients for tangible personal property.",
+		questions: [
+			{
+				kind: "text",
+				variable: "Tangible Property Recipient(s)",
+				label: "Tangible Property Recipient(s)",
+				placeholder: "e.g. my children, in equal shares",
 			},
 		],
 	},

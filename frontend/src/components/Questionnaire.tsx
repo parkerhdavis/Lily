@@ -127,9 +127,23 @@ export default function Questionnaire() {
 		async (name: string, value: string) => {
 			setSaveStatus("saving");
 			await saveClientVariable(name, value);
+			// Auto-compose Client Full Name from First + Middle + Last
+			const nameFields = ["Client First Name", "Client Middle Name", "Client Last Name"];
+			if (nameFields.includes(name)) {
+				const current = { ...variables, [name]: value };
+				const fullName = [
+					current["Client First Name"],
+					current["Client Middle Name"],
+					current["Client Last Name"],
+				]
+					.map((s) => s?.trim())
+					.filter(Boolean)
+					.join(" ");
+				await saveClientVariable("Client Full Name", fullName);
+			}
 			showSaved();
 		},
-		[saveClientVariable, showSaved],
+		[saveClientVariable, showSaved, variables],
 	);
 
 	const handleSaveNote = useCallback(
