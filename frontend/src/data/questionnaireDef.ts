@@ -74,7 +74,7 @@ export const questionnaireDef: QuestionnaireDef = [
 			},
 			{
 				kind: "text",
-				variable: "County",
+				variable: "Client County",
 				label: "County of Residence",
 				placeholder: "e.g. Denver County",
 			},
@@ -295,7 +295,7 @@ export const questionnaireDef: QuestionnaireDef = [
 		questions: [
 			{
 				kind: "text",
-				variable: "Trust Name",
+				variable: "Pour-Over Trust Name",
 				label: "Family Trust Name",
 				placeholder: "e.g. The Smith Family Trust",
 			},

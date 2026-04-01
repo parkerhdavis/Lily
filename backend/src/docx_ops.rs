@@ -2029,7 +2029,8 @@ fn find_variables(text: &str) -> Vec<VariableInfo> {
 
 /// Choose the best display name from a set of case variants.
 /// Prefers Title Case (e.g., "Client Full Name") over ALL CAPS or all lower.
-/// Falls back to the first variant if no title-case variant is found.
+/// If no title-case variant exists, generates one from ALL CAPS input so that
+/// display names are consistent and match questionnaire variable names.
 fn pick_display_name(variants: &[String]) -> String {
     // Check for a "title case" variant (first letter of each word capitalized, rest lower)
     for v in variants {
@@ -2045,8 +2046,39 @@ fn pick_display_name(variants: &[String]) -> String {
             return v.clone();
         }
     }
-    // Fall back to first variant
-    variants[0].clone()
+    // If the first variant is all-caps, generate a title-case display name.
+    // This ensures {POUR-OVER TRUST NAME} produces "Pour-Over Trust Name"
+    // rather than "POUR-OVER TRUST NAME", matching questionnaire conventions.
+    let first = &variants[0];
+    let all_upper = first.chars().filter(|c| c.is_alphabetic()).all(|c| c.is_uppercase());
+    if all_upper {
+        return to_title_case(first);
+    }
+    first.clone()
+}
+
+/// Convert a string to title case, capitalizing the first letter of each
+/// word (split by whitespace) and each hyphenated segment within a word.
+fn to_title_case(s: &str) -> String {
+    s.split_whitespace()
+        .map(|word| {
+            word.split('-')
+                .map(|part| {
+                    let mut chars = part.chars();
+                    match chars.next() {
+                        Some(first) => {
+                            let mut result = first.to_uppercase().to_string();
+                            result.extend(chars.map(|c| c.to_lowercase().next().unwrap_or(c)));
+                            result
+                        }
+                        None => String::new(),
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("-")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Known contact property keys that can appear in `{Role.property}` syntax.
