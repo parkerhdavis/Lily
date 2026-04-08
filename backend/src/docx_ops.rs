@@ -2939,7 +2939,27 @@ fn find_sdt_variables(xml: &str) -> Vec<String> {
 /// 2. Lily SDT content controls — the text inside `<w:sdtContent>` is wrapped
 ///    in a highlight span using the `lily:` tag value as the variable name.
 fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &StyleMap, rels_map: &RelationshipMap) -> String {
-    let mut html = String::from("<div class=\"document-preview\">");
+    // Extract page margins from <w:sectPr><w:pgMar> for the preview wrapper
+    let margin_re = Regex::new(
+        r#"<w:pgMar[^>]*w:top="(\d+)"[^>]*w:right="(\d+)"[^>]*w:bottom="(\d+)"[^>]*w:left="(\d+)"[^>]*/>"#
+    ).expect("invalid regex");
+    let page_margins = margin_re.captures(xml).map(|caps| {
+        let top = caps[1].parse::<i32>().unwrap_or(1440);
+        let right = caps[2].parse::<i32>().unwrap_or(1440);
+        let bottom = caps[3].parse::<i32>().unwrap_or(1440);
+        let left = caps[4].parse::<i32>().unwrap_or(1440);
+        format!(
+            "padding:{:.1}pt {:.1}pt {:.1}pt {:.1}pt",
+            twips_to_pt(top), twips_to_pt(right),
+            twips_to_pt(bottom), twips_to_pt(left)
+        )
+    });
+
+    let mut html = if let Some(margins) = page_margins {
+        format!("<div class=\"document-preview\" style=\"{}\">", margins)
+    } else {
+        String::from("<div class=\"document-preview\">")
+    };
     let mut current_para = String::new();
 
     // Hyperlink state
@@ -2987,6 +3007,7 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
     let mut para_line_spacing: Option<i32> = None;
     let mut para_style_id: Option<String> = None;
     let mut current_para_style = StyleProps::default();
+    let mut para_page_break_before = false;
     // Paragraph-level run defaults (from <w:pPr><w:rPr>) — these override
     // the style and serve as defaults for runs that don't specify their own.
     let mut para_rpr_bold: Option<bool> = None;
@@ -3087,6 +3108,7 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                         para_rpr_small_caps = None;
                         para_num_id = None;
                         para_ilvl = None;
+                        para_page_break_before = false;
                     }
                     // ─── Paragraph properties ────────────────────────
                     "pPr" => {
@@ -3097,12 +3119,24 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                             .iter()
                             .find(|a| a.name.local_name == "val")
                             .map(|a| a.value.clone());
+                        // Resolve the style immediately so paragraph-level
+                        // rPr (which comes later inside pPr) can inherit
+                        // style properties like bold and italic.
+                        if let Some(ref id) = para_style_id {
+                            current_para_style = resolve_style(id, style_map);
+                        }
                     }
                     "jc" if in_ppr && !in_num_pr => {
                         para_alignment = attributes
                             .iter()
                             .find(|a| a.name.local_name == "val")
                             .map(|a| a.value.clone());
+                    }
+                    "pageBreakBefore" if in_ppr => {
+                        let disabled = attributes.iter().any(|a| {
+                            a.name.local_name == "val" && (a.value == "false" || a.value == "0")
+                        });
+                        para_page_break_before = !disabled;
                     }
                     "ind" if in_ppr && !in_num_pr => {
                         for attr in &attributes {
@@ -3620,6 +3654,11 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                         Some(6) => "h6",
                         _ => "p",
                     };
+
+                    // Emit page break before this paragraph if requested
+                    if para_page_break_before {
+                        html.push_str("<span class=\"preview-page-break\"></span>");
+                    }
 
                     // Prepend list label if this is a list item
                     let mut para_content = String::new();
@@ -4801,6 +4840,23 @@ mod tests {
             full_text.contains("If Jane Doe is unable or unwilling to serve, I appoint Jack Doe"),
             "Should have third agent sentence. Got: {}", full_text
         );
+    }
+
+    #[test]
+    fn test_hpoa_heading_is_bold() {
+        let doc_path = "/home/parker/Obsidian/40-69 Projects/42 Carelaw Colorado/Drafting/02-Deliverables/Templates/02 - Power of Attorney and Medical Templates/HPOA Template.docx";
+        if !std::path::Path::new(doc_path).exists() { return; }
+        let html = get_document_html(doc_path.to_string()).unwrap();
+
+        if let Some(idx) = html.find("Section 1.1") {
+            let start = html[..idx].rfind("<h").unwrap_or(idx.saturating_sub(200));
+            let end_tag = html[idx..].find("</h2>").unwrap_or(100);
+            let heading_html = &html[start..idx + end_tag + 5];
+            assert!(
+                heading_html.contains("<strong>"),
+                "Section 1.1 heading should be bold. HTML: {}", heading_html
+            );
+        }
     }
 
     /// Run migration on a real template file. Set RUN_REAL_MIGRATION=1 to execute.
