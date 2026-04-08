@@ -955,7 +955,12 @@ pub fn get_template_text_occurrences(
     Ok(occurrences)
 }
 
-/// Replace text in a template with a `{Variable Name}` placeholder.
+/// Replace text in a template with a `lily:` SDT content control.
+///
+/// Finds the `search_text` in the document XML, replaces it with an SDT
+/// tagged `lily:variable_name`. If the text appears multiple times, the
+/// caller must specify `occurrence_index` or set `replace_all`.
+///
 /// Returns the updated list of variables in the template.
 #[tauri::command]
 pub fn insert_template_variable(
@@ -987,7 +992,23 @@ pub fn insert_template_variable(
         entries.push((name, buf));
     }
 
-    let replacement = format!("{{{}}}", variable_name);
+    let placeholder = format!("{{{}}}", variable_name);
+
+    // Find max ID across all XML parts for SDT ID generation
+    let mut next_id: u64 = entries
+        .iter()
+        .filter(|(name, _)| {
+            name == "word/document.xml"
+                || name.starts_with("word/header")
+                || name.starts_with("word/footer")
+        })
+        .map(|(_, content)| {
+            let xml_str = String::from_utf8_lossy(content);
+            find_max_id(&xml_str)
+        })
+        .max()
+        .unwrap_or(0)
+        + 1;
 
     // Process document.xml (and optionally headers/footers)
     for (name, content) in entries.iter_mut() {
@@ -1033,8 +1054,7 @@ pub fn insert_template_variable(
             vec![matches[0]]
         };
 
-        // Replace one match at a time, re-finding after each replacement
-        // because replacing text can shift paragraph indices and byte offsets.
+        // Step 1: Replace text with {Variable Name} placeholder
         let mut modified = normalized;
         let replace_count = to_replace.len();
 
@@ -1044,17 +1064,23 @@ pub fn insert_template_variable(
             if current_matches.is_empty() {
                 break;
             }
-            // Always replace the last remaining match to avoid invalidating
-            // earlier byte offsets (reverse order).
             let (pi, offset) = current_matches[current_matches.len() - 1];
             modified = replace_text_in_xml(
                 &modified,
                 &maps[pi],
                 offset,
                 search_text.len(),
-                &replacement,
+                &placeholder,
             );
         }
+
+        // Step 2: Convert {Variable Name} placeholder to an SDT
+        let mut sdt_map: HashMap<String, (String, String, bool)> = HashMap::new();
+        sdt_map.insert(
+            variable_name.clone(),
+            (variable_name.clone(), variable_name.clone(), false),
+        );
+        modified = replace_placeholders_with_sdt_v2(&modified, &sdt_map, &mut next_id);
 
         *content = modified.into_bytes();
     }
@@ -1084,7 +1110,8 @@ pub fn insert_template_variable(
     extract_variables(template_path)
 }
 
-/// Replace a `{Variable Name}` placeholder back to plain text.
+/// Remove a `lily:` or `lily-cond:` SDT from the template, replacing it
+/// with plain text. If `occurrence_index` is None, removes all occurrences.
 /// Returns the updated list of variables in the template.
 #[tauri::command]
 pub fn remove_template_variable(
@@ -1094,9 +1121,6 @@ pub fn remove_template_variable(
     occurrence_index: Option<usize>,
 ) -> Result<Vec<VariableInfo>, String> {
     info!(%template_path, %variable_name, "Removing template variable");
-
-    let search_text = format!("{{{}}}", variable_name);
-    let replace_all = occurrence_index.is_none();
 
     let file_bytes =
         fs::read(&template_path).map_err(|e| format!("Failed to read docx: {}", e))?;
@@ -1117,6 +1141,15 @@ pub fn remove_template_variable(
         entries.push((name, buf));
     }
 
+    // Match SDTs with lily: or lily-cond: tags for the given variable name
+    let escaped_name = escape_xml_text(&variable_name);
+    let sdt_pattern = format!(
+        r#"(?s)<w:sdt>(.*?<w:tag\s+w:val="(?:lily:|lily-cond:){}".*?)</w:sdt>"#,
+        regex::escape(&escaped_name)
+    );
+    let sdt_re = Regex::new(&sdt_pattern).map_err(|e| format!("Invalid regex: {}", e))?;
+    let rpr_re = Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#).expect("invalid regex");
+
     for (name, content) in entries.iter_mut() {
         if name != "word/document.xml"
             && !name.starts_with("word/header")
@@ -1126,51 +1159,34 @@ pub fn remove_template_variable(
         }
 
         let xml_str = String::from_utf8_lossy(content).to_string();
-        let normalized = normalize_split_variables(&xml_str);
-        let maps = build_paragraph_text_maps(&normalized);
-        let matches = find_text_in_paragraphs(&maps, &search_text);
-
-        if matches.is_empty() {
+        let match_count = sdt_re.find_iter(&xml_str).count();
+        if match_count == 0 {
             continue;
         }
 
-        let to_replace: Vec<(usize, usize)> = if replace_all {
-            matches
-        } else if let Some(idx) = occurrence_index {
-            if idx >= matches.len() {
-                return Err(format!(
-                    "Occurrence index {} out of range (found {})",
-                    idx,
-                    matches.len()
-                ));
+        let replace_all = occurrence_index.is_none();
+        let mut occurrence = 0;
+        let escaped_replacement = escape_xml_text(&replacement_text);
+
+        let modified = sdt_re.replace_all(&xml_str, |caps: &regex::Captures| {
+            let should_replace = replace_all || occurrence_index == Some(occurrence);
+            occurrence += 1;
+            if !should_replace {
+                return caps[0].to_string();
             }
-            vec![matches[idx]]
-        } else {
-            vec![matches[0]]
-        };
+            // Extract run properties from the SDT content for the replacement run
+            let inner = &caps[1];
+            let rpr = rpr_re
+                .find(inner)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+            format!(
+                "<w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r>",
+                rpr, escaped_replacement
+            )
+        });
 
-        // Replace one match at a time, re-finding after each replacement
-        // because replacing text can shift paragraph indices and byte offsets.
-        let mut modified = normalized;
-        let replace_count = to_replace.len();
-
-        for _ in 0..replace_count {
-            let maps = build_paragraph_text_maps(&modified);
-            let current_matches = find_text_in_paragraphs(&maps, &search_text);
-            if current_matches.is_empty() {
-                break;
-            }
-            let (pi, offset) = current_matches[current_matches.len() - 1];
-            modified = replace_text_in_xml(
-                &modified,
-                &maps[pi],
-                offset,
-                search_text.len(),
-                &replacement_text,
-            );
-        }
-
-        *content = modified.into_bytes();
+        *content = modified.into_owned().into_bytes();
     }
 
     let mut output = Cursor::new(Vec::new());
