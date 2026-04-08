@@ -197,6 +197,16 @@ export interface VariableInfo {
 /** Type of a variable in a template schema. */
 export type VariableType = "text" | "date" | "currency" | "conditional";
 
+/** Defines the true/false branch logic for a conditional variable. */
+export interface ConditionalDef {
+	/** The variable whose value controls which branch is shown. */
+	controlling_variable: string;
+	/** Template text for the true branch, with {VarName} references. */
+	true_template: string;
+	/** Template text for the false branch (often empty). */
+	false_template: string;
+}
+
 /** Schema definition for a single variable in a template. */
 export interface VariableSchemaEntry {
 	/** The type of this variable. */
@@ -209,6 +219,12 @@ export interface VariableSchemaEntry {
 	date_format?: string;
 	/** Whether this field is required. */
 	required: boolean;
+	/** Conditional branch logic (only for var_type "conditional"). */
+	condition?: ConditionalDef;
+	/** Contact role this variable auto-fills from. */
+	contact_role?: string;
+	/** Contact property this variable maps to. */
+	contact_property?: string;
 }
 
 /** Schema file for a template (.lily sidecar). */
