@@ -10,7 +10,7 @@ use docx_ops::{
     copy_template, extract_variables, get_document_html, get_template_text_occurrences,
     insert_template_variable, load_template_schema, migrate_template_to_sdt,
     remove_template_variable, rename_document,
-    replace_variables, replace_variables_v2, save_template_schema,
+    replace_variables_v2, save_template_schema,
 };
 use lily_file::{
     add_client_variable, add_contact, add_required_document, delete_contact, delete_document,
@@ -87,7 +87,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             copy_template,
             extract_variables,
-            replace_variables,
+
             rename_document,
             get_document_html,
             get_template_text_occurrences,

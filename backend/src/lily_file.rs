@@ -130,16 +130,14 @@ pub struct LilyFile {
     pub lily_version: u32,
     /// Client-level variable values shared across all documents.
     pub variables: HashMap<String, String>,
-    /// Display names of conditional (ternary) variables. These render as
-    /// toggles in the UI and store `"true"` / `"false"` as their value.
-    #[serde(default)]
+    /// DEPRECATED: conditional variable names are now determined by the
+    /// template schema. Kept for backward compat parsing of old .lily files.
+    #[serde(default, skip_serializing)]
     pub conditional_variables: Vec<String>,
-    /// Full conditional definitions extracted from the template, keyed by
-    /// display name.  Each entry holds every distinct definition string
-    /// (`"Label ?? true_text :: false_text"`) found in the template for that
-    /// label.  Stored permanently so that conditional logic survives across
-    /// save/re-open cycles even when placeholders have been replaced.
-    #[serde(default)]
+    /// DEPRECATED: conditional definitions now live in the template schema
+    /// (.lily sidecar). Kept for backward compat parsing of old .lily files.
+    #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     pub conditional_definitions: HashMap<String, Vec<String>>,
     /// Map from document filename to its metadata.
     pub documents: HashMap<String, DocumentMeta>,
@@ -555,7 +553,7 @@ pub fn set_document_variables(
     filename: String,
     variable_names: Vec<String>,
     conditional_names: Vec<String>,
-    conditional_definitions: HashMap<String, Vec<String>>,
+    _conditional_definitions: HashMap<String, Vec<String>>,
 ) -> Result<(), String> {
     let mut lily = read_lily_file(&working_dir)?;
     if let Some(meta) = lily.documents.get_mut(&filename) {
@@ -563,26 +561,15 @@ pub fn set_document_variables(
     } else {
         return Err(format!("Document '{}' not found in .lily file", filename));
     }
-    // Merge any new conditional variable names into the project-level list
+    // Track conditional variable names (still useful for UI toggle rendering)
     for name in conditional_names {
         if !lily.conditional_variables.contains(&name) {
             lily.conditional_variables.push(name);
         }
     }
-    // Merge conditional definitions into the project-level map.
-    // Only accept definitions that contain "??" (the conditional operator).
-    // Bare labels (e.g., "Has Role") from SDT-derived variants must be
-    // rejected — they are not definitions and would corrupt the list.
-    for (label, defs) in conditional_definitions {
-        let entry = lily.conditional_definitions.entry(label).or_default();
-        for def in defs {
-            if def.contains("??") && !entry.contains(&def) {
-                entry.push(def);
-            }
-        }
-        // Also clean up any existing invalid entries (bare labels without "??")
-        entry.retain(|d| d.contains("??"));
-    }
+    // NOTE: conditional_definitions are no longer stored in the client .lily
+    // file — they live in the template schema (.lily sidecar). The parameter
+    // is kept for API compatibility but ignored.
     write_lily_file(&working_dir, &lily)
 }
 
