@@ -1523,6 +1523,349 @@ pub fn save_template_schema(
     lily_file::atomic_write(&path, &content)
 }
 
+// ─── Migration ─────────────────────────────────────────────────────────────
+
+/// A single entry in the migration report.
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationEntry {
+    pub name: String,
+    pub var_type: String,
+    pub is_conditional: bool,
+}
+
+/// Report returned by `migrate_template_to_sdt`.
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationReport {
+    pub variables: Vec<MigrationEntry>,
+    pub schema_path: String,
+}
+
+/// Migrate a `{}`-syntax template to SDT-first format.
+///
+/// Reads the template, discovers all `{Variable}` and `{Cond ?? "..." :: ""}`
+/// placeholders using the legacy parsing code, replaces them with `lily:` /
+/// `lily-cond:` SDTs, builds a `VariableSchema` (including `ConditionalDef`
+/// entries), and saves both the modified `.docx` and the `.lily` schema sidecar.
+#[tauri::command]
+pub fn migrate_template_to_sdt(
+    template_path: String,
+    templates_dir: String,
+) -> Result<MigrationReport, String> {
+    info!(%template_path, "Migrating template to SDT-first format");
+
+    let file_bytes =
+        fs::read(&template_path).map_err(|e| format!("Failed to read template: {}", e))?;
+    let cursor = Cursor::new(&file_bytes);
+    let mut archive =
+        ZipArchive::new(cursor).map_err(|e| format!("Failed to open template as zip: {}", e))?;
+
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("Failed to read zip entry: {}", e))?;
+        let name = entry.name().to_string();
+        let mut data = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut data)
+            .map_err(|e| format!("Failed to read entry data: {}", e))?;
+        entries.push((name, data));
+    }
+
+    // Discover variables from all XML parts using the legacy parsing
+    let xml_parts: Vec<String> = entries
+        .iter()
+        .filter(|(name, _)| {
+            name == "word/document.xml"
+                || name.starts_with("word/header")
+                || name.starts_with("word/footer")
+        })
+        .map(|(_, content)| {
+            let xml_str = String::from_utf8_lossy(content);
+            normalize_split_variables(&xml_str)
+        })
+        .collect();
+
+    // Merge variable info from all parts
+    let mut all_vars: Vec<VariableInfo> = Vec::new();
+    let mut seen_keys: HashMap<String, usize> = HashMap::new();
+    for xml in &xml_parts {
+        for info in find_all_variables(xml) {
+            let key = info.display_name.to_lowercase();
+            if let Some(&idx) = seen_keys.get(&key) {
+                for variant in info.variants {
+                    if !all_vars[idx].variants.contains(&variant) {
+                        all_vars[idx].variants.push(variant);
+                    }
+                }
+                if info.is_conditional {
+                    all_vars[idx].is_conditional = true;
+                }
+            } else {
+                seen_keys.insert(key, all_vars.len());
+                all_vars.push(info);
+            }
+        }
+    }
+
+    // Build the replacement map and schema
+    let mut schema = VariableSchema {
+        lily_type: "template-schema".to_string(),
+        template_filename: Path::new(&template_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        variables: HashMap::new(),
+    };
+
+    // Map from original variant text → (display_name, replacement_text, is_conditional)
+    // For the placeholder replacement pass.
+    let mut placeholder_map: HashMap<String, (String, String, bool)> = HashMap::new();
+    let mut report_entries: Vec<MigrationEntry> = Vec::new();
+
+    for info in &all_vars {
+        let mut entry = VariableSchemaEntry {
+            var_type: if info.is_conditional {
+                "conditional".to_string()
+            } else {
+                "text".to_string()
+            },
+            ..Default::default()
+        };
+
+        if info.is_conditional {
+            // Parse the conditional definition from the variant
+            for variant in &info.variants {
+                if let Some((label, true_text, false_text)) =
+                    parse_conditional_variable(variant)
+                {
+                    entry.condition = Some(ConditionalDef {
+                        controlling_variable: label.clone(),
+                        true_template: true_text,
+                        false_template: false_text,
+                    });
+                    // The placeholder text in the SDT will just be the label
+                    placeholder_map.insert(
+                        variant.clone(),
+                        (info.display_name.clone(), info.display_name.clone(), true),
+                    );
+                    break;
+                }
+            }
+        } else {
+            // Check if this is a contact-role variable (dot notation)
+            for variant in &info.variants {
+                if let Some((role, property)) = parse_contact_role_ref(variant) {
+                    entry.contact_role = Some(role);
+                    entry.contact_property = Some(property);
+                    break;
+                }
+            }
+            for variant in &info.variants {
+                placeholder_map.insert(
+                    variant.clone(),
+                    (info.display_name.clone(), info.display_name.clone(), false),
+                );
+            }
+        }
+
+        report_entries.push(MigrationEntry {
+            name: info.display_name.clone(),
+            var_type: entry.var_type.clone(),
+            is_conditional: info.is_conditional,
+        });
+        schema
+            .variables
+            .insert(info.display_name.clone(), entry);
+    }
+
+    // Find max ID for unique SDT/bookmark IDs
+    let mut next_id: u64 = xml_parts
+        .iter()
+        .map(|xml| find_max_id(xml))
+        .max()
+        .unwrap_or(0)
+        + 1;
+
+    // Rewrite the docx: replace {Placeholder} text with SDTs
+    let mut output = Cursor::new(Vec::new());
+    {
+        let mut writer = ZipWriter::new(&mut output);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+        for (name, content) in &entries {
+            writer
+                .start_file(name, options)
+                .map_err(|e| format!("Failed to start zip entry: {}", e))?;
+
+            if name == "word/document.xml"
+                || name.starts_with("word/header")
+                || name.starts_with("word/footer")
+            {
+                let xml_str = String::from_utf8_lossy(content);
+                let normalized = normalize_split_variables(&xml_str);
+                let replaced =
+                    replace_placeholders_with_sdt_v2(&normalized, &placeholder_map, &mut next_id);
+                writer
+                    .write_all(replaced.as_bytes())
+                    .map_err(|e| format!("Failed to write entry: {}", e))?;
+            } else {
+                writer
+                    .write_all(content)
+                    .map_err(|e| format!("Failed to write entry: {}", e))?;
+            }
+        }
+
+        writer
+            .finish()
+            .map_err(|e| format!("Failed to finish zip: {}", e))?;
+    }
+
+    fs::write(&template_path, output.into_inner())
+        .map_err(|e| format!("Failed to write template: {}", e))?;
+
+    // Save the schema alongside the template
+    let rel_path = Path::new(&template_path)
+        .strip_prefix(&templates_dir)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| {
+            Path::new(&template_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
+        });
+    let schema_path = schema_path_for_template(&templates_dir, &rel_path);
+    let schema_json = serde_json::to_string_pretty(&schema)
+        .map_err(|e| format!("Failed to serialize schema: {}", e))?;
+    lily_file::atomic_write(&schema_path, &schema_json)?;
+
+    info!(
+        variables = report_entries.len(),
+        schema = %schema_path.display(),
+        "Migration complete"
+    );
+
+    Ok(MigrationReport {
+        variables: report_entries,
+        schema_path: schema_path.to_string_lossy().to_string(),
+    })
+}
+
+/// Replace `{Placeholder}` text with SDT-wrapped content, using `lily:`
+/// for simple variables and `lily-cond:` for conditional variables.
+/// Used only during migration from `{}`-syntax to SDT-first format.
+fn replace_placeholders_with_sdt_v2(
+    xml: &str,
+    replacements: &HashMap<String, (String, String, bool)>,
+    next_id: &mut u64,
+) -> String {
+    if replacements.is_empty() {
+        return xml.to_string();
+    }
+
+    let run_re = Regex::new(r#"(?s)<w:r\b[^>]*>.*?</w:r>"#).expect("invalid regex");
+    let t_content_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
+    let rpr_re = Regex::new(r#"(?s)<w:rPr>.*?</w:rPr>"#).expect("invalid regex");
+
+    let mut result = String::new();
+    let mut last_end = 0;
+
+    for run_match in run_re.find_iter(xml) {
+        let run_str = run_match.as_str();
+
+        let mut has_replacement = false;
+        if let Some(t_caps) = t_content_re.captures(run_str) {
+            let text = &t_caps[1];
+            for var_name in replacements.keys() {
+                let pattern = format!("{{{}}}", var_name);
+                if text.contains(&pattern) {
+                    has_replacement = true;
+                    break;
+                }
+            }
+        }
+
+        if !has_replacement {
+            result.push_str(&xml[last_end..run_match.end()]);
+            last_end = run_match.end();
+            continue;
+        }
+
+        result.push_str(&xml[last_end..run_match.start()]);
+        let rpr = rpr_re
+            .find(run_str)
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default();
+
+        if let Some(t_caps) = t_content_re.captures(run_str) {
+            let mut text = t_caps[1].to_string();
+            let mut output_parts: Vec<String> = Vec::new();
+
+            loop {
+                let mut best: Option<(usize, &str, &str, &str, bool)> = None;
+                for (var_name, (display_name, value, is_cond)) in replacements {
+                    let pattern = format!("{{{}}}", var_name);
+                    if let Some(pos) = text.find(&pattern) {
+                        if best.is_none() || pos < best.unwrap().0 {
+                            best = Some((pos, var_name, display_name, value, *is_cond));
+                        }
+                    }
+                }
+
+                let Some((pos, var_name, display_name, value, is_cond)) = best else {
+                    if !text.is_empty() {
+                        output_parts.push(format!(
+                            "<w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r>",
+                            rpr,
+                            escape_xml_text(&text)
+                        ));
+                    }
+                    break;
+                };
+
+                let pattern = format!("{{{}}}", var_name);
+
+                let before = &text[..pos];
+                if !before.is_empty() {
+                    output_parts.push(format!(
+                        "<w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r>",
+                        rpr,
+                        escape_xml_text(before)
+                    ));
+                }
+
+                let escaped_val = escape_xml_text(value);
+                let escaped_display = escape_xml_text(display_name);
+                let tag_prefix = if is_cond {
+                    COND_SDT_TAG_PREFIX
+                } else {
+                    SDT_TAG_PREFIX
+                };
+
+                let sdt_id = *next_id;
+                *next_id += 1;
+                output_parts.push(format!(
+                    "<w:sdt><w:sdtPr><w:id w:val=\"{}\"/><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
+                    sdt_id, tag_prefix, escaped_display, escaped_display, rpr, escaped_val
+                ));
+
+                text = text[pos + pattern.len()..].to_string();
+            }
+
+            for part in &output_parts {
+                result.push_str(part);
+            }
+        } else {
+            result.push_str(run_str);
+        }
+
+        last_end = run_match.end();
+    }
+
+    result.push_str(&xml[last_end..]);
+    result
+}
+
 // ─── Internal helpers ───────────────────────────────────────────────────────
 
 /// Pre-process Word XML to merge variable placeholders that are split across
@@ -5191,6 +5534,142 @@ mod tests {
             full_text.contains("If Jane Doe is unable or unwilling to serve, I appoint Jack Doe"),
             "Should have third agent sentence. Got: {}", full_text
         );
+    }
+
+    #[test]
+    fn test_migrate_and_replace_v2_hpoa() {
+        // End-to-end: migrate a {}-syntax template to SDT, then run
+        // replace_variables_v2 and verify the HPOA conditionals resolve.
+        let template_path = "/home/parker/Obsidian/40-69 Projects/42 Carelaw Colorado/Drafting/02-Deliverables/Templates/02 - Power of Attorney and Medical Templates/HPOA Template.docx";
+        if !std::path::Path::new(template_path).exists() {
+            eprintln!("Skipping: HPOA template not found");
+            return;
+        }
+
+        // Copy to temp
+        let tmp_dir = std::env::temp_dir().join("lily_migrate_test");
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let doc_path = tmp_dir.join("HPOA Template.docx");
+        std::fs::copy(template_path, &doc_path).unwrap();
+
+        // Run migration
+        let report = migrate_template_to_sdt(
+            doc_path.to_str().unwrap().to_string(),
+            tmp_dir.to_str().unwrap().to_string(),
+        )
+        .expect("Migration failed");
+
+        eprintln!("=== Migration report: {} variables ===", report.variables.len());
+        for v in &report.variables {
+            eprintln!("  {} (type={}, conditional={})", v.name, v.var_type, v.is_conditional);
+        }
+
+        // Verify conditionals were detected
+        assert!(
+            report.variables.iter().any(|v| v.name == "Has Healthcare POA Alternate Agent" && v.is_conditional),
+            "Should detect Has Healthcare POA Alternate Agent as conditional"
+        );
+
+        // Load the generated schema
+        let schema_path = tmp_dir.join("HPOA Template.lily");
+        assert!(schema_path.exists(), "Schema file should exist at {:?}", schema_path);
+        let schema: VariableSchema = serde_json::from_str(
+            &std::fs::read_to_string(&schema_path).unwrap()
+        ).unwrap();
+
+        // Verify conditional definitions in schema
+        let alt_entry = schema.variables.get("Has Healthcare POA Alternate Agent")
+            .expect("Schema should have alternate agent entry");
+        assert!(alt_entry.condition.is_some(), "Should have a ConditionalDef");
+        let cond = alt_entry.condition.as_ref().unwrap();
+        assert!(
+            cond.true_template.contains("{Healthcare POA Agent.full_name}"),
+            "True template should reference the primary agent"
+        );
+
+        // Now verify the migrated doc has lily-cond: SDTs
+        let parts = read_docx_parts(doc_path.to_str().unwrap()).unwrap();
+        assert!(
+            parts.document.contains("lily-cond:Has Healthcare POA Alternate Agent"),
+            "Migrated doc should have lily-cond: SDTs"
+        );
+        assert!(
+            parts.document.contains("lily:Healthcare POA Agent Full Name"),
+            "Migrated doc should have lily: SDTs for simple vars"
+        );
+
+        // Build conditional_schema from the generated schema
+        let conditional_schema: HashMap<String, ConditionalDef> = schema
+            .variables
+            .iter()
+            .filter_map(|(k, v)| v.condition.clone().map(|c| (k.clone(), c)))
+            .collect();
+
+        // Set up variable values and run replace_variables_v2
+        let mut variables: HashMap<String, String> = HashMap::new();
+        variables.insert("Client Full Name".to_string(), "Test Client".to_string());
+        variables.insert("Healthcare POA Agent Full Name".to_string(), "John Doe".to_string());
+        variables.insert("Healthcare POA Agent Phone".to_string(), "(123) 456-7890".to_string());
+        variables.insert("Has Healthcare POA Alternate Agent".to_string(), "true".to_string());
+        variables.insert("Healthcare POA Alternate Agent Full Name".to_string(), "Jane Doe".to_string());
+        variables.insert("Healthcare POA Alternate Agent Phone".to_string(), "(234) 567-8901".to_string());
+        variables.insert("Has Healthcare POA Third Agent".to_string(), "true".to_string());
+        variables.insert("Healthcare POA Third Agent Full Name".to_string(), "Jack Doe".to_string());
+        variables.insert("Healthcare POA Third Agent Phone".to_string(), "(345) 678-9012".to_string());
+
+        replace_variables_v2(
+            doc_path.to_str().unwrap().to_string(),
+            variables.clone(),
+            conditional_schema.clone(),
+        )
+        .expect("replace_variables_v2 failed");
+
+        // Read back and verify
+        let saved_parts = read_docx_parts(doc_path.to_str().unwrap()).unwrap();
+        let t_re = regex::Regex::new(r#"<w:t[^>]*>([^<]*)</w:t>"#).unwrap();
+        let full_text: String = t_re
+            .captures_iter(&saved_parts.document)
+            .map(|c| c[1].to_string())
+            .collect();
+
+        eprintln!("=== Section 1.1 output ===");
+        if let Some(idx) = full_text.find("I designate") {
+            let end = std::cmp::min(full_text.len(), idx + 500);
+            eprintln!("{}", &full_text[idx..end]);
+        }
+
+        assert!(
+            full_text.contains("I designate John Doe"),
+            "Should have primary agent"
+        );
+        assert!(
+            full_text.contains("If John Doe is unable or unwilling to serve, I appoint Jane Doe"),
+            "Should have alternate agent sentence"
+        );
+        assert!(
+            full_text.contains("If Jane Doe is unable or unwilling to serve, I appoint Jack Doe"),
+            "Should have third agent sentence"
+        );
+
+        // Verify second save also works
+        replace_variables_v2(
+            doc_path.to_str().unwrap().to_string(),
+            variables,
+            conditional_schema,
+        )
+        .expect("second replace_variables_v2 failed");
+
+        let saved_parts2 = read_docx_parts(doc_path.to_str().unwrap()).unwrap();
+        let full_text2: String = t_re
+            .captures_iter(&saved_parts2.document)
+            .map(|c| c[1].to_string())
+            .collect();
+        assert!(
+            full_text2.contains("If John Doe is unable or unwilling to serve, I appoint Jane Doe"),
+            "Second save should preserve alternate agent sentence"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 
     // ─── Legacy tests (existing) ────────────────────────────────────────
