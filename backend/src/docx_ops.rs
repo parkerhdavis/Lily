@@ -3724,7 +3724,7 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                     // Build inline style for font size, color, highlight, font family
                     let mut run_styles = Vec::new();
                     if let Some(ref ff) = font_family {
-                        run_styles.push(format!("font-family:\"{}\"", ff));
+                        run_styles.push(format!("font-family:'{}'", ff));
                     }
                     if let Some(sz) = font_size_half_pts {
                         let pt = sz as f64 / 2.0;
@@ -4803,7 +4803,6 @@ mod tests {
         );
     }
 
-    #[test]
     /// Run migration on a real template file. Set RUN_REAL_MIGRATION=1 to execute.
     #[test]
     fn run_real_migration() {
