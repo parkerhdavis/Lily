@@ -375,6 +375,24 @@ pub fn replace_variables(
 ) -> Result<(), String> {
     info!(%docx_path, var_count = variables.len(), "Replacing variables in document");
 
+    // Merge in variables from the .lily file so that nested contact-role
+    // variables inside conditional branches are always resolvable, even if
+    // the frontend sends an incomplete variableValues map.
+    let variables = {
+        let mut merged = variables;
+        let path = Path::new(&docx_path);
+        if let Some(parent) = path.parent() {
+            let working_dir = parent.to_string_lossy().to_string();
+            if let Ok(lily) = lily_file::read_lily_file(&working_dir) {
+                for (k, v) in lily.variables {
+                    // Only fill in missing keys — caller's values take precedence
+                    merged.entry(k).or_insert(v);
+                }
+            }
+        }
+        merged
+    };
+
     let file_bytes = fs::read(&docx_path).map_err(|e| format!("Failed to read docx: {}", e))?;
 
     let cursor = Cursor::new(&file_bytes);
@@ -4706,6 +4724,201 @@ mod tests {
         assert!(
             var_names.contains(&"HPOA #3 Phone"),
             "Missing HPOA #3 Phone"
+        );
+    }
+
+    /// End-to-end test: copy the real HPOA template, call replace_variables
+    /// on the copy, then read back the saved document and verify conditionals.
+    #[test]
+    fn test_hpoa_end_to_end_replace_and_read_back() {
+        let template_path = "/home/parker/Obsidian/40-69 Projects/42 Carelaw Colorado/Drafting/02-Deliverables/Templates/02 - Power of Attorney and Medical Templates/HPOA Template.docx";
+        if !std::path::Path::new(template_path).exists() {
+            eprintln!("Skipping: HPOA template not found at {}", template_path);
+            return;
+        }
+
+        // Copy to temp file
+        let tmp_dir = std::env::temp_dir().join("lily_hpoa_test");
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let doc_path = tmp_dir.join("HPOA Test.docx");
+        std::fs::copy(template_path, &doc_path).unwrap();
+
+        // First: extract variables from the fresh copy (like selectTemplate does)
+        let parts = read_docx_parts(doc_path.to_str().unwrap()).unwrap();
+        let normalized = normalize_split_variables(&parts.document);
+        let vars = find_all_variables(&normalized);
+
+        // Build conditional_definitions (like the frontend does)
+        let mut conditional_definitions: HashMap<String, Vec<String>> = HashMap::new();
+        for v in &vars {
+            if v.is_conditional {
+                conditional_definitions.insert(v.display_name.clone(), v.variants.clone());
+            }
+        }
+
+        // Build variable values
+        let mut variables: HashMap<String, String> = HashMap::new();
+        variables.insert("Client Full Name".to_string(), "Test Client".to_string());
+        variables.insert("Healthcare POA Agent Full Name".to_string(), "John Doe".to_string());
+        variables.insert("Healthcare POA Agent Phone".to_string(), "(123) 456-7890".to_string());
+        variables.insert("Has Healthcare POA Alternate Agent".to_string(), "true".to_string());
+        variables.insert("Healthcare POA Alternate Agent Full Name".to_string(), "Jane Doe".to_string());
+        variables.insert("Healthcare POA Alternate Agent Phone".to_string(), "(234) 567-8901".to_string());
+        variables.insert("Has Healthcare POA Third Agent".to_string(), "true".to_string());
+        variables.insert("Healthcare POA Third Agent Full Name".to_string(), "Jack Doe".to_string());
+        variables.insert("Healthcare POA Third Agent Phone".to_string(), "(345) 678-9012".to_string());
+
+        // Call replace_variables (the actual Tauri command implementation)
+        replace_variables(
+            doc_path.to_str().unwrap().to_string(),
+            variables.clone(),
+            conditional_definitions.clone(),
+        ).expect("replace_variables failed");
+
+        // Now read back the saved document and check the text
+        let saved_parts = read_docx_parts(doc_path.to_str().unwrap()).unwrap();
+        let text_re = regex::Regex::new(r#"<w:t[^>]*>([^<]*)</w:t>"#).unwrap();
+        let mut full_text = String::new();
+        for caps in text_re.captures_iter(&saved_parts.document) {
+            full_text.push_str(&caps[1]);
+        }
+
+        eprintln!("=== After first replace_variables (text around Section 1.1) ===");
+        if let Some(idx) = full_text.find("I designate") {
+            let end = std::cmp::min(full_text.len(), idx + 500);
+            eprintln!("{}", &full_text[idx..end]);
+        }
+
+        assert!(
+            full_text.contains("If John Doe is unable or unwilling to serve, I appoint Jane Doe"),
+            "First save: should contain alternate agent sentence"
+        );
+
+        // Now simulate a SECOND save (like saveDocument does) — the document now has SDTs
+        replace_variables(
+            doc_path.to_str().unwrap().to_string(),
+            variables.clone(),
+            conditional_definitions.clone(),
+        ).expect("second replace_variables failed");
+
+        // Read back again
+        let saved_parts2 = read_docx_parts(doc_path.to_str().unwrap()).unwrap();
+        let mut full_text2 = String::new();
+        for caps in text_re.captures_iter(&saved_parts2.document) {
+            full_text2.push_str(&caps[1]);
+        }
+
+        eprintln!("=== After second replace_variables (text around Section 1.1) ===");
+        if let Some(idx) = full_text2.find("I designate") {
+            let end = std::cmp::min(full_text2.len(), idx + 500);
+            eprintln!("{}", &full_text2[idx..end]);
+        }
+
+        assert!(
+            full_text2.contains("If John Doe is unable or unwilling to serve, I appoint Jane Doe"),
+            "Second save: should contain alternate agent sentence. Full text section: {}",
+            full_text2.chars().skip(full_text2.find("I designate").unwrap_or(0)).take(500).collect::<String>()
+        );
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_hpoa_full_replacement_pipeline() {
+        // Simulate the real HPOA template replacement with contact role
+        // dot-notation nested inside conditionals across mixed-formatting runs.
+        // This uses the EXACT XML structure from the actual HPOA template,
+        // where Word splits the conditional text across multiple runs due
+        // to bold formatting on nested variable names.
+        // NOTE: Uses curly/smart quotes (\u{201C}/\u{201D}) matching the
+        // actual Word template output.
+        let xml = "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t xml:space=\"preserve\">If I am unable to make my own health care decisions, I designate </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space=\"preserve\">{Healthcare POA Agent.full_name}</w:t></w:r><w:r><w:t xml:space=\"preserve\">, who can be reached at {Healthcare POA Agent.phone}</w:t></w:r><w:r><w:t xml:space=\"preserve\">, to serve as my Healthcare Representative. {Has Healthcare POA Alternate Agent ?? \u{201C}If </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space=\"preserve\">{Healthcare POA Agent.full_name}</w:t></w:r><w:r><w:t xml:space=\"preserve\"> is unable or unwilling to serve, I appoint </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space=\"preserve\">{Healthcare POA Alternate Agent.full_name}</w:t></w:r><w:r><w:t xml:space=\"preserve\">, who can be reached at </w:t></w:r><w:r><w:t xml:space=\"preserve\">{Healthcare POA Alternate Agent.phone}</w:t></w:r><w:r><w:t xml:space=\"preserve\">, to serve as my Healthcare Representative. \u{201D} :: \u{201C}\u{201D}}{Has Healthcare POA Third Agent ?? \u{201C}If </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space=\"preserve\">{Healthcare POA Alternate Agent.full_name}</w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space=\"preserve\"> </w:t></w:r><w:r><w:t xml:space=\"preserve\">i</w:t></w:r><w:r><w:t xml:space=\"preserve\">s unable or unwilling to serve, I appoint </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space=\"preserve\">{Healthcare POA Third Agent.full_name}</w:t></w:r><w:r><w:t xml:space=\"preserve\">, who can be reached at </w:t></w:r><w:r><w:t xml:space=\"preserve\">{Healthcare POA Third Agent.phone}</w:t></w:r><w:r><w:t xml:space=\"preserve\">, to serve as my Healthcare Representative.\u{201D} :: \u{201C}\u{201D}}</w:t></w:r></w:p></w:body></w:document>";
+
+        let normalized = normalize_split_variables(xml);
+        let vars = find_all_variables(&normalized);
+
+        // Build variable values as they would come from contact resolution
+        let mut variables: HashMap<String, String> = HashMap::new();
+        variables.insert("Healthcare POA Agent Full Name".to_string(), "John Doe".to_string());
+        variables.insert("Healthcare POA Agent Phone".to_string(), "(123) 456-7890".to_string());
+        variables.insert("Has Healthcare POA Alternate Agent".to_string(), "true".to_string());
+        variables.insert("Healthcare POA Alternate Agent Full Name".to_string(), "Jane Doe".to_string());
+        variables.insert("Healthcare POA Alternate Agent Phone".to_string(), "(234) 567-8901".to_string());
+        variables.insert("Has Healthcare POA Third Agent".to_string(), "true".to_string());
+        variables.insert("Healthcare POA Third Agent Full Name".to_string(), "Jack Doe".to_string());
+        variables.insert("Healthcare POA Third Agent Phone".to_string(), "(345) 678-9012".to_string());
+
+        // Build placeholder_map the same way replace_variables does
+        let mut placeholder_map: HashMap<String, (String, String)> = HashMap::new();
+        for info in &vars {
+            if let Some(value) = variables.get(&info.display_name) {
+                if info.is_conditional {
+                    let is_true = value == "true";
+                    for variant in &info.variants {
+                        if let Some((label, true_text, false_text)) =
+                            parse_conditional_variable(variant)
+                        {
+                            let branch = if is_true { true_text } else { false_text };
+                            let resolved = resolve_nested_variables(&branch, &variables);
+                            placeholder_map.insert(variant.clone(), (label, resolved));
+                        }
+                    }
+                } else {
+                    if value.is_empty() { continue; }
+                    for variant in &info.variants {
+                        let cased_value = apply_casing(value, variant);
+                        placeholder_map.insert(variant.clone(), (info.display_name.clone(), cased_value));
+                    }
+                }
+            }
+        }
+
+        // Check that conditionals resolved correctly
+        for (_key, (display_name, value)) in &placeholder_map {
+            if display_name == "Has Healthcare POA Alternate Agent" {
+                assert!(
+                    value.contains("Jane Doe"),
+                    "Alternate Agent conditional should contain 'Jane Doe', got: {}", value
+                );
+                assert!(
+                    value.contains("(234) 567-8901"),
+                    "Alternate Agent conditional should contain phone, got: {}", value
+                );
+                assert!(
+                    value.contains("If John Doe is unable"),
+                    "Alternate Agent conditional should reference primary agent name, got: {}", value
+                );
+            }
+            if display_name == "Has Healthcare POA Third Agent" {
+                assert!(
+                    value.contains("Jack Doe"),
+                    "Third Agent conditional should contain 'Jack Doe', got: {}", value
+                );
+                assert!(
+                    value.contains("If Jane Doe is unable"),
+                    "Third Agent conditional should reference alternate agent name, got: {}", value
+                );
+            }
+        }
+
+        // Now actually run the replacement on the normalized XML
+        let mut next_id: u64 = 1;
+        let result = replace_placeholders_with_sdt(&normalized, &placeholder_map, &mut next_id);
+
+        // The result should contain the full resolved sentences, not just names
+        assert!(
+            result.contains("John Doe"),
+            "Result should contain primary agent name"
+        );
+        assert!(
+            result.contains("If John Doe is unable or unwilling to serve, I appoint Jane Doe"),
+            "Result should contain the full alternate agent sentence, got relevant section: {}",
+            &result[result.find("Representative").unwrap_or(0)..std::cmp::min(result.len(), result.find("Representative").unwrap_or(0) + 500)]
+        );
+        assert!(
+            result.contains("If Jane Doe is unable or unwilling to serve, I appoint Jack Doe"),
+            "Result should contain the full third agent sentence"
         );
     }
 
