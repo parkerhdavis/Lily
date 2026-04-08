@@ -569,14 +569,19 @@ pub fn set_document_variables(
             lily.conditional_variables.push(name);
         }
     }
-    // Merge conditional definitions into the project-level map
+    // Merge conditional definitions into the project-level map.
+    // Only accept definitions that contain "??" (the conditional operator).
+    // Bare labels (e.g., "Has Role") from SDT-derived variants must be
+    // rejected — they are not definitions and would corrupt the list.
     for (label, defs) in conditional_definitions {
         let entry = lily.conditional_definitions.entry(label).or_default();
         for def in defs {
-            if !entry.contains(&def) {
+            if def.contains("??") && !entry.contains(&def) {
                 entry.push(def);
             }
         }
+        // Also clean up any existing invalid entries (bare labels without "??")
+        entry.retain(|d| d.contains("??"));
     }
     write_lily_file(&working_dir, &lily)
 }
