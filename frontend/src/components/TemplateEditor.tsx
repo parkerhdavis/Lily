@@ -106,8 +106,12 @@ export default function TemplateEditor() {
 
 		const nestedVars: { name: string; isConditional: boolean }[] = [];
 		for (const entry of Object.values(templateSchema.variables)) {
-			if (!entry.condition) continue;
-			for (const template of [entry.condition.true_template, entry.condition.false_template]) {
+			const condList = entry.conditions && entry.conditions.length > 0
+				? entry.conditions
+				: entry.condition ? [entry.condition] : [];
+			if (condList.length === 0) continue;
+			for (const cond of condList) {
+			for (const template of [cond.true_template, cond.false_template]) {
 				for (const m of template.matchAll(/\{([^{}]+)\}/g)) {
 					const inner = m[1].trim();
 					// Convert dot notation to display name
@@ -123,6 +127,7 @@ export default function TemplateEditor() {
 					}
 				}
 			}
+		}
 		}
 
 		return [...sdtVars, ...nestedVars];
@@ -145,15 +150,18 @@ export default function TemplateEditor() {
 		const BM_SPAN_RE =
 			/<span class="variable-bookmark" data-variable="([^"]*)" data-original-case="([^"]*)"><\/span>/g;
 
-		// Build conditional defs from schema
-		const condDefs: Record<string, ConditionalDef> = {};
+		// Build conditional defs from schema (supports multi-occurrence)
+		const condDefs: Record<string, ConditionalDef[]> = {};
 		if (templateSchema) {
 			for (const [name, entry] of Object.entries(templateSchema.variables)) {
-				if (entry.condition) {
-					condDefs[name] = entry.condition;
+				if (entry.conditions && entry.conditions.length > 0) {
+					condDefs[name] = entry.conditions;
+				} else if (entry.condition) {
+					condDefs[name] = [entry.condition];
 				}
 			}
 		}
+		const condOccurrenceCounts: Record<string, number> = {};
 
 		let html = templateEditorHtml;
 
@@ -163,8 +171,11 @@ export default function TemplateEditor() {
 			if (!displayName) return _match;
 
 			// Check if this is a conditional with a schema definition
-			const condDef = condDefs[displayName];
-			if (condDef) {
+			const condDefList = condDefs[displayName];
+			if (condDefList && condDefList.length > 0) {
+				const idx = condOccurrenceCounts[displayName] ?? 0;
+				condOccurrenceCounts[displayName] = idx + 1;
+				const condDef = condDefList[idx] ?? condDefList[0];
 				const controlValue = previewValues[condDef.controlling_variable] ?? "false";
 				const isTrue = controlValue === "true";
 				const branch = isTrue ? condDef.true_template : condDef.false_template;
@@ -172,7 +183,6 @@ export default function TemplateEditor() {
 				// Resolve nested variables in the branch
 				const resolved = branch.replace(/\{([^}]+)\}/g, (m, inner: string) => {
 					const trimmed = inner.trim();
-					// Handle dot notation (Role.property)
 					const dotIdx = trimmed.lastIndexOf(".");
 					let lookupName = trimmed;
 					if (dotIdx > 0) {
@@ -197,8 +207,11 @@ export default function TemplateEditor() {
 			const displayName = canonicalToDisplay[canonical];
 			if (!displayName) return _match;
 
-			const condDef = condDefs[displayName];
-			if (condDef) {
+			const condDefList = condDefs[displayName];
+			if (condDefList && condDefList.length > 0) {
+				const idx = condOccurrenceCounts[displayName] ?? 0;
+				condOccurrenceCounts[displayName] = idx + 1;
+				const condDef = condDefList[idx] ?? condDefList[0];
 				const controlValue = previewValues[condDef.controlling_variable] ?? "false";
 				const isTrue = controlValue === "true";
 				const branch = isTrue ? condDef.true_template : condDef.false_template;

@@ -375,10 +375,14 @@ export default function VariableEditor() {
 		const defs: Record<string, string[]> = {};
 		if (templateSchema) {
 			for (const [name, entry] of Object.entries(templateSchema.variables)) {
-				if (entry.condition) {
-					// Reconstruct the definition string format the preview renderer expects
-					const def = `${name} ?? "${entry.condition.true_template}" :: "${entry.condition.false_template}"`;
-					defs[name] = [def];
+				// Support both single `condition` and multi `conditions`
+				const condList = entry.conditions && entry.conditions.length > 0
+					? entry.conditions
+					: entry.condition ? [entry.condition] : [];
+				if (condList.length > 0) {
+					defs[name] = condList.map((c) =>
+						`${name} ?? "${c.true_template}" :: "${c.false_template}"`,
+					);
 				}
 			}
 		}

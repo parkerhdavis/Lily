@@ -215,8 +215,13 @@ export interface VariableSchemaEntry {
 	date_format?: string;
 	/** Whether this field is required. */
 	required: boolean;
-	/** Conditional branch logic (only for var_type "conditional"). */
+	/** Conditional branch logic (only for var_type "conditional").
+	 *  Single-occurrence conditionals use `condition`.
+	 *  Multi-occurrence conditionals (same variable, different text at
+	 *  different places) use `conditions` with one entry per occurrence. */
 	condition?: ConditionalDef;
+	/** Multiple conditional definitions for multi-occurrence conditionals. */
+	conditions?: ConditionalDef[];
 	/** Contact role this variable auto-fills from. */
 	contact_role?: string;
 	/** Contact property this variable maps to. */

@@ -67,8 +67,15 @@ pub struct VariableSchemaEntry {
     #[serde(default)]
     pub required: bool,
     /// Conditional branch logic (only for `var_type: "conditional"`).
+    /// Single-definition conditionals use `condition`; multi-occurrence
+    /// conditionals (same variable controls different text in different
+    /// places) use `conditions` with one entry per document occurrence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub condition: Option<ConditionalDef>,
+    /// Multiple conditional definitions for a single variable that appears
+    /// in multiple places with different branch text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<ConditionalDef>,
     /// Contact role this variable auto-fills from (e.g., "Healthcare POA Agent").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact_role: Option<String>,
@@ -396,7 +403,7 @@ fn find_all_variables(xml: &str) -> Vec<VariableInfo> {
 pub fn replace_variables_v2(
     docx_path: String,
     variables: HashMap<String, String>,
-    conditional_schema: HashMap<String, ConditionalDef>,
+    conditional_schema: HashMap<String, Vec<ConditionalDef>>,
 ) -> Result<(), String> {
     info!(%docx_path, var_count = variables.len(), "Replacing variables (v2) in document");
 
@@ -520,29 +527,31 @@ pub fn replace_variables_v2(
 fn update_sdt_v2(
     xml: &str,
     variables: &HashMap<String, String>,
-    conditional_schema: &HashMap<String, ConditionalDef>,
+    conditional_schema: &HashMap<String, Vec<ConditionalDef>>,
     next_id: &mut u64,
 ) -> String {
     if variables.is_empty() {
         return xml.to_string();
     }
 
-    // Resolve a variable label to its display value.
-    let resolve_label = |label: &str, is_conditional: bool| -> Option<String> {
-        if is_conditional {
-            let cond = conditional_schema.get(label)?;
-            let value = variables.get(&cond.controlling_variable)?;
-            let is_true = value == "true";
-            let branch = if is_true {
-                &cond.true_template
-            } else {
-                &cond.false_template
-            };
-            Some(resolve_nested_variables(branch, variables))
+    // Track occurrence index per conditional label so the Nth SDT for
+    // a label maps to the Nth definition in the schema's Vec.
+    let mut occurrence_counts: HashMap<String, usize> = HashMap::new();
+
+    // Resolve a conditional variable label to its display value.
+    let mut resolve_conditional = |label: &str| -> Option<String> {
+        let defs = conditional_schema.get(label)?;
+        let idx = occurrence_counts.entry(label.to_string()).or_insert(0);
+        let cond = defs.get(*idx).or_else(|| defs.first())?;
+        *idx += 1;
+        let value = variables.get(&cond.controlling_variable)?;
+        let is_true = value == "true";
+        let branch = if is_true {
+            &cond.true_template
         } else {
-            let value = variables.get(label)?;
-            Some(value.clone())
-        }
+            &cond.false_template
+        };
+        Some(resolve_nested_variables(branch, variables))
     };
 
     // Combined regex: match lily: / lily-cond: SDTs and bookmarks in document order.
@@ -580,7 +589,11 @@ fn update_sdt_v2(
                 continue;
             };
 
-            let Some(resolved) = resolve_label(label, is_conditional) else {
+            let Some(resolved) = (if is_conditional {
+                resolve_conditional(label)
+            } else {
+                variables.get(label).cloned()
+            }) else {
                 result.push_str(m.as_str());
                 continue;
             };
@@ -630,7 +643,11 @@ fn update_sdt_v2(
                 continue;
             };
 
-            let Some(resolved) = resolve_label(label, is_conditional) else {
+            let Some(resolved) = (if is_conditional {
+                resolve_conditional(label)
+            } else {
+                variables.get(label).cloned()
+            }) else {
                 result.push_str(m.as_str());
                 continue;
             };
@@ -1377,47 +1394,48 @@ pub fn migrate_template_to_sdt(
         if info.is_conditional {
             // Parse conditional definitions from ALL variants.
             // If the same label appears multiple times with different branch
-            // text, each occurrence gets a unique schema name (e.g.,
-            // "Has Spouse", "Has Spouse #2").
-            let mut occurrence = 0;
+            // text, all occurrences are stored in the `conditions` array.
+            let mut conditions = Vec::new();
             for variant in &info.variants {
                 if let Some((label, true_text, false_text)) =
                     parse_conditional_variable(variant)
                 {
-                    occurrence += 1;
-                    let schema_name = if occurrence == 1 {
-                        info.display_name.clone()
-                    } else {
-                        format!("{} #{}", info.display_name, occurrence)
-                    };
+                    conditions.push(ConditionalDef {
+                        controlling_variable: label,
+                        true_template: true_text,
+                        false_template: false_text,
+                    });
 
-                    let cond_entry = VariableSchemaEntry {
-                        var_type: "conditional".to_string(),
-                        condition: Some(ConditionalDef {
-                            controlling_variable: label,
-                            true_template: true_text,
-                            false_template: false_text,
-                        }),
-                        ..Default::default()
-                    };
-                    schema
-                        .variables
-                        .insert(schema_name.clone(), cond_entry);
-
+                    // All occurrences use the same display name in the SDT
                     placeholder_map.insert(
                         variant.clone(),
-                        (schema_name.clone(), schema_name.clone(), true),
+                        (info.display_name.clone(), info.display_name.clone(), true),
                     );
-
-                    report_entries.push(MigrationEntry {
-                        name: schema_name,
-                        var_type: "conditional".to_string(),
-                        is_conditional: true,
-                    });
                 }
             }
-            // Use the first occurrence's entry for the main variable
-            if occurrence > 0 {
+            if !conditions.is_empty() {
+                let cond_entry = if conditions.len() == 1 {
+                    VariableSchemaEntry {
+                        var_type: "conditional".to_string(),
+                        condition: Some(conditions.into_iter().next().unwrap()),
+                        ..Default::default()
+                    }
+                } else {
+                    VariableSchemaEntry {
+                        var_type: "conditional".to_string(),
+                        conditions,
+                        ..Default::default()
+                    }
+                };
+                schema
+                    .variables
+                    .insert(info.display_name.clone(), cond_entry);
+
+                report_entries.push(MigrationEntry {
+                    name: info.display_name.clone(),
+                    var_type: "conditional".to_string(),
+                    is_conditional: true,
+                });
                 continue; // Skip the default entry/report below
             }
         } else {
@@ -4748,11 +4766,11 @@ mod tests {
         vars.insert("Spouse Name".to_string(), "John Smith".to_string());
 
         let mut conds = HashMap::new();
-        conds.insert("Has Spouse".to_string(), ConditionalDef {
+        conds.insert("Has Spouse".to_string(), vec![ConditionalDef {
             controlling_variable: "Has Spouse".to_string(),
             true_template: "Married to {Spouse Name}.".to_string(),
             false_template: String::new(),
-        });
+        }]);
 
         let mut next_id = 100;
         let result = update_sdt_v2(xml, &vars, &conds, &mut next_id);
@@ -4767,11 +4785,11 @@ mod tests {
         vars.insert("Has Spouse".to_string(), "false".to_string());
 
         let mut conds = HashMap::new();
-        conds.insert("Has Spouse".to_string(), ConditionalDef {
+        conds.insert("Has Spouse".to_string(), vec![ConditionalDef {
             controlling_variable: "Has Spouse".to_string(),
             true_template: "Married to {Spouse Name}.".to_string(),
             false_template: String::new(),
-        });
+        }]);
 
         let mut next_id = 100;
         let result = update_sdt_v2(xml, &vars, &conds, &mut next_id);
@@ -4810,16 +4828,16 @@ mod tests {
         vars.insert("Healthcare POA Third Agent Phone".to_string(), "(345) 678-9012".to_string());
 
         let mut conds = HashMap::new();
-        conds.insert("Has Healthcare POA Alternate Agent".to_string(), ConditionalDef {
+        conds.insert("Has Healthcare POA Alternate Agent".to_string(), vec![ConditionalDef {
             controlling_variable: "Has Healthcare POA Alternate Agent".to_string(),
             true_template: "If {Healthcare POA Agent.full_name} is unable or unwilling to serve, I appoint {Healthcare POA Alternate Agent.full_name}, who can be reached at {Healthcare POA Alternate Agent.phone}, to serve as my Healthcare Representative. ".to_string(),
             false_template: String::new(),
-        });
-        conds.insert("Has Healthcare POA Third Agent".to_string(), ConditionalDef {
+        }]);
+        conds.insert("Has Healthcare POA Third Agent".to_string(), vec![ConditionalDef {
             controlling_variable: "Has Healthcare POA Third Agent".to_string(),
             true_template: "If {Healthcare POA Alternate Agent.full_name} is unable or unwilling to serve, I appoint {Healthcare POA Third Agent.full_name}, who can be reached at {Healthcare POA Third Agent.phone}, to serve as my Healthcare Representative.".to_string(),
             false_template: String::new(),
-        });
+        }]);
 
         let mut next_id = 100;
         let result = update_sdt_v2(xml, &vars, &conds, &mut next_id);
@@ -4940,10 +4958,16 @@ mod tests {
         );
 
         // Build conditional_schema from the generated schema
-        let conditional_schema: HashMap<String, ConditionalDef> = schema
+        let conditional_schema: HashMap<String, Vec<ConditionalDef>> = schema
             .variables
             .iter()
-            .filter_map(|(k, v)| v.condition.clone().map(|c| (k.clone(), c)))
+            .filter_map(|(k, v)| {
+                if !v.conditions.is_empty() {
+                    Some((k.clone(), v.conditions.clone()))
+                } else {
+                    v.condition.clone().map(|c| (k.clone(), vec![c]))
+                }
+            })
             .collect();
 
         // Set up variable values and run replace_variables_v2

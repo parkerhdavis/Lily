@@ -10,16 +10,18 @@ import type { WorkflowSlice } from "./types";
 async function loadConditionalSchema(
 	templatesDir: string,
 	templateRelPath: string,
-): Promise<Record<string, ConditionalDef>> {
+): Promise<Record<string, ConditionalDef[]>> {
 	try {
 		const schema = await invoke<VariableSchema>("load_template_schema", {
 			templatesDir,
 			templateRelPath,
 		});
-		const result: Record<string, ConditionalDef> = {};
+		const result: Record<string, ConditionalDef[]> = {};
 		for (const [name, entry] of Object.entries(schema.variables)) {
-			if (entry.condition) {
-				result[name] = entry.condition;
+			if (entry.conditions && entry.conditions.length > 0) {
+				result[name] = entry.conditions;
+			} else if (entry.condition) {
+				result[name] = [entry.condition];
 			}
 		}
 		return result;
@@ -423,7 +425,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 		set({ loading: true, error: null });
 		try {
 			// Load conditional schema from template
-			let conditionalSchema: Record<string, ConditionalDef> = {};
+			let conditionalSchema: Record<string, ConditionalDef[]> = {};
 			const settings = useSettingsStore.getState().settings;
 			const docFilename = extractFilename(documentPath);
 			const docTemplateRelPath =
