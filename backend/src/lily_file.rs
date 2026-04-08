@@ -940,6 +940,49 @@ pub fn set_client_questionnaire(
     write_lily_file(&working_dir, &lily)
 }
 
+/// A single field mapping for variable migration (old name → new name).
+#[derive(Debug, Deserialize)]
+pub struct FieldMapping {
+    pub from: String,
+    pub to: String,
+}
+
+/// Apply variable migration: copy values from old variable names to new ones,
+/// optionally remove orphaned variables, and bump questionnaire_version.
+/// Returns the updated LilyFile.
+#[tauri::command]
+pub fn apply_variable_migration(
+    working_dir: String,
+    mappings: Vec<FieldMapping>,
+    remove_orphaned: Vec<String>,
+    new_questionnaire_version: u32,
+) -> Result<LilyFile, String> {
+    let mut lily = read_lily_file(&working_dir)?;
+
+    // Apply mappings: copy value from old key to new key
+    for mapping in &mappings {
+        if let Some(value) = lily.variables.get(&mapping.from).cloned() {
+            lily.variables.insert(mapping.to.clone(), value);
+        }
+    }
+
+    // Remove mapped source keys (they've been transferred)
+    for mapping in &mappings {
+        lily.variables.remove(&mapping.from);
+    }
+
+    // Remove orphaned variables the user chose to discard
+    for key in &remove_orphaned {
+        lily.variables.remove(key);
+    }
+
+    // Bump questionnaire version
+    lily.questionnaire_version = Some(new_questionnaire_version);
+
+    write_lily_file(&working_dir, &lily)?;
+    Ok(lily)
+}
+
 /// Export client data as a JSON file to the given path.
 #[tauri::command]
 pub fn export_client_data(working_dir: String, export_path: String) -> Result<(), String> {

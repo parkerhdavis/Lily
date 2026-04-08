@@ -11,9 +11,14 @@ import type {
 	ClientTreeNode,
 	DocumentStatus,
 } from "@/types";
-import type { QuestionnaireSectionDef } from "@/types/questionnaire";
+import type { QuestionnaireDefFile, QuestionnaireSectionDef } from "@/types/questionnaire";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
+import MigrationDialog, {
+	type FieldMapping,
+	type MigrationReport,
+	type OrphanedVariable,
+} from "@/components/MigrationDialog";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
 import { extractFilename, extractFolderName } from "@/utils/path";
 
@@ -78,6 +83,74 @@ function isClientInTree(nodes: ClientTreeNode[], path: string): boolean {
 		if (isClientInTree(node.children, path)) return true;
 	}
 	return false;
+}
+
+// ─── Questionnaire variable extraction ──────────────────────────────────
+
+/** Extract all variable names defined by a questionnaire's sections. */
+function extractQuestionnaireVariables(
+	sections: QuestionnaireSectionDef[],
+): Set<string> {
+	const vars = new Set<string>();
+	for (const section of sections) {
+		if (section.kind === "contacts") continue;
+		for (const q of section.questions) {
+			if (q.kind === "text" || q.kind === "conditional") {
+				vars.add(q.variable);
+			} else if (q.kind === "contact-role") {
+				for (const varName of Object.keys(q.variableMappings)) {
+					vars.add(varName);
+				}
+			}
+		}
+	}
+	return vars;
+}
+
+/** Compute a migration report by comparing client variables against the
+ *  current questionnaire definition. */
+function computeMigrationReport(
+	lilyFile: import("@/types").LilyFile,
+	qDef: QuestionnaireDefFile,
+): MigrationReport | null {
+	const clientVersion = lilyFile.questionnaire_version ?? 0;
+	if (clientVersion >= qDef.version) return null;
+
+	const qVars = extractQuestionnaireVariables(qDef.sections);
+
+	// Gather all variable names referenced by documents
+	const docVars = new Set<string>();
+	for (const meta of Object.values(lilyFile.documents ?? {})) {
+		for (const v of meta.variable_names ?? []) {
+			docVars.add(v);
+		}
+	}
+
+	// Orphaned: have a value, not in questionnaire, not in documents
+	const orphaned: OrphanedVariable[] = [];
+	for (const [name, value] of Object.entries(lilyFile.variables ?? {})) {
+		if (!value.trim()) continue; // skip empty values
+		if (qVars.has(name)) continue; // still in questionnaire
+		if (docVars.has(name)) continue; // used by a document
+		orphaned.push({ name, value });
+	}
+
+	// Unfilled: in questionnaire, no value in .lily
+	const clientVars = lilyFile.variables ?? {};
+	const unfilled: string[] = [];
+	for (const v of qVars) {
+		if (!clientVars[v]?.trim()) {
+			unfilled.push(v);
+		}
+	}
+
+	if (orphaned.length === 0) return null; // nothing to migrate
+
+	return {
+		orphaned,
+		unfilled,
+		currentVersion: qDef.version,
+	};
 }
 
 // ─── Tab types ───────────────────────────────────────────────────────────
@@ -527,19 +600,20 @@ function ClientContentPane({
 		})();
 	}, [workingDir, lilyFile]);
 
-	// Dynamic questionnaire definition for stats
+	// Dynamic questionnaire definition for stats + migration
 	const [qDef, setQDef] = useState<QuestionnaireSectionDef[]>(fallbackDef);
+	const [migrationReport, setMigrationReport] =
+		useState<MigrationReport | null>(null);
 	useEffect(() => {
 		(async () => {
 			try {
-				let def = null;
+				let def: QuestionnaireDefFile | null = null;
 				if (lilyFile.questionnaire_id) {
 					try {
-						def = await invoke<
-							import("@/types/questionnaire").QuestionnaireDefFile
-						>("load_questionnaire", {
-							id: lilyFile.questionnaire_id,
-						});
+						def = await invoke<QuestionnaireDefFile>(
+							"load_questionnaire",
+							{ id: lilyFile.questionnaire_id },
+						);
 					} catch {
 						// Fall through
 					}
@@ -549,12 +623,15 @@ function ClientContentPane({
 				}
 				if (def) {
 					setQDef(def.sections);
+					// Check for migration needs
+					const report = computeMigrationReport(lilyFile, def);
+					setMigrationReport(report);
 				}
 			} catch {
 				// Use fallback
 			}
 		})();
-	}, [lilyFile.questionnaire_id, loadActiveQuestionnaire]);
+	}, [lilyFile.questionnaire_id, loadActiveQuestionnaire, lilyFile]);
 
 	const allDocs = useMemo(() => {
 		if (!lilyFile.documents) return [];
@@ -587,6 +664,37 @@ function ClientContentPane({
 		}
 		return { total, filled };
 	}, [lilyFile, qDef]);
+
+	const handleApplyMigration = useCallback(
+		async (mappings: FieldMapping[], removeOrphaned: string[]) => {
+			if (!migrationReport) return;
+			try {
+				const updated = await invoke<import("@/types").LilyFile>(
+					"apply_variable_migration",
+					{
+						workingDir,
+						mappings,
+						removeOrphaned,
+						newQuestionnaireVersion: migrationReport.currentVersion,
+					},
+				);
+				useWorkflowStore.setState({ lilyFile: updated });
+				setMigrationReport(null);
+				useToastStore
+					.getState()
+					.addToast("success", "Migration applied successfully");
+			} catch (err) {
+				useToastStore
+					.getState()
+					.addToast("error", `Migration failed: ${err}`);
+			}
+		},
+		[workingDir, migrationReport],
+	);
+
+	const handleSkipMigration = useCallback(() => {
+		setMigrationReport(null);
+	}, []);
 
 	const handleAddDocument = () => {
 		if (settings.templates_dir) {
@@ -657,6 +765,14 @@ function ClientContentPane({
 	const docCount = allDocs.length;
 
 	return (
+		<>
+		{migrationReport && (
+			<MigrationDialog
+				report={migrationReport}
+				onApply={handleApplyMigration}
+				onSkip={handleSkipMigration}
+			/>
+		)}
 		<div className="flex-1 flex flex-col min-w-0">
 			{/* Pinned header */}
 			<div className="shrink-0 border-b border-base-300 px-6 py-4">
@@ -850,6 +966,7 @@ function ClientContentPane({
 				</div>
 			</div>
 		</div>
+		</>
 	);
 }
 
