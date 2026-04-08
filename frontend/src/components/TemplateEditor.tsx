@@ -65,7 +65,6 @@ export default function TemplateEditor() {
 
 	// Preview values state
 	const [previewValues, setPreviewValues] = useState<Record<string, string>>({});
-	const [showPreviewValues, setShowPreviewValues] = useState(false);
 
 	// Load schema for conditional definitions used in preview
 	const [templateSchema, setTemplateSchema] = useState<VariableSchema | null>(null);
@@ -129,11 +128,10 @@ export default function TemplateEditor() {
 		return [...sdtVars, ...nestedVars];
 	}, [templateEditorVars, templateSchema]);
 
-	// Build live preview HTML with preview values applied
+	// Build live preview HTML — always resolves preview values (even when
+	// all empty, so conditionals default to their false branch).
 	const livePreviewHtml = useMemo(() => {
 		if (!templateEditorHtml) return "";
-		const hasValues = Object.values(previewValues).some((v) => v.trim());
-		if (!hasValues) return templateEditorHtml;
 
 		// Build canonical-to-display map
 		const canonicalToDisplay: Record<string, string> = {};
@@ -657,93 +655,107 @@ export default function TemplateEditor() {
 							)}
 						</div>
 
-						{/* Preview Values */}
-						{allPreviewVars.length > 0 && (
-							<div>
-								<button
-									type="button"
-									className="flex items-center gap-2 w-full text-left"
-									onClick={() => setShowPreviewValues(!showPreviewValues)}
-								>
-									<span className="text-xs opacity-40">
-										{showPreviewValues ? "\u25BE" : "\u25B8"}
-									</span>
-									<SectionHeading>
-										Preview Values
-									</SectionHeading>
-								</button>
-								{showPreviewValues && (
-									<div className="mt-3 space-y-2">
-										<p className="text-xs text-base-content/40 mb-2">
-											Enter sample values to preview what the template
-											will look like when filled.
-										</p>
-										{allPreviewVars.map((v) => (
-											<div key={v.name}>
-												{v.isConditional ? (
-													<label className="flex items-center gap-2 cursor-pointer">
-														<input
-															type="checkbox"
-															className="toggle toggle-sm toggle-primary"
-															checked={previewValues[v.name] === "true"}
-															onChange={(e) =>
-																setPreviewValues((prev) => ({
-																	...prev,
-																	[v.name]: e.target.checked ? "true" : "false",
-																}))
-															}
-														/>
-														<span className="text-xs text-base-content/70">
-															{v.name}
-														</span>
-													</label>
-												) : (
-													<div>
-														<label className="text-xs text-base-content/50 block mb-0.5">
-															{v.name}
-														</label>
-														<input
-															type="text"
-															className="input input-bordered input-xs w-full"
-															placeholder={v.name}
-															value={previewValues[v.name] ?? ""}
-															onChange={(e) =>
-																setPreviewValues((prev) => ({
-																	...prev,
-																	[v.name]: e.target.value,
-																}))
-															}
-														/>
-													</div>
-												)}
-											</div>
-										))}
-										{Object.values(previewValues).some((v) => v) && (
-											<button
-												type="button"
-												className="btn btn-ghost btn-xs w-full"
-												onClick={() => setPreviewValues({})}
-											>
-												Clear All
-											</button>
-										)}
-									</div>
-								)}
-							</div>
-						)}
 					</div>
 				</div>
 
-				{/* Document preview */}
-				<div className="flex-1 overflow-y-auto p-8 bg-base-200">
-					<div
-						ref={previewRef}
-						className="bg-base-100 rounded-lg shadow-2xl border border-base-300 p-8 max-w-4xl mx-auto prose prose-sm template-editor-preview"
-						// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
-						dangerouslySetInnerHTML={{
-							__html: livePreviewHtml,
-						}}
-					/>
+				{/* Center: dual document panes */}
+				<div className="flex flex-1 min-w-0">
+					{/* Raw template view */}
+					<div className="flex-1 overflow-y-auto p-6 bg-base-200 border-r border-base-300">
+						<div className="text-xs text-base-content/40 font-semibold uppercase tracking-wider mb-2 text-center">
+							Template
+						</div>
+						<div
+							ref={previewRef}
+							className="bg-base-100 rounded-lg shadow-lg border border-base-300 p-8 prose prose-sm template-editor-preview"
+							// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
+							dangerouslySetInnerHTML={{
+								__html: templateEditorHtml,
+							}}
+						/>
+					</div>
+
+					{/* Live preview */}
+					<div className="flex-1 overflow-y-auto p-6 bg-base-200">
+						<div className="text-xs text-base-content/40 font-semibold uppercase tracking-wider mb-2 text-center">
+							Preview
+						</div>
+						<div
+							className="bg-base-100 rounded-lg shadow-lg border border-base-300 p-8 prose prose-sm"
+							// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
+							dangerouslySetInnerHTML={{
+								__html: livePreviewHtml,
+							}}
+						/>
+					</div>
+				</div>
+
+				{/* Right sidebar: Preview Values */}
+				<div className="w-72 shrink-0 overflow-y-auto border-l border-base-300 bg-base-100 p-4">
+					<SectionHeading className="mb-3">
+						Preview Values
+					</SectionHeading>
+					{allPreviewVars.length === 0 ? (
+						<p className="text-xs text-base-content/40">
+							No variables to preview yet.
+						</p>
+					) : (
+						<div className="space-y-2">
+							<p className="text-xs text-base-content/40 mb-2">
+								Enter sample values to see how the
+								document will look when filled.
+							</p>
+							{allPreviewVars.map((v) => (
+								<div key={v.name}>
+									{v.isConditional ? (
+										<label className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="checkbox"
+												className="toggle toggle-sm toggle-primary"
+												checked={previewValues[v.name] === "true"}
+												onChange={(e) =>
+													setPreviewValues((prev) => ({
+														...prev,
+														[v.name]: e.target.checked ? "true" : "false",
+													}))
+												}
+											/>
+											<span className="text-xs text-base-content/70">
+												{v.name}
+											</span>
+										</label>
+									) : (
+										<div>
+											<label className="text-xs text-base-content/50 block mb-0.5">
+												{v.name}
+											</label>
+											<input
+												type="text"
+												className="input input-bordered input-xs w-full"
+												placeholder={v.name}
+												value={previewValues[v.name] ?? ""}
+												onChange={(e) =>
+													setPreviewValues((prev) => ({
+														...prev,
+														[v.name]: e.target.value,
+													}))
+												}
+											/>
+										</div>
+									)}
+								</div>
+							))}
+							{Object.values(previewValues).some((v) => v) && (
+								<button
+									type="button"
+									className="btn btn-ghost btn-xs w-full mt-2"
+									onClick={() => setPreviewValues({})}
+								>
+									Clear All
+								</button>
+							)}
+						</div>
+					)}
 				</div>
 			</div>
 
