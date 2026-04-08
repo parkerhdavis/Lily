@@ -44,7 +44,13 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			const conditionalDefs: Record<string, string[]> = {};
 			for (const v of variables) {
 				if (v.is_conditional) {
-					conditionalDefs[v.display_name] = v.variants;
+					// Only store variants that are actual conditional definitions
+					// (contain "??"). SDT-derived variants are bare labels like
+					// "Has Role" and must NOT pollute conditional_definitions.
+					const defs = v.variants.filter((d) => d.includes("??"));
+					if (defs.length > 0) {
+						conditionalDefs[v.display_name] = defs;
+					}
 				}
 			}
 
@@ -179,7 +185,13 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				const conditionalDefs: Record<string, string[]> = {};
 				for (const v of variables) {
 					if (v.is_conditional) {
-						conditionalDefs[v.display_name] = v.variants;
+						// Only store variants that are actual conditional definitions
+					// (contain "??"). SDT-derived variants are bare labels like
+					// "Has Role" and must NOT pollute conditional_definitions.
+					const defs = v.variants.filter((d) => d.includes("??"));
+					if (defs.length > 0) {
+						conditionalDefs[v.display_name] = defs;
+					}
 					}
 				}
 
@@ -264,7 +276,13 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			const conditionalDefs: Record<string, string[]> = {};
 			for (const v of variables) {
 				if (v.is_conditional) {
-					conditionalDefs[v.display_name] = v.variants;
+					// Only store variants that are actual conditional definitions
+					// (contain "??"). SDT-derived variants are bare labels like
+					// "Has Role" and must NOT pollute conditional_definitions.
+					const defs = v.variants.filter((d) => d.includes("??"));
+					if (defs.length > 0) {
+						conditionalDefs[v.display_name] = defs;
+					}
 				}
 			}
 			await invoke("set_document_variables", {

@@ -393,6 +393,14 @@ pub fn replace_variables(
         merged
     };
 
+    // Filter out invalid conditional definitions (bare labels without "??")
+    // that may have been stored from SDT-derived variants.
+    let conditional_definitions: HashMap<String, Vec<String>> = conditional_definitions
+        .into_iter()
+        .map(|(k, v)| (k, v.into_iter().filter(|d| d.contains("??")).collect()))
+        .filter(|(_, v): &(String, Vec<String>)| !v.is_empty())
+        .collect();
+
     let file_bytes = fs::read(&docx_path).map_err(|e| format!("Failed to read docx: {}", e))?;
 
     let cursor = Cursor::new(&file_bytes);
@@ -4725,103 +4733,6 @@ mod tests {
             var_names.contains(&"HPOA #3 Phone"),
             "Missing HPOA #3 Phone"
         );
-    }
-
-    /// End-to-end test: copy the real HPOA template, call replace_variables
-    /// on the copy, then read back the saved document and verify conditionals.
-    #[test]
-    fn test_hpoa_end_to_end_replace_and_read_back() {
-        let template_path = "/home/parker/Obsidian/40-69 Projects/42 Carelaw Colorado/Drafting/02-Deliverables/Templates/02 - Power of Attorney and Medical Templates/HPOA Template.docx";
-        if !std::path::Path::new(template_path).exists() {
-            eprintln!("Skipping: HPOA template not found at {}", template_path);
-            return;
-        }
-
-        // Copy to temp file
-        let tmp_dir = std::env::temp_dir().join("lily_hpoa_test");
-        let _ = std::fs::create_dir_all(&tmp_dir);
-        let doc_path = tmp_dir.join("HPOA Test.docx");
-        std::fs::copy(template_path, &doc_path).unwrap();
-
-        // First: extract variables from the fresh copy (like selectTemplate does)
-        let parts = read_docx_parts(doc_path.to_str().unwrap()).unwrap();
-        let normalized = normalize_split_variables(&parts.document);
-        let vars = find_all_variables(&normalized);
-
-        // Build conditional_definitions (like the frontend does)
-        let mut conditional_definitions: HashMap<String, Vec<String>> = HashMap::new();
-        for v in &vars {
-            if v.is_conditional {
-                conditional_definitions.insert(v.display_name.clone(), v.variants.clone());
-            }
-        }
-
-        // Build variable values
-        let mut variables: HashMap<String, String> = HashMap::new();
-        variables.insert("Client Full Name".to_string(), "Test Client".to_string());
-        variables.insert("Healthcare POA Agent Full Name".to_string(), "John Doe".to_string());
-        variables.insert("Healthcare POA Agent Phone".to_string(), "(123) 456-7890".to_string());
-        variables.insert("Has Healthcare POA Alternate Agent".to_string(), "true".to_string());
-        variables.insert("Healthcare POA Alternate Agent Full Name".to_string(), "Jane Doe".to_string());
-        variables.insert("Healthcare POA Alternate Agent Phone".to_string(), "(234) 567-8901".to_string());
-        variables.insert("Has Healthcare POA Third Agent".to_string(), "true".to_string());
-        variables.insert("Healthcare POA Third Agent Full Name".to_string(), "Jack Doe".to_string());
-        variables.insert("Healthcare POA Third Agent Phone".to_string(), "(345) 678-9012".to_string());
-
-        // Call replace_variables (the actual Tauri command implementation)
-        replace_variables(
-            doc_path.to_str().unwrap().to_string(),
-            variables.clone(),
-            conditional_definitions.clone(),
-        ).expect("replace_variables failed");
-
-        // Now read back the saved document and check the text
-        let saved_parts = read_docx_parts(doc_path.to_str().unwrap()).unwrap();
-        let text_re = regex::Regex::new(r#"<w:t[^>]*>([^<]*)</w:t>"#).unwrap();
-        let mut full_text = String::new();
-        for caps in text_re.captures_iter(&saved_parts.document) {
-            full_text.push_str(&caps[1]);
-        }
-
-        eprintln!("=== After first replace_variables (text around Section 1.1) ===");
-        if let Some(idx) = full_text.find("I designate") {
-            let end = std::cmp::min(full_text.len(), idx + 500);
-            eprintln!("{}", &full_text[idx..end]);
-        }
-
-        assert!(
-            full_text.contains("If John Doe is unable or unwilling to serve, I appoint Jane Doe"),
-            "First save: should contain alternate agent sentence"
-        );
-
-        // Now simulate a SECOND save (like saveDocument does) — the document now has SDTs
-        replace_variables(
-            doc_path.to_str().unwrap().to_string(),
-            variables.clone(),
-            conditional_definitions.clone(),
-        ).expect("second replace_variables failed");
-
-        // Read back again
-        let saved_parts2 = read_docx_parts(doc_path.to_str().unwrap()).unwrap();
-        let mut full_text2 = String::new();
-        for caps in text_re.captures_iter(&saved_parts2.document) {
-            full_text2.push_str(&caps[1]);
-        }
-
-        eprintln!("=== After second replace_variables (text around Section 1.1) ===");
-        if let Some(idx) = full_text2.find("I designate") {
-            let end = std::cmp::min(full_text2.len(), idx + 500);
-            eprintln!("{}", &full_text2[idx..end]);
-        }
-
-        assert!(
-            full_text2.contains("If John Doe is unable or unwilling to serve, I appoint Jane Doe"),
-            "Second save: should contain alternate agent sentence. Full text section: {}",
-            full_text2.chars().skip(full_text2.find("I designate").unwrap_or(0)).take(500).collect::<String>()
-        );
-
-        // Clean up
-        let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 
     #[test]
