@@ -5,7 +5,7 @@ import SectionHeading from "@/components/ui/SectionHeading";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
-import type { VariableInfo, VariableType, VariableSchema, TextOccurrence } from "@/types";
+import type { VariableInfo, VariableType, VariableSchema, TextOccurrence, ConditionalDef } from "@/types";
 import { extractFilename } from "@/utils/path";
 
 /** Strip the .docx/.dotx extension for display. */
@@ -48,6 +48,14 @@ export default function TemplateEditor() {
 	const [disambigVarName, setDisambigVarName] = useState("");
 	const [disambigSearchText, setDisambigSearchText] = useState("");
 
+	// Conditional wrapping state
+	const [showConditionalDialog, setShowConditionalDialog] = useState(false);
+	const [condName, setCondName] = useState("");
+	const [condControllingVar, setCondControllingVar] = useState("");
+	const [condBranch, setCondBranch] = useState<"true" | "false">("true");
+	const [condOtherBranchText, setCondOtherBranchText] = useState("");
+	const condDialogRef = useRef<HTMLDialogElement>(null);
+
 	// Removal state
 	const [removingVar, setRemovingVar] = useState<string | null>(null);
 	const [removalText, setRemovalText] = useState("");
@@ -55,12 +63,166 @@ export default function TemplateEditor() {
 	// Highlighted variable in preview
 	const [highlightedVar, setHighlightedVar] = useState<string | null>(null);
 
+	// Preview values state
+	const [previewValues, setPreviewValues] = useState<Record<string, string>>({});
+
+	// Load schema for conditional definitions used in preview
+	const [templateSchema, setTemplateSchema] = useState<VariableSchema | null>(null);
+	useEffect(() => {
+		if (!templatesDir || !templateEditorRelPath) return;
+		invoke<VariableSchema>("load_template_schema", {
+			templatesDir,
+			templateRelPath: templateEditorRelPath,
+		}).then(setTemplateSchema).catch(() => {});
+	}, [templatesDir, templateEditorRelPath, templateEditorVars]);
+
 	const previewRef = useRef<HTMLDivElement>(null);
 	const varNameInputRef = useRef<HTMLInputElement>(null);
 
 	const templateName = templateEditorRelPath
 		? stripDocx(extractFilename(templateEditorRelPath))
 		: "Template";
+
+	// Property labels for dot-notation resolution
+	const PROP_LABELS: Record<string, string> = {
+		full_name: "Full Name", first_name: "First Name",
+		last_name: "Last Name", middle_name: "Middle Name",
+		phone: "Phone", email: "Email",
+		address: "Address", city: "City", state: "State", zip: "ZIP",
+		relationship: "Relationship",
+	};
+
+	// Extract nested variable names from conditional templates in the schema.
+	// These variables aren't SDTs in the document — they exist only inside
+	// ConditionalDef true_template/false_template strings.
+	const allPreviewVars = useMemo(() => {
+		const sdtVars = templateEditorVars.map((v) => ({
+			name: v.display_name,
+			isConditional: v.is_conditional,
+		}));
+		const sdtNames = new Set(sdtVars.map((v) => v.name));
+
+		if (!templateSchema) return sdtVars;
+
+		const nestedVars: { name: string; isConditional: boolean }[] = [];
+		for (const entry of Object.values(templateSchema.variables)) {
+			if (!entry.condition) continue;
+			for (const template of [entry.condition.true_template, entry.condition.false_template]) {
+				for (const m of template.matchAll(/\{([^{}]+)\}/g)) {
+					const inner = m[1].trim();
+					// Convert dot notation to display name
+					const dotIdx = inner.lastIndexOf(".");
+					let displayName = inner;
+					if (dotIdx > 0) {
+						const role = inner.substring(0, dotIdx).trim();
+						const prop = inner.substring(dotIdx + 1).trim().toLowerCase();
+						displayName = `${role} ${PROP_LABELS[prop] ?? prop}`;
+					}
+					if (!sdtNames.has(displayName) && !nestedVars.some((v) => v.name === displayName)) {
+						nestedVars.push({ name: displayName, isConditional: false });
+					}
+				}
+			}
+		}
+
+		return [...sdtVars, ...nestedVars];
+	}, [templateEditorVars, templateSchema]);
+
+	// Build live preview HTML — always resolves preview values (even when
+	// all empty, so conditionals default to their false branch).
+	const livePreviewHtml = useMemo(() => {
+		if (!templateEditorHtml) return "";
+
+		// Build canonical-to-display map
+		const canonicalToDisplay: Record<string, string> = {};
+		for (const v of templateEditorVars) {
+			canonicalToDisplay[v.display_name.toLowerCase()] = v.display_name;
+		}
+
+		// Replace SDT filled spans with preview values
+		const SDT_SPAN_RE =
+			/<span class="variable-highlight filled" data-variable="([^"]*)" data-original-case="([^"]*)">([^<]*)<\/span>/g;
+		const BM_SPAN_RE =
+			/<span class="variable-bookmark" data-variable="([^"]*)" data-original-case="([^"]*)"><\/span>/g;
+
+		// Build conditional defs from schema
+		const condDefs: Record<string, ConditionalDef> = {};
+		if (templateSchema) {
+			for (const [name, entry] of Object.entries(templateSchema.variables)) {
+				if (entry.condition) {
+					condDefs[name] = entry.condition;
+				}
+			}
+		}
+
+		let html = templateEditorHtml;
+
+		// Replace SDT spans (and bookmarks for conditionals)
+		html = html.replace(SDT_SPAN_RE, (_match, canonical: string, originalCase: string, _text: string) => {
+			const displayName = canonicalToDisplay[canonical];
+			if (!displayName) return _match;
+
+			// Check if this is a conditional with a schema definition
+			const condDef = condDefs[displayName];
+			if (condDef) {
+				const controlValue = previewValues[condDef.controlling_variable] ?? "false";
+				const isTrue = controlValue === "true";
+				const branch = isTrue ? condDef.true_template : condDef.false_template;
+				if (!branch) return "";
+				// Resolve nested variables in the branch
+				const resolved = branch.replace(/\{([^}]+)\}/g, (m, inner: string) => {
+					const trimmed = inner.trim();
+					// Handle dot notation (Role.property)
+					const dotIdx = trimmed.lastIndexOf(".");
+					let lookupName = trimmed;
+					if (dotIdx > 0) {
+						const role = trimmed.substring(0, dotIdx).trim();
+						const prop = trimmed.substring(dotIdx + 1).trim().toLowerCase();
+						lookupName = `${role} ${PROP_LABELS[prop] ?? prop}`;
+					}
+					return previewValues[lookupName] ?? m;
+				});
+				return `<span class="variable-highlight filled" data-variable="${canonical}" data-original-case="${originalCase}">${resolved}</span>`;
+			}
+
+			const value = previewValues[displayName];
+			if (value) {
+				return `<span class="variable-highlight filled" data-variable="${canonical}" data-original-case="${originalCase}">${value}</span>`;
+			}
+			return _match;
+		});
+
+		// Expand bookmarks for conditionals that become non-empty
+		html = html.replace(BM_SPAN_RE, (_match, canonical: string, originalCase: string) => {
+			const displayName = canonicalToDisplay[canonical];
+			if (!displayName) return _match;
+
+			const condDef = condDefs[displayName];
+			if (condDef) {
+				const controlValue = previewValues[condDef.controlling_variable] ?? "false";
+				const isTrue = controlValue === "true";
+				const branch = isTrue ? condDef.true_template : condDef.false_template;
+				if (!branch) return _match;
+				const resolved = branch.replace(/\{([^}]+)\}/g, (m, inner: string) => {
+					const trimmed = inner.trim();
+					const dotIdx = trimmed.lastIndexOf(".");
+					let lookupName = trimmed;
+					if (dotIdx > 0) {
+						const role = trimmed.substring(0, dotIdx).trim();
+						const prop = trimmed.substring(dotIdx + 1).trim().toLowerCase();
+						lookupName = `${role} ${PROP_LABELS[prop] ?? prop}`;
+					}
+					return previewValues[lookupName] ?? m;
+				});
+				if (resolved) {
+					return `<span class="variable-highlight filled" data-variable="${canonical}" data-original-case="${originalCase}">${resolved}</span>`;
+				}
+			}
+			return _match;
+		});
+
+		return html;
+	}, [templateEditorHtml, previewValues, templateEditorVars, templateSchema]);
 
 	// Sidebar resize drag handler
 	const handleDragStart = useCallback(
@@ -226,6 +388,63 @@ export default function TemplateEditor() {
 		setDisambigOccurrences([]);
 	};
 
+	// Handle "Make Conditional" — wrap selected text in a lily-cond: SDT
+	const handleMakeConditional = async () => {
+		if (!selectedText || !condName.trim()) return;
+		const controlVar = condControllingVar.trim() || condName.trim();
+		const trueTemplate = condBranch === "true" ? selectedText : condOtherBranchText;
+		const falseTemplate = condBranch === "false" ? selectedText : condOtherBranchText;
+
+		try {
+			// Insert the SDT (reuse insertTemplateVariable which now creates SDTs)
+			await insertTemplateVariable(selectedText, condName.trim());
+
+			// Save the conditional definition to the schema
+			if (templatesDir && templateEditorRelPath) {
+				const schema = await invoke<VariableSchema>("load_template_schema", {
+					templatesDir,
+					templateRelPath: templateEditorRelPath,
+				});
+				schema.variables[condName.trim()] = {
+					var_type: "conditional",
+					required: false,
+					condition: {
+						controlling_variable: controlVar,
+						true_template: trueTemplate,
+						false_template: falseTemplate,
+					},
+				};
+				await invoke("save_template_schema", {
+					templatesDir,
+					templateRelPath: templateEditorRelPath,
+					schema,
+				});
+			}
+
+			// Now update the SDT tag to lily-cond: by re-reading and patching
+			// (The insertTemplateVariable used lily: — we need to change it to lily-cond:)
+			if (templateEditorPath) {
+				// Read, patch, write
+				// For now, we rely on the schema to identify conditionals;
+				// the backend replace_variables_v2 checks the schema, not the tag prefix.
+				// But for consistency, we should update the tag.
+				// TODO: Add a dedicated backend command for this
+			}
+
+			setSelectedText(null);
+			setCondName("");
+			setCondControllingVar("");
+			setCondBranch("true");
+			setCondOtherBranchText("");
+			setShowConditionalDialog(false);
+			condDialogRef.current?.close();
+
+			useToastStore.getState().addToast("success", `Conditional "${condName.trim()}" created`);
+		} catch (err) {
+			useToastStore.getState().addToast("error", `Failed to create conditional: ${err}`);
+		}
+	};
+
 	// Handle variable removal
 	const handleRemove = async () => {
 		if (!removingVar) return;
@@ -379,6 +598,21 @@ export default function TemplateEditor() {
 										Replace All
 									</button>
 								</div>
+								<div className="divider my-1 text-xs text-base-content/30">or</div>
+								<button
+									type="button"
+									className="btn btn-secondary btn-sm btn-outline w-full"
+									onClick={() => {
+										setCondName("");
+										setCondControllingVar("");
+										setCondBranch("true");
+										setCondOtherBranchText("");
+										setShowConditionalDialog(true);
+										setTimeout(() => condDialogRef.current?.showModal(), 0);
+									}}
+								>
+									Make Conditional
+								</button>
 								<button
 									type="button"
 									className="btn btn-ghost btn-xs w-full"
@@ -420,19 +654,108 @@ export default function TemplateEditor() {
 								</div>
 							)}
 						</div>
+
 					</div>
 				</div>
 
-				{/* Document preview */}
-				<div className="flex-1 overflow-y-auto p-8 bg-base-200">
-					<div
-						ref={previewRef}
-						className="bg-base-100 rounded-lg shadow-2xl border border-base-300 p-8 max-w-4xl mx-auto prose prose-sm template-editor-preview"
-						// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
-						dangerouslySetInnerHTML={{
-							__html: templateEditorHtml,
-						}}
-					/>
+				{/* Center: dual document panes */}
+				<div className="flex flex-1 min-w-0">
+					{/* Raw template view */}
+					<div className="flex-1 overflow-y-auto p-6 bg-base-200 border-r border-base-300">
+						<div className="text-xs text-base-content/40 font-semibold uppercase tracking-wider mb-2 text-center">
+							Template
+						</div>
+						<div
+							ref={previewRef}
+							className="bg-base-100 rounded-lg shadow-lg border border-base-300 p-8 prose prose-sm template-editor-preview"
+							// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
+							dangerouslySetInnerHTML={{
+								__html: templateEditorHtml,
+							}}
+						/>
+					</div>
+
+					{/* Live preview */}
+					<div className="flex-1 overflow-y-auto p-6 bg-base-200">
+						<div className="text-xs text-base-content/40 font-semibold uppercase tracking-wider mb-2 text-center">
+							Preview
+						</div>
+						<div
+							className="bg-base-100 rounded-lg shadow-lg border border-base-300 p-8 prose prose-sm"
+							// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
+							dangerouslySetInnerHTML={{
+								__html: livePreviewHtml,
+							}}
+						/>
+					</div>
+				</div>
+
+				{/* Right sidebar: Preview Values */}
+				<div className="w-72 shrink-0 overflow-y-auto border-l border-base-300 bg-base-100 p-4">
+					<SectionHeading className="mb-3">
+						Preview Values
+					</SectionHeading>
+					{allPreviewVars.length === 0 ? (
+						<p className="text-xs text-base-content/40">
+							No variables to preview yet.
+						</p>
+					) : (
+						<div className="space-y-2">
+							<p className="text-xs text-base-content/40 mb-2">
+								Enter sample values to see how the
+								document will look when filled.
+							</p>
+							{allPreviewVars.map((v) => (
+								<div key={v.name}>
+									{v.isConditional ? (
+										<label className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="checkbox"
+												className="toggle toggle-sm toggle-primary"
+												checked={previewValues[v.name] === "true"}
+												onChange={(e) =>
+													setPreviewValues((prev) => ({
+														...prev,
+														[v.name]: e.target.checked ? "true" : "false",
+													}))
+												}
+											/>
+											<span className="text-xs text-base-content/70">
+												{v.name}
+											</span>
+										</label>
+									) : (
+										<div>
+											<label className="text-xs text-base-content/50 block mb-0.5">
+												{v.name}
+											</label>
+											<input
+												type="text"
+												className="input input-bordered input-xs w-full"
+												placeholder={v.name}
+												value={previewValues[v.name] ?? ""}
+												onChange={(e) =>
+													setPreviewValues((prev) => ({
+														...prev,
+														[v.name]: e.target.value,
+													}))
+												}
+											/>
+										</div>
+									)}
+								</div>
+							))}
+							{Object.values(previewValues).some((v) => v) && (
+								<button
+									type="button"
+									className="btn btn-ghost btn-xs w-full mt-2"
+									onClick={() => setPreviewValues({})}
+								>
+									Clear All
+								</button>
+							)}
+						</div>
+					)}
 				</div>
 			</div>
 
@@ -497,7 +820,7 @@ export default function TemplateEditor() {
 							Remove Variable
 						</h3>
 						<p className="text-base-content/70 text-sm mb-4">
-							Replace <code className="bg-base-200 px-1 rounded">{`{${removingVar}}`}</code> with:
+							Replace variable <code className="bg-base-200 px-1 rounded">{removingVar}</code> with:
 						</p>
 						<input
 							type="text"
@@ -525,6 +848,151 @@ export default function TemplateEditor() {
 								onClick={handleRemove}
 							>
 								Remove Variable
+							</button>
+						</div>
+					</div>
+				</dialog>
+			)}
+
+			{/* Conditional configuration dialog */}
+			{showConditionalDialog && (
+				// biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close
+				<dialog
+					ref={condDialogRef}
+					className="modal"
+					onClick={(e) => {
+						if (e.target === condDialogRef.current) {
+							condDialogRef.current?.close();
+							setShowConditionalDialog(false);
+						}
+					}}
+				>
+					<div className="modal-box max-w-lg">
+						<h3 className="font-bold text-lg mb-1">
+							Make Conditional
+						</h3>
+						<p className="text-sm text-base-content/60 mb-4">
+							The selected text will be shown or hidden based on a
+							controlling variable's value.
+						</p>
+
+						<div className="space-y-3">
+							<div>
+								<div className="text-xs text-base-content/50 mb-1">
+									Selected text:
+								</div>
+								<div className="badge badge-lg badge-outline font-mono text-xs max-w-full">
+									<span className="truncate">
+										{selectedText}
+									</span>
+								</div>
+							</div>
+
+							<div>
+								<label className="label pb-0.5">
+									<span className="label-text text-xs">
+										Conditional name
+									</span>
+								</label>
+								<input
+									type="text"
+									className="input input-bordered input-sm w-full"
+									placeholder='e.g., "Has Spouse"'
+									value={condName}
+									onChange={(e) => setCondName(e.target.value)}
+								/>
+							</div>
+
+							<div>
+								<label className="label pb-0.5">
+									<span className="label-text text-xs">
+										Controlling variable (leave blank to use
+										conditional name)
+									</span>
+								</label>
+								<input
+									type="text"
+									className="input input-bordered input-sm w-full"
+									placeholder={condName || "Same as conditional name"}
+									value={condControllingVar}
+									onChange={(e) =>
+										setCondControllingVar(e.target.value)
+									}
+								/>
+							</div>
+
+							<div>
+								<label className="label pb-0.5">
+									<span className="label-text text-xs">
+										This text is the...
+									</span>
+								</label>
+								<div className="flex gap-2">
+									<label className="label cursor-pointer gap-1.5">
+										<input
+											type="radio"
+											className="radio radio-sm radio-primary"
+											checked={condBranch === "true"}
+											onChange={() => setCondBranch("true")}
+										/>
+										<span className="label-text text-xs">
+											True branch
+										</span>
+									</label>
+									<label className="label cursor-pointer gap-1.5">
+										<input
+											type="radio"
+											className="radio radio-sm radio-primary"
+											checked={condBranch === "false"}
+											onChange={() =>
+												setCondBranch("false")
+											}
+										/>
+										<span className="label-text text-xs">
+											False branch
+										</span>
+									</label>
+								</div>
+							</div>
+
+							<div>
+								<label className="label pb-0.5">
+									<span className="label-text text-xs">
+										{condBranch === "true"
+											? "Text when false (leave empty for nothing)"
+											: "Text when true (leave empty for nothing)"}
+									</span>
+								</label>
+								<textarea
+									className="textarea textarea-bordered textarea-sm w-full"
+									rows={2}
+									placeholder="Other branch text..."
+									value={condOtherBranchText}
+									onChange={(e) =>
+										setCondOtherBranchText(e.target.value)
+									}
+								/>
+							</div>
+						</div>
+
+						<div className="modal-action">
+							<button
+								type="button"
+								className="btn btn-ghost btn-sm"
+								onClick={() => {
+									condDialogRef.current?.close();
+									setShowConditionalDialog(false);
+								}}
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								className="btn btn-primary btn-sm"
+								disabled={!condName.trim()}
+								onClick={handleMakeConditional}
+							>
+								Create Conditional
 							</button>
 						</div>
 					</div>

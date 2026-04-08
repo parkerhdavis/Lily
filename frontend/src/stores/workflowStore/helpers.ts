@@ -177,30 +177,10 @@ export function mergeStoredVariables(
 		}
 	}
 
-	// Also scan conditional_definitions for nested {Role.property} references.
-	// This covers the case where no contact binding exists yet (no contact
-	// assigned), but the template still uses dot-notation inside a conditional.
+	// Previously also scanned conditional_definitions for dot-notation refs,
+	// but conditional definitions now live in the template schema.
+	// Contact bindings cover the same lookup when contacts are assigned.
 	const nestedDotLookup: Record<string, string> = {};
-	for (const defs of Object.values(
-		lilyFile?.conditional_definitions ?? {},
-	)) {
-		for (const def of defs) {
-			for (const m of def.matchAll(/\{([^{}]+)\}/g)) {
-				const inner = m[1].trim();
-				if (inner.includes("??")) continue;
-				const dotIdx = inner.lastIndexOf(".");
-				if (dotIdx <= 0) continue;
-				const role = inner.substring(0, dotIdx).trim();
-				const property = inner
-					.substring(dotIdx + 1)
-					.trim()
-					.toLowerCase();
-				if (!CONTACT_PROPERTIES.has(property)) continue;
-				const label = PROPERTY_LABELS[property] ?? property;
-				nestedDotLookup[`${role} ${label}`] = inner;
-			}
-		}
-	}
 
 	// Index extracted variables by display name
 	const extractedMap = new Map<string, VariableInfo>();

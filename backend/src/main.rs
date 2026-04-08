@@ -8,8 +8,9 @@ mod settings;
 
 use docx_ops::{
     copy_template, extract_variables, get_document_html, get_template_text_occurrences,
-    insert_template_variable, load_template_schema, remove_template_variable, rename_document,
-    replace_variables, save_template_schema,
+    insert_template_variable, load_template_schema, migrate_template_to_sdt,
+    remove_template_variable, rename_document,
+    replace_variables_v2, save_template_schema,
 };
 use lily_file::{
     add_client_variable, add_contact, add_required_document, delete_contact, delete_document,
@@ -86,7 +87,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             copy_template,
             extract_variables,
-            replace_variables,
+
             rename_document,
             get_document_html,
             get_template_text_occurrences,
@@ -97,6 +98,8 @@ fn main() {
             load_settings,
             save_settings,
             list_templates,
+            replace_variables_v2,
+            migrate_template_to_sdt,
             load_lily_file_cmd,
             save_variables,
             save_client_variables,

@@ -1,9 +1,32 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { LilyFile, VariableInfo, VariableSchema } from "@/types";
+import type { ConditionalDef, LilyFile, VariableInfo, VariableSchema } from "@/types";
 import { useUndoStore } from "@/stores/undoStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { extractFilename } from "@/utils/path";
 import { buildDocumentFilename, mergeStoredVariables, pushNav, toastError, toastSuccess } from "./helpers";
 import type { WorkflowSlice } from "./types";
+
+/** Load the conditional schema for a template from its .lily sidecar. */
+async function loadConditionalSchema(
+	templatesDir: string,
+	templateRelPath: string,
+): Promise<Record<string, ConditionalDef>> {
+	try {
+		const schema = await invoke<VariableSchema>("load_template_schema", {
+			templatesDir,
+			templateRelPath,
+		});
+		const result: Record<string, ConditionalDef> = {};
+		for (const [name, entry] of Object.entries(schema.variables)) {
+			if (entry.condition) {
+				result[name] = entry.condition;
+			}
+		}
+		return result;
+	} catch {
+		return {};
+	}
+}
 
 export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 	loadTemplates: async (templatesDir) => {
@@ -41,19 +64,6 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				{ docxPath: docPath },
 			);
 
-			const conditionalDefs: Record<string, string[]> = {};
-			for (const v of variables) {
-				if (v.is_conditional) {
-					// Only store variants that are actual conditional definitions
-					// (contain "??"). SDT-derived variants are bare labels like
-					// "Has Role" and must NOT pollute conditional_definitions.
-					const defs = v.variants.filter((d) => d.includes("??"));
-					if (defs.length > 0) {
-						conditionalDefs[v.display_name] = defs;
-					}
-				}
-			}
-
 			await invoke("set_document_variables", {
 				workingDir,
 				filename,
@@ -61,7 +71,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				conditionalNames: variables
 					.filter((v) => v.is_conditional)
 					.map((v) => v.display_name),
-				conditionalDefinitions: conditionalDefs,
+				conditionalDefinitions: {},
 			});
 
 			// Resolve contact variables so that any new relationship-based
@@ -108,11 +118,14 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 
 			// Write variable values into the .docx immediately so the
 			// document is populated from the start (not just on manual save)
-			await invoke("replace_variables", {
+			const conditionalSchema = await loadConditionalSchema(
+				templatesDir,
+				templateRelPath,
+			);
+			await invoke("replace_variables_v2", {
 				docxPath: docPath,
 				variables: variableValues,
-				conditionalDefinitions:
-					updatedLilyFile?.conditional_definitions ?? {},
+				conditionalSchema,
 			});
 
 			// Refresh preview to reflect populated values
@@ -182,19 +195,6 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 					{ docxPath: docPath },
 				);
 
-				const conditionalDefs: Record<string, string[]> = {};
-				for (const v of variables) {
-					if (v.is_conditional) {
-						// Only store variants that are actual conditional definitions
-					// (contain "??"). SDT-derived variants are bare labels like
-					// "Has Role" and must NOT pollute conditional_definitions.
-					const defs = v.variants.filter((d) => d.includes("??"));
-					if (defs.length > 0) {
-						conditionalDefs[v.display_name] = defs;
-					}
-					}
-				}
-
 				await invoke("set_document_variables", {
 					workingDir,
 					filename,
@@ -202,7 +202,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 					conditionalNames: variables
 						.filter((v) => v.is_conditional)
 						.map((v) => v.display_name),
-					conditionalDefinitions: conditionalDefs,
+					conditionalDefinitions: {},
 				});
 			}
 
@@ -219,13 +219,15 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			// Populate each added document with variable values from
 			// the questionnaire so they're saved into the .docx immediately
 			const allVars = updatedLilyFile?.variables ?? {};
-			const allCondDefs =
-				updatedLilyFile?.conditional_definitions ?? {};
-			for (const docPath of addedDocPaths) {
-				await invoke("replace_variables", {
-					docxPath: docPath,
+			for (let i = 0; i < addedDocPaths.length; i++) {
+				const conditionalSchema = await loadConditionalSchema(
+					templatesDir,
+					templateRelPaths[i],
+				);
+				await invoke("replace_variables_v2", {
+					docxPath: addedDocPaths[i],
 					variables: allVars,
-					conditionalDefinitions: allCondDefs,
+					conditionalSchema,
 				});
 			}
 
@@ -271,20 +273,8 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				);
 			}
 
-			// Record any new variables/conditionals from this document and
-			// resolve contact variables so derived values are up-to-date.
-			const conditionalDefs: Record<string, string[]> = {};
-			for (const v of variables) {
-				if (v.is_conditional) {
-					// Only store variants that are actual conditional definitions
-					// (contain "??"). SDT-derived variants are bare labels like
-					// "Has Role" and must NOT pollute conditional_definitions.
-					const defs = v.variants.filter((d) => d.includes("??"));
-					if (defs.length > 0) {
-						conditionalDefs[v.display_name] = defs;
-					}
-				}
-			}
+			// Record variable names from this document and resolve
+			// contact variables so derived values are up-to-date.
 			await invoke("set_document_variables", {
 				workingDir,
 				filename,
@@ -292,7 +282,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				conditionalNames: variables
 					.filter((v) => v.is_conditional)
 					.map((v) => v.display_name),
-				conditionalDefinitions: conditionalDefs,
+				conditionalDefinitions: {},
 			});
 			await invoke("resolve_contact_variables", { workingDir });
 
@@ -331,12 +321,18 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 
 			// Sync current values into the .docx so it reflects the
 			// latest questionnaire data without requiring a manual save
-			await invoke("replace_variables", {
-				docxPath: docPath,
-				variables: variableValues,
-				conditionalDefinitions:
-					updatedLilyFile?.conditional_definitions ?? {},
-			});
+			const settings = useSettingsStore.getState().settings;
+			if (settings.templates_dir && templateRelPath) {
+				const conditionalSchema = await loadConditionalSchema(
+					settings.templates_dir,
+					templateRelPath,
+				);
+				await invoke("replace_variables_v2", {
+					docxPath: docPath,
+					variables: variableValues,
+					conditionalSchema,
+				});
+			}
 
 			const documentHtml = await invoke<string>("get_document_html", {
 				docxPath: docPath,
@@ -421,16 +417,29 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 	},
 
 	saveDocument: async () => {
-		const { documentPath, variableValues, workingDir, lilyFile } = get();
+		const { documentPath, variableValues, workingDir, lilyFile, templateRelPath } = get();
 		if (!documentPath) return;
 
 		set({ loading: true, error: null });
 		try {
-			await invoke("replace_variables", {
+			// Load conditional schema from template
+			let conditionalSchema: Record<string, ConditionalDef> = {};
+			const settings = useSettingsStore.getState().settings;
+			const docFilename = extractFilename(documentPath);
+			const docTemplateRelPath =
+				templateRelPath ??
+				lilyFile?.documents[docFilename]?.template_rel_path;
+			if (settings.templates_dir && docTemplateRelPath) {
+				conditionalSchema = await loadConditionalSchema(
+					settings.templates_dir,
+					docTemplateRelPath,
+				);
+			}
+
+			await invoke("replace_variables_v2", {
 				docxPath: documentPath,
 				variables: variableValues,
-				conditionalDefinitions:
-					lilyFile?.conditional_definitions ?? {},
+				conditionalSchema,
 			});
 
 			const filename = extractFilename(documentPath);
