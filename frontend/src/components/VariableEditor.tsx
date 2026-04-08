@@ -130,8 +130,20 @@ export default function VariableEditor() {
 		for (const v of variables) {
 			map[v.display_name.toLowerCase()] = v.display_name;
 		}
+		// Also include variables from the .lily file's pool (e.g.,
+		// contact-resolved variables like "Financial POA Alternate Agent
+		// Full Name") that aren't in the extracted SDT variable list.
+		// These are needed for resolving nested refs inside conditionals.
+		if (lilyFile) {
+			for (const key of Object.keys(lilyFile.variables)) {
+				const canonical = key.toLowerCase();
+				if (!map[canonical]) {
+					map[canonical] = key;
+				}
+			}
+		}
 		return map;
-	}, [variables]);
+	}, [variables, lilyFile]);
 
 	// Detect contact-role variables from dot notation in variants.
 	// Maps display_name → { role, property } for contact-role variables.
@@ -373,10 +385,24 @@ export default function VariableEditor() {
 		return defs;
 	}, [templateSchema]);
 
+	// Merge variableValues with .lily file values so nested contact-role
+	// variables inside conditional branches are available for preview.
+	const mergedPreviewValues = useMemo(() => {
+		const merged = { ...variableValues };
+		if (lilyFile) {
+			for (const [k, v] of Object.entries(lilyFile.variables)) {
+				if (!(k in merged)) {
+					merged[k] = v;
+				}
+			}
+		}
+		return merged;
+	}, [variableValues, lilyFile]);
+
 	// Build a live preview by replacing variable placeholders in the HTML.
 	const livePreviewHtml = useMemo(
-		() => renderLivePreview(documentHtml, variableValues, selectedVariable, canonicalToDisplay, conditionalDefs),
-		[documentHtml, variableValues, selectedVariable, canonicalToDisplay, conditionalDefs],
+		() => renderLivePreview(documentHtml, mergedPreviewValues, selectedVariable, canonicalToDisplay, conditionalDefs),
+		[documentHtml, mergedPreviewValues, selectedVariable, canonicalToDisplay, conditionalDefs],
 	);
 
 	const handleVariableChange = (name: string, value: string) => {
