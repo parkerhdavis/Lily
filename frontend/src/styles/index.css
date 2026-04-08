@@ -156,8 +156,23 @@
 /* Page break indicator */
 .preview-page-break {
 	display: block;
-	border-bottom: 1px dashed oklch(0.7 0 0);
-	margin: 12pt 0;
+	border-top: 2px dashed oklch(0.65 0 0);
+	margin: 24pt -8pt 24pt -8pt;
+	padding-top: 8pt;
+	position: relative;
+}
+.preview-page-break::after {
+	content: "page break";
+	position: absolute;
+	top: -10px;
+	left: 50%;
+	transform: translateX(-50%);
+	font-size: 9px;
+	color: oklch(0.55 0 0);
+	background: var(--b1, #fff);
+	padding: 0 8px;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
 }
 
 /* List label (bullet or number) */
