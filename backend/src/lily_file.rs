@@ -39,6 +39,8 @@ pub struct Contact {
     pub id: String,
     pub full_name: String,
     pub first_name: String,
+    #[serde(default)]
+    pub middle_name: String,
     pub last_name: String,
     pub relationship: String,
     #[serde(default)]
@@ -478,6 +480,22 @@ pub fn load_lily_file_cmd(working_dir: String) -> Result<LilyFile, String> {
     read_lily_file(&working_dir)
 }
 
+/// Check whether a .lily file exists on disk in the given directory.
+#[tauri::command]
+pub fn has_lily_file(working_dir: String) -> Result<bool, String> {
+    let files = find_lily_files(&working_dir)?;
+    Ok(!files.is_empty())
+}
+
+/// Create a new .lily file in the given directory, writing the default
+/// structure to disk. Returns the created LilyFile.
+#[tauri::command]
+pub fn create_lily_file(working_dir: String) -> Result<LilyFile, String> {
+    let lily = LilyFile::default();
+    write_lily_file(&working_dir, &lily)?;
+    Ok(lily)
+}
+
 /// Save variable values for a document and update its modified timestamp.
 #[tauri::command]
 pub fn save_variables(
@@ -673,6 +691,7 @@ fn get_contact_property(contact: &Contact, key: &str) -> String {
     match key {
         "full_name" => contact.full_name.clone(),
         "first_name" => contact.first_name.clone(),
+        "middle_name" => contact.middle_name.clone(),
         "last_name" => contact.last_name.clone(),
         "relationship" => {
             if contact.relationship == "Other" && !contact.other_relationship.is_empty() {

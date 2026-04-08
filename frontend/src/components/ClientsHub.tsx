@@ -71,6 +71,15 @@ function extractClientsFromTree(nodes: ClientTreeNode[]): ClientSummary[] {
 	return clients;
 }
 
+/** Check if a directory path corresponds to a client (has .lily file) in the tree data. */
+function isClientInTree(nodes: ClientTreeNode[], path: string): boolean {
+	for (const node of nodes) {
+		if (node.path === path) return node.is_client;
+		if (isClientInTree(node.children, path)) return true;
+	}
+	return false;
+}
+
 // ─── Tab types ───────────────────────────────────────────────────────────
 
 type ClientsTab = "clients" | "progress";
@@ -249,6 +258,7 @@ export default function ClientsHub() {
 						onReloadLilyFile={reloadLilyFile}
 						onLoadTemplates={loadTemplates}
 						loadActiveQuestionnaire={loadActiveQuestionnaire}
+						onReloadTrees={loadTrees}
 					/>
 				)}
 				{activeTab === "progress" && (
@@ -286,6 +296,7 @@ function ClientsTreeTab({
 	onReloadLilyFile,
 	onLoadTemplates,
 	loadActiveQuestionnaire,
+	onReloadTrees,
 }: {
 	trees: LibraryTree[];
 	loading: boolean;
@@ -305,7 +316,46 @@ function ClientsTreeTab({
 	onReloadLilyFile: () => Promise<void>;
 	onLoadTemplates: (templatesDir: string) => Promise<void>;
 	loadActiveQuestionnaire: () => Promise<import("@/types/questionnaire").QuestionnaireDefFile | null>;
+	onReloadTrees: () => Promise<void>;
 }) {
+	const [pendingNewClientDir, setPendingNewClientDir] = useState<string | null>(null);
+	const [creatingClient, setCreatingClient] = useState(false);
+
+	const allTreeNodes = useMemo(
+		() => trees.flatMap((t) => t.nodes),
+		[trees],
+	);
+
+	// Wrapper: if the selected folder isn't a client, show creation prompt
+	const handleSelectDir = useCallback(
+		(dir: string) => {
+			const isClient = isClientInTree(allTreeNodes, dir);
+			if (isClient) {
+				setPendingNewClientDir(null);
+				onSelectClient(dir);
+			} else {
+				setPendingNewClientDir(dir);
+			}
+		},
+		[allTreeNodes, onSelectClient],
+	);
+
+	const handleCreateClient = useCallback(async () => {
+		if (!pendingNewClientDir) return;
+		setCreatingClient(true);
+		try {
+			await invoke("create_lily_file", { workingDir: pendingNewClientDir });
+			await onReloadTrees();
+			setPendingNewClientDir(null);
+			onSelectClient(pendingNewClientDir);
+		} catch (err) {
+			console.error("Failed to create .lily file:", err);
+			useToastStore.getState().addToast("error", `Failed to create client: ${err}`);
+		} finally {
+			setCreatingClient(false);
+		}
+	}, [pendingNewClientDir, onSelectClient, onReloadTrees]);
+
 	if (!hasLibraryDirs) {
 		return (
 			<div className="flex flex-col items-center justify-center h-full gap-4 p-8">
@@ -359,8 +409,8 @@ function ClientsTreeTab({
 									<ClientTreeItem
 										key={node.path}
 										node={node}
-										selectedDir={workingDir}
-										onSelectDir={onSelectClient}
+										selectedDir={pendingNewClientDir ?? workingDir}
+										onSelectDir={handleSelectDir}
 									/>
 								))}
 							</div>
@@ -370,7 +420,38 @@ function ClientsTreeTab({
 			</div>
 
 			{/* Right pane: client content */}
-			{workingDir && lilyFile ? (
+			{pendingNewClientDir ? (
+				<div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+					<FolderIcon open={false} />
+					<h3 className="text-lg font-semibold">
+						{extractFolderName(pendingNewClientDir)}
+					</h3>
+					<p className="text-sm text-base-content/60 text-center max-w-sm">
+						This folder doesn't have a client project file yet.
+						Would you like to create one?
+					</p>
+					<div className="flex gap-2">
+						<button
+							type="button"
+							className="btn btn-ghost btn-sm"
+							onClick={() => setPendingNewClientDir(null)}
+						>
+							Cancel
+						</button>
+						<button
+							type="button"
+							className="btn btn-primary btn-sm"
+							onClick={handleCreateClient}
+							disabled={creatingClient}
+						>
+							{creatingClient ? (
+								<span className="loading loading-spinner loading-xs" />
+							) : null}
+							Create Client
+						</button>
+					</div>
+				</div>
+			) : workingDir && lilyFile ? (
 				<ClientContentPane
 					workingDir={workingDir}
 					lilyFile={lilyFile}
@@ -996,11 +1077,21 @@ function ClientTreeItem({
 		);
 	}
 
+	// Empty folder (no .lily file, no children) — still selectable
 	return (
-		<div className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal gap-2 text-base-content/30 cursor-default">
+		<button
+			type="button"
+			className={`btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal gap-2 ${
+				selectedDir === node.path
+					? "bg-primary/10 text-primary font-medium"
+					: "text-base-content/50"
+			}`}
+			onClick={() => onSelectDir(node.path)}
+		>
+			<span className="w-3" />
 			<FolderIcon open={false} />
 			<span className="truncate">{node.name}</span>
-		</div>
+		</button>
 	);
 }
 

@@ -15,6 +15,7 @@ use lily_file::{
     add_client_variable, add_contact, add_required_document, delete_contact, delete_document,
     check_document_consistency, detect_document_statuses, export_client_data,
     import_client_data, list_clients_in_library,
+    create_lily_file, has_lily_file,
     list_library_tree, load_client_summaries, load_lily_file_cmd, new_version_document,
     open_file_in_os, remove_client_variable, remove_required_document, resolve_contact_variables,
     save_client_variables, save_contact_bindings, save_questionnaire_note, save_variables,
@@ -133,6 +134,8 @@ fn main() {
             list_library_tree,
             set_variable_overrides,
             check_document_consistency,
+            has_lily_file,
+            create_lily_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -22,11 +22,12 @@ function validateContactField(
 }
 
 /** The text fields that make up a contact, in display order.
+ *  full_name is auto-constructed from first/middle/last and not directly editable.
  *  Relationship is handled separately as a dropdown. */
-const CONTACT_FIELDS: { key: keyof Omit<Contact, "id" | "is_minor" | "other_relationship">; label: string }[] = [
-	{ key: "full_name", label: "Full Name" },
-	{ key: "first_name", label: "First Name" },
-	{ key: "last_name", label: "Last Name" },
+const CONTACT_FIELDS: { key: keyof Omit<Contact, "id" | "is_minor" | "other_relationship" | "full_name">; label: string; third?: boolean }[] = [
+	{ key: "first_name", label: "First Name", third: true },
+	{ key: "middle_name", label: "Middle Name", third: true },
+	{ key: "last_name", label: "Last Name", third: true },
 	{ key: "phone", label: "Phone" },
 	{ key: "email", label: "Email" },
 	{ key: "address", label: "Address" },
@@ -38,6 +39,7 @@ const CONTACT_FIELDS: { key: keyof Omit<Contact, "id" | "is_minor" | "other_rela
 const EMPTY_CONTACT: Omit<Contact, "id"> = {
 	full_name: "",
 	first_name: "",
+	middle_name: "",
 	last_name: "",
 	relationship: "",
 	other_relationship: "",
@@ -112,7 +114,20 @@ export default function ContactManager({
 
 	const updateField = (key: keyof Contact, value: string | boolean) => {
 		if (!editingContact) return;
-		setEditingContact({ ...editingContact, [key]: value });
+		const updated = { ...editingContact, [key]: value };
+		// Auto-construct full_name from first/middle/last
+		const nameFields: (keyof Contact)[] = ["first_name", "middle_name", "last_name"];
+		if (nameFields.includes(key)) {
+			updated.full_name = [
+				updated.first_name,
+				updated.middle_name,
+				updated.last_name,
+			]
+				.map((s) => (typeof s === "string" ? s.trim() : ""))
+				.filter(Boolean)
+				.join(" ");
+		}
+		setEditingContact(updated);
 	};
 
 	const deleteName =
@@ -219,15 +234,21 @@ export default function ContactManager({
 						<h3 className="text-lg font-bold mb-4">
 							{isNew ? "Add Contact" : "Edit Contact"}
 						</h3>
-						<div className="grid grid-cols-2 gap-3">
-							{CONTACT_FIELDS.map(({ key, label }) => (
+						{editingContact.full_name && (
+							<p className="text-sm text-base-content/60 mb-3">
+								{editingContact.full_name}
+							</p>
+						)}
+						<div className="grid grid-cols-6 gap-3">
+							{CONTACT_FIELDS.map(({ key, label, third }) => (
 								<div
 									key={key}
 									className={
-										key === "full_name" ||
-										key === "address"
+										third
 											? "col-span-2"
-											: ""
+											: key === "address"
+												? "col-span-6"
+												: "col-span-3"
 									}
 								>
 									<label className="label pb-0.5">
@@ -258,7 +279,7 @@ export default function ContactManager({
 								</div>
 							))}
 							{/* Relationship dropdown */}
-							<div className={editingContact.relationship === "Other" ? "" : "col-span-2"}>
+							<div className={editingContact.relationship === "Other" ? "col-span-3" : "col-span-6"}>
 								<label className="label pb-0.5">
 									<span className="label-text text-xs">Relationship</span>
 								</label>
@@ -282,7 +303,7 @@ export default function ContactManager({
 								</select>
 							</div>
 							{editingContact.relationship === "Other" && (
-								<div>
+								<div className="col-span-3">
 									<label className="label pb-0.5">
 										<span className="label-text text-xs">Other Relationship</span>
 									</label>
@@ -296,7 +317,7 @@ export default function ContactManager({
 								</div>
 							)}
 							{editingContact.relationship === "Child" && (
-								<div className="col-span-2">
+								<div className="col-span-6">
 									<label className="label cursor-pointer justify-start gap-2 py-0">
 										<input
 											type="checkbox"
@@ -324,7 +345,7 @@ export default function ContactManager({
 								type="button"
 								className="btn btn-primary btn-sm"
 								onClick={handleSave}
-								disabled={!editingContact.full_name.trim()}
+								disabled={!editingContact.first_name.trim() && !editingContact.last_name.trim()}
 							>
 								{isNew ? "Add" : "Save"}
 							</button>
