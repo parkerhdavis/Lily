@@ -7,6 +7,7 @@ import type { QuestionDef } from "@/types/questionnaire";
 const PROPERTY_LABELS: Record<string, string> = {
 	full_name: "Full Name",
 	first_name: "First Name",
+	middle_name: "Middle Name",
 	last_name: "Last Name",
 	relationship: "Relationship",
 	phone: "Phone",

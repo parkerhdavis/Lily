@@ -121,6 +121,7 @@ export interface Contact {
 	id: string;
 	full_name: string;
 	first_name: string;
+	middle_name: string;
 	last_name: string;
 	relationship: string;
 	other_relationship: string;

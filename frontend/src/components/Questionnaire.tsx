@@ -569,6 +569,7 @@ function InlineContactList({
 		const created = await onAdd({
 			full_name: "",
 			first_name: "",
+			middle_name: "",
 			last_name: "",
 			relationship: "",
 			other_relationship: "",
@@ -668,6 +669,7 @@ function ContactEditForm({
 	const [form, setForm] = useState({
 		full_name: existing?.full_name ?? "",
 		first_name: existing?.first_name ?? "",
+		middle_name: existing?.middle_name ?? "",
 		last_name: existing?.last_name ?? "",
 		relationship: existing?.relationship ?? "",
 		other_relationship: existing?.other_relationship ?? "",
@@ -684,7 +686,17 @@ function ContactEditForm({
 	const savedRef = useRef({ ...form });
 
 	const update = (key: string, value: string | boolean) =>
-		setForm((prev) => ({ ...prev, [key]: value }));
+		setForm((prev) => {
+			const next = { ...prev, [key]: value };
+			// Auto-construct full_name from first/middle/last
+			if (key === "first_name" || key === "middle_name" || key === "last_name") {
+				next.full_name = [next.first_name, next.middle_name, next.last_name]
+					.map((s) => (typeof s === "string" ? s.trim() : ""))
+					.filter(Boolean)
+					.join(" ");
+			}
+			return next;
+		});
 
 	const handleFieldBlur = useCallback(async () => {
 		const current = form;
@@ -705,9 +717,9 @@ function ContactEditForm({
 		label: string;
 		span: 6 | 3 | 2;
 	}[] = [
-		{ key: "full_name", label: "Full Legal Name", span: 6 },
-		{ key: "first_name", label: "First Name", span: 3 },
-		{ key: "last_name", label: "Last Name", span: 3 },
+		{ key: "first_name", label: "First Name", span: 2 },
+		{ key: "middle_name", label: "Middle Name", span: 2 },
+		{ key: "last_name", label: "Last Name", span: 2 },
 		{ key: "phone", label: "Phone", span: 3 },
 		{ key: "email", label: "Email", span: 3 },
 		{ key: "address", label: "Address", span: 6 },
@@ -718,6 +730,11 @@ function ContactEditForm({
 
 	return (
 		<div className="p-3 rounded-lg border border-primary/30 bg-primary/5 space-y-3">
+			{form.full_name && (
+				<p className="text-sm text-base-content/60">
+					{form.full_name}
+				</p>
+			)}
 			<div className="grid grid-cols-6 gap-2">
 				{/* Relationship dropdown row */}
 				<div className={`col-span-${form.relationship === "Other" ? "3" : "6"}`}>
