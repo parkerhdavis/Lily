@@ -797,30 +797,44 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
     }
 
     // ── Pass 2: Relationship-based conditionals ("Has {relationship}") ──
-    // For conditional variables named "Has {X}" where X doesn't match any
-    // contact binding role, check whether any contact has a `relationship`
-    // field matching X (case-insensitive).  This allows templates to use
-    // e.g. `{Has Spouse ?? ... :: ...}` which auto-derives from contacts.
+    // For each unique relationship found among contacts, set a
+    // "Has {Relationship}" variable to "true" or "false". This allows
+    // templates to use conditionals like `{Has Spouse ?? ... :: ...}`
+    // that auto-derive from the client's contact relationships.
+    // Also handles "Other" relationships via `other_relationship`.
     let binding_roles: std::collections::HashSet<&str> =
         lily.contact_bindings.keys().map(|k| k.as_str()).collect();
-    let relationship_conditionals: Vec<(String, String)> = lily
-        .conditional_variables
-        .iter()
-        .filter_map(|name| {
-            let suffix = name.strip_prefix("Has ")?;
-            if binding_roles.contains(suffix) {
-                return None; // Already handled by role-based pass
-            }
-            Some((name.clone(), suffix.to_string()))
-        })
+    // Collect all unique relationship names from contacts
+    let mut relationship_names: Vec<String> = Vec::new();
+    for contact in &lily.contacts {
+        let rel = if contact.relationship == "Other" && !contact.other_relationship.is_empty() {
+            &contact.other_relationship
+        } else {
+            &contact.relationship
+        };
+        if !rel.is_empty() && !binding_roles.contains(rel.as_str()) && !relationship_names.contains(rel) {
+            relationship_names.push(rel.clone());
+        }
+    }
+    for relationship in &relationship_names {
+        let has_key = format!("Has {}", relationship);
+        lily.variables.insert(has_key, "true".to_string());
+    }
+    // Also check for relationships that WERE present but are no longer
+    // (e.g., spouse contact was removed). Clear those to "false".
+    let has_prefix_keys: Vec<String> = lily.variables.keys()
+        .filter(|k| k.starts_with("Has "))
+        .cloned()
         .collect();
-    for (has_key, relationship) in relationship_conditionals {
-        let has_match = lily
-            .contacts
-            .iter()
-            .any(|c| c.relationship.eq_ignore_ascii_case(&relationship));
-        lily.variables
-            .insert(has_key, if has_match { "true" } else { "false" }.to_string());
+    for key in has_prefix_keys {
+        let suffix = &key[4..]; // Strip "Has "
+        if binding_roles.contains(suffix) {
+            continue; // Handled by role-based pass
+        }
+        if !relationship_names.iter().any(|r| r == suffix) {
+            // This relationship no longer exists among contacts
+            lily.variables.insert(key, "false".to_string());
+        }
     }
 
     // ── Pass 3: Spouse and children derived variables ─────────────────────
