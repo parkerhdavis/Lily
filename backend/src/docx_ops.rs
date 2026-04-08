@@ -1633,23 +1633,50 @@ pub fn migrate_template_to_sdt(
         };
 
         if info.is_conditional {
-            // Parse the conditional definition from the variant
+            // Parse conditional definitions from ALL variants.
+            // If the same label appears multiple times with different branch
+            // text, each occurrence gets a unique schema name (e.g.,
+            // "Has Spouse", "Has Spouse #2").
+            let mut occurrence = 0;
             for variant in &info.variants {
                 if let Some((label, true_text, false_text)) =
                     parse_conditional_variable(variant)
                 {
-                    entry.condition = Some(ConditionalDef {
-                        controlling_variable: label.clone(),
-                        true_template: true_text,
-                        false_template: false_text,
-                    });
-                    // The placeholder text in the SDT will just be the label
+                    occurrence += 1;
+                    let schema_name = if occurrence == 1 {
+                        info.display_name.clone()
+                    } else {
+                        format!("{} #{}", info.display_name, occurrence)
+                    };
+
+                    let cond_entry = VariableSchemaEntry {
+                        var_type: "conditional".to_string(),
+                        condition: Some(ConditionalDef {
+                            controlling_variable: label,
+                            true_template: true_text,
+                            false_template: false_text,
+                        }),
+                        ..Default::default()
+                    };
+                    schema
+                        .variables
+                        .insert(schema_name.clone(), cond_entry);
+
                     placeholder_map.insert(
                         variant.clone(),
-                        (info.display_name.clone(), info.display_name.clone(), true),
+                        (schema_name.clone(), schema_name.clone(), true),
                     );
-                    break;
+
+                    report_entries.push(MigrationEntry {
+                        name: schema_name,
+                        var_type: "conditional".to_string(),
+                        is_conditional: true,
+                    });
                 }
+            }
+            // Use the first occurrence's entry for the main variable
+            if occurrence > 0 {
+                continue; // Skip the default entry/report below
             }
         } else {
             // Check if this is a contact-role variable (dot notation)
@@ -5537,6 +5564,25 @@ mod tests {
     }
 
     #[test]
+    /// Run migration on a real template file. Set RUN_REAL_MIGRATION=1 to execute.
+    #[test]
+    fn run_real_migration() {
+        if std::env::var("RUN_REAL_MIGRATION").is_err() {
+            return;
+        }
+        let template_path = std::env::var("MIGRATE_TEMPLATE").expect("Set MIGRATE_TEMPLATE path");
+        let templates_dir = std::env::var("MIGRATE_TEMPLATES_DIR").expect("Set MIGRATE_TEMPLATES_DIR");
+
+        let report = migrate_template_to_sdt(template_path, templates_dir)
+            .expect("Migration failed");
+
+        eprintln!("=== Migration complete: {} variables ===", report.variables.len());
+        for v in &report.variables {
+            eprintln!("  {} (type={}, conditional={})", v.name, v.var_type, v.is_conditional);
+        }
+        eprintln!("Schema saved to: {}", report.schema_path);
+    }
+
     fn test_migrate_and_replace_v2_hpoa() {
         // End-to-end: migrate a {}-syntax template to SDT, then run
         // replace_variables_v2 and verify the HPOA conditionals resolve.
