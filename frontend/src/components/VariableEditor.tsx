@@ -358,8 +358,20 @@ export default function VariableEditor() {
 		}
 	};
 
-	// Conditional definitions from the .lily file, keyed by display name.
-	const conditionalDefs = lilyFile?.conditional_definitions ?? {};
+	// Build conditional definitions from the template schema for live preview.
+	const conditionalDefs = useMemo(() => {
+		const defs: Record<string, string[]> = {};
+		if (templateSchema) {
+			for (const [name, entry] of Object.entries(templateSchema.variables)) {
+				if (entry.condition) {
+					// Reconstruct the definition string format the preview renderer expects
+					const def = `${name} ?? "${entry.condition.true_template}" :: "${entry.condition.false_template}"`;
+					defs[name] = [def];
+				}
+			}
+		}
+		return defs;
+	}, [templateSchema]);
 
 	// Build a live preview by replacing variable placeholders in the HTML.
 	const livePreviewHtml = useMemo(
