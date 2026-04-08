@@ -2987,6 +2987,16 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
     let mut para_line_spacing: Option<i32> = None;
     let mut para_style_id: Option<String> = None;
     let mut current_para_style = StyleProps::default();
+    // Paragraph-level run defaults (from <w:pPr><w:rPr>) — these override
+    // the style and serve as defaults for runs that don't specify their own.
+    let mut para_rpr_bold: Option<bool> = None;
+    let mut para_rpr_italic: Option<bool> = None;
+    let mut para_rpr_underline: Option<bool> = None;
+    let mut para_rpr_font_size: Option<i32> = None;
+    let mut para_rpr_font_family: Option<String> = None;
+    let mut para_rpr_all_caps: Option<bool> = None;
+    let mut para_rpr_small_caps: Option<bool> = None;
+    let mut in_para_rpr = false;
     let mut para_num_id: Option<String> = None;
     let mut para_ilvl: Option<String> = None;
 
@@ -3067,6 +3077,14 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                         para_spacing_after = None;
                         para_line_spacing = None;
                         para_style_id = None;
+                        current_para_style = StyleProps::default();
+                        para_rpr_bold = None;
+                        para_rpr_italic = None;
+                        para_rpr_underline = None;
+                        para_rpr_font_size = None;
+                        para_rpr_font_family = None;
+                        para_rpr_all_caps = None;
+                        para_rpr_small_caps = None;
                         para_num_id = None;
                         para_ilvl = None;
                     }
@@ -3175,40 +3193,70 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                     "sdtContent" if in_sdt => {
                         in_sdt_content = true;
                     }
-                    // ─── Run start — reset to style defaults ────────
+                    // ─── Run start — reset to effective paragraph defaults ─
                     "r" if !in_rpr => {
-                        // Apply paragraph style defaults; if the run has
-                        // <w:rPr> it will override these immediately.
-                        in_bold = current_para_style.bold.unwrap_or(false);
-                        in_italic = current_para_style.italic.unwrap_or(false);
-                        in_underline = current_para_style.underline.unwrap_or(false);
+                        // Cascade: style → paragraph rPr. If the run has its
+                        // own <w:rPr>, it will override these immediately.
+                        in_bold = para_rpr_bold
+                            .or(current_para_style.bold)
+                            .unwrap_or(false);
+                        in_italic = para_rpr_italic
+                            .or(current_para_style.italic)
+                            .unwrap_or(false);
+                        in_underline = para_rpr_underline
+                            .or(current_para_style.underline)
+                            .unwrap_or(false);
                         in_strikethrough = false;
                         in_superscript = false;
                         in_subscript = false;
-                        in_all_caps = current_para_style.all_caps.unwrap_or(false);
-                        in_small_caps = current_para_style.small_caps.unwrap_or(false);
-                        font_size_half_pts = current_para_style.font_size_half_pts;
+                        in_all_caps = para_rpr_all_caps
+                            .or(current_para_style.all_caps)
+                            .unwrap_or(false);
+                        in_small_caps = para_rpr_small_caps
+                            .or(current_para_style.small_caps)
+                            .unwrap_or(false);
+                        font_size_half_pts = para_rpr_font_size
+                            .or(current_para_style.font_size_half_pts);
                         font_color = None;
                         highlight_color = None;
-                        font_family = current_para_style.font_family.clone();
+                        font_family = para_rpr_font_family.clone()
+                            .or(current_para_style.font_family.clone());
                     }
                     // ─── Run properties ──────────────────────────────
                     "rPr" => {
                         in_rpr = true;
-                        // Start with style-inherited defaults; run-level
-                        // properties will override as they're encountered.
-                        pending_bold = current_para_style.bold.unwrap_or(false);
-                        pending_italic = current_para_style.italic.unwrap_or(false);
-                        pending_underline = current_para_style.underline.unwrap_or(false);
+                        if in_ppr {
+                            // This is <w:pPr><w:rPr> — paragraph-level run
+                            // defaults. Capture them separately; they override
+                            // style and serve as defaults for runs.
+                            in_para_rpr = true;
+                        }
+                        // Start with the effective paragraph defaults:
+                        // style → paragraph rPr override → (then run overrides)
+                        pending_bold = para_rpr_bold
+                            .or(current_para_style.bold)
+                            .unwrap_or(false);
+                        pending_italic = para_rpr_italic
+                            .or(current_para_style.italic)
+                            .unwrap_or(false);
+                        pending_underline = para_rpr_underline
+                            .or(current_para_style.underline)
+                            .unwrap_or(false);
                         pending_strikethrough = false;
                         pending_superscript = false;
                         pending_subscript = false;
-                        pending_all_caps = current_para_style.all_caps.unwrap_or(false);
-                        pending_small_caps = current_para_style.small_caps.unwrap_or(false);
-                        pending_font_size = current_para_style.font_size_half_pts;
+                        pending_all_caps = para_rpr_all_caps
+                            .or(current_para_style.all_caps)
+                            .unwrap_or(false);
+                        pending_small_caps = para_rpr_small_caps
+                            .or(current_para_style.small_caps)
+                            .unwrap_or(false);
+                        pending_font_size = para_rpr_font_size
+                            .or(current_para_style.font_size_half_pts);
                         pending_font_color = None;
                         pending_highlight_color = None;
-                        pending_font_family = current_para_style.font_family.clone();
+                        pending_font_family = para_rpr_font_family.clone()
+                            .or(current_para_style.font_family.clone());
                     }
                     "b" if in_rpr => {
                         let disabled = attributes.iter().any(|a| {
@@ -3377,18 +3425,31 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                 // ─── Run properties end ──────────────────────────
                 "rPr" => {
                     in_rpr = false;
-                    in_bold = pending_bold;
-                    in_italic = pending_italic;
-                    in_underline = pending_underline;
-                    in_strikethrough = pending_strikethrough;
-                    in_superscript = pending_superscript;
-                    in_subscript = pending_subscript;
-                    in_all_caps = pending_all_caps;
-                    in_small_caps = pending_small_caps;
-                    font_size_half_pts = pending_font_size;
-                    font_color = pending_font_color.clone();
-                    highlight_color = pending_highlight_color.clone();
-                    font_family = pending_font_family.clone();
+                    if in_para_rpr {
+                        // Store paragraph-level run defaults
+                        para_rpr_bold = Some(pending_bold);
+                        para_rpr_italic = Some(pending_italic);
+                        para_rpr_underline = Some(pending_underline);
+                        para_rpr_font_size = pending_font_size;
+                        para_rpr_font_family = pending_font_family.clone();
+                        para_rpr_all_caps = Some(pending_all_caps);
+                        para_rpr_small_caps = Some(pending_small_caps);
+                        in_para_rpr = false;
+                    } else {
+                        // Apply to current run
+                        in_bold = pending_bold;
+                        in_italic = pending_italic;
+                        in_underline = pending_underline;
+                        in_strikethrough = pending_strikethrough;
+                        in_superscript = pending_superscript;
+                        in_subscript = pending_subscript;
+                        in_all_caps = pending_all_caps;
+                        in_small_caps = pending_small_caps;
+                        font_size_half_pts = pending_font_size;
+                        font_color = pending_font_color.clone();
+                        highlight_color = pending_highlight_color.clone();
+                        font_family = pending_font_family.clone();
+                    }
                 }
                 "t" => {
                     in_t = false;
