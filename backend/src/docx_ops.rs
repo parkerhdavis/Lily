@@ -2166,6 +2166,8 @@ struct StyleProps {
     all_caps: Option<bool>,
     /// Small caps.
     small_caps: Option<bool>,
+    /// Font family (from rFonts ascii/hAnsi).
+    font_family: Option<String>,
     /// Left indent in twips.
     indent_left_twips: Option<i32>,
     /// Right indent in twips.
@@ -2178,6 +2180,8 @@ struct StyleProps {
     spacing_after_twips: Option<i32>,
     /// Line spacing in 240ths of a line.
     line_spacing_240ths: Option<i32>,
+    /// Heading outline level (0-based: 0 = Heading 1, 1 = Heading 2, etc.).
+    outline_level: Option<u8>,
     /// The parent style ID, if any.
     based_on: Option<String>,
 }
@@ -2302,6 +2306,12 @@ fn parse_styles_xml(xml: &str) -> StyleMap {
                         }
                     }
                 }
+                "outlineLvl" if in_ppr => {
+                    current_props.outline_level = attributes
+                        .iter()
+                        .find(|a| a.name.local_name == "val")
+                        .and_then(|a| a.value.parse().ok());
+                }
                 "b" if in_rpr => {
                     let disabled = attributes.iter().any(|a| {
                         a.name.local_name == "val" && (a.value == "false" || a.value == "0")
@@ -2337,6 +2347,18 @@ fn parse_styles_xml(xml: &str) -> StyleMap {
                         a.name.local_name == "val" && (a.value == "false" || a.value == "0")
                     });
                     current_props.small_caps = Some(!disabled);
+                }
+                "rFonts" if in_rpr => {
+                    // Prefer ascii, fall back to hAnsi, then cs
+                    let font = attributes
+                        .iter()
+                        .find(|a| a.name.local_name == "ascii")
+                        .or_else(|| attributes.iter().find(|a| a.name.local_name == "hAnsi"))
+                        .or_else(|| attributes.iter().find(|a| a.name.local_name == "cs"))
+                        .map(|a| a.value.clone());
+                    if let Some(f) = font {
+                        current_props.font_family = Some(f);
+                    }
                 }
                 _ => {}
             },
@@ -2426,6 +2448,12 @@ fn resolve_style(style_id: &str, style_map: &StyleMap) -> StyleProps {
         }
         if props.line_spacing_240ths.is_some() {
             result.line_spacing_240ths = props.line_spacing_240ths;
+        }
+        if props.font_family.is_some() {
+            result.font_family = props.font_family;
+        }
+        if props.outline_level.is_some() {
+            result.outline_level = props.outline_level;
         }
     }
     result
@@ -2958,6 +2986,7 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
     let mut para_spacing_after: Option<i32> = None;
     let mut para_line_spacing: Option<i32> = None;
     let mut para_style_id: Option<String> = None;
+    let mut current_para_style = StyleProps::default();
     let mut para_num_id: Option<String> = None;
     let mut para_ilvl: Option<String> = None;
 
@@ -3146,20 +3175,40 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                     "sdtContent" if in_sdt => {
                         in_sdt_content = true;
                     }
+                    // ─── Run start — reset to style defaults ────────
+                    "r" if !in_rpr => {
+                        // Apply paragraph style defaults; if the run has
+                        // <w:rPr> it will override these immediately.
+                        in_bold = current_para_style.bold.unwrap_or(false);
+                        in_italic = current_para_style.italic.unwrap_or(false);
+                        in_underline = current_para_style.underline.unwrap_or(false);
+                        in_strikethrough = false;
+                        in_superscript = false;
+                        in_subscript = false;
+                        in_all_caps = current_para_style.all_caps.unwrap_or(false);
+                        in_small_caps = current_para_style.small_caps.unwrap_or(false);
+                        font_size_half_pts = current_para_style.font_size_half_pts;
+                        font_color = None;
+                        highlight_color = None;
+                        font_family = current_para_style.font_family.clone();
+                    }
                     // ─── Run properties ──────────────────────────────
                     "rPr" => {
                         in_rpr = true;
-                        pending_bold = false;
-                        pending_italic = false;
-                        pending_underline = false;
+                        // Start with style-inherited defaults; run-level
+                        // properties will override as they're encountered.
+                        pending_bold = current_para_style.bold.unwrap_or(false);
+                        pending_italic = current_para_style.italic.unwrap_or(false);
+                        pending_underline = current_para_style.underline.unwrap_or(false);
                         pending_strikethrough = false;
                         pending_superscript = false;
                         pending_subscript = false;
-                        pending_all_caps = false;
-                        pending_small_caps = false;
-                        pending_font_size = None;
+                        pending_all_caps = current_para_style.all_caps.unwrap_or(false);
+                        pending_small_caps = current_para_style.small_caps.unwrap_or(false);
+                        pending_font_size = current_para_style.font_size_half_pts;
                         pending_font_color = None;
                         pending_highlight_color = None;
+                        pending_font_family = current_para_style.font_family.clone();
                     }
                     "b" if in_rpr => {
                         let disabled = attributes.iter().any(|a| {
@@ -3347,6 +3396,13 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                 "pPr" => {
                     in_ppr = false;
                     in_num_pr = false;
+                    // Resolve style now so run formatting can inherit
+                    // style-level bold/italic/font when the run doesn't
+                    // specify its own.
+                    current_para_style = para_style_id
+                        .as_deref()
+                        .map(|id| resolve_style(id, style_map))
+                        .unwrap_or_default();
                 }
                 "numPr" => {
                     in_num_pr = false;
@@ -3489,7 +3545,10 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                     };
 
                     // Determine the HTML tag — use heading elements for heading styles
-                    let heading_level = para_style_id.as_deref().and_then(detect_heading_level);
+                    let heading_level = para_style_id
+                        .as_deref()
+                        .map(|id| detect_heading_level(id, style_props.outline_level))
+                        .unwrap_or(None);
 
                     let tag = match heading_level {
                         Some(1) => "h1",
@@ -3510,9 +3569,7 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                         ));
                     }
 
-                    // Apply style-level bold/italic to runs that didn't specify their own
-                    // This is handled in the text rendering below via style_props, but
-                    // for paragraph-level font size we wrap content if needed
+                    // For paragraph-level font size we wrap content if needed
                     if let Some(sz) = style_font_size {
                         let pt = sz as f64 / 2.0;
                         // Only add font-size if it differs significantly from the
@@ -3636,8 +3693,16 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
 
 /// Detect heading level from a Word style ID.
 /// Returns Some(1..6) for heading styles, None otherwise.
-fn detect_heading_level(style_id: &str) -> Option<u8> {
-    // Common Word style IDs: "Heading1", "Heading2", etc.
+fn detect_heading_level(style_id: &str, outline_level: Option<u8>) -> Option<u8> {
+    // Check outlineLvl from the resolved style (most reliable — works even
+    // when styleId is numeric like "951" instead of "Heading2")
+    if let Some(lvl) = outline_level {
+        let heading = lvl + 1; // outlineLvl is 0-based
+        if (1..=6).contains(&heading) {
+            return Some(heading);
+        }
+    }
+    // Fallback: check for common human-readable style ID prefixes
     let lower = style_id.to_lowercase();
     if let Some(rest) = lower.strip_prefix("heading") {
         rest.trim()
@@ -3645,7 +3710,6 @@ fn detect_heading_level(style_id: &str) -> Option<u8> {
             .ok()
             .filter(|n| (1..=6).contains(n))
     } else if let Some(rest) = lower.strip_prefix("titre") {
-        // French Word
         rest.trim()
             .parse::<u8>()
             .ok()
