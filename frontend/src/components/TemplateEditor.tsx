@@ -84,6 +84,51 @@ export default function TemplateEditor() {
 		? stripDocx(extractFilename(templateEditorRelPath))
 		: "Template";
 
+	// Property labels for dot-notation resolution
+	const PROP_LABELS: Record<string, string> = {
+		full_name: "Full Name", first_name: "First Name",
+		last_name: "Last Name", middle_name: "Middle Name",
+		phone: "Phone", email: "Email",
+		address: "Address", city: "City", state: "State", zip: "ZIP",
+		relationship: "Relationship",
+	};
+
+	// Extract nested variable names from conditional templates in the schema.
+	// These variables aren't SDTs in the document — they exist only inside
+	// ConditionalDef true_template/false_template strings.
+	const allPreviewVars = useMemo(() => {
+		const sdtVars = templateEditorVars.map((v) => ({
+			name: v.display_name,
+			isConditional: v.is_conditional,
+		}));
+		const sdtNames = new Set(sdtVars.map((v) => v.name));
+
+		if (!templateSchema) return sdtVars;
+
+		const nestedVars: { name: string; isConditional: boolean }[] = [];
+		for (const entry of Object.values(templateSchema.variables)) {
+			if (!entry.condition) continue;
+			for (const template of [entry.condition.true_template, entry.condition.false_template]) {
+				for (const m of template.matchAll(/\{([^{}]+)\}/g)) {
+					const inner = m[1].trim();
+					// Convert dot notation to display name
+					const dotIdx = inner.lastIndexOf(".");
+					let displayName = inner;
+					if (dotIdx > 0) {
+						const role = inner.substring(0, dotIdx).trim();
+						const prop = inner.substring(dotIdx + 1).trim().toLowerCase();
+						displayName = `${role} ${PROP_LABELS[prop] ?? prop}`;
+					}
+					if (!sdtNames.has(displayName) && !nestedVars.some((v) => v.name === displayName)) {
+						nestedVars.push({ name: displayName, isConditional: false });
+					}
+				}
+			}
+		}
+
+		return [...sdtVars, ...nestedVars];
+	}, [templateEditorVars, templateSchema]);
+
 	// Build live preview HTML with preview values applied
 	const livePreviewHtml = useMemo(() => {
 		if (!templateEditorHtml) return "";
@@ -135,13 +180,7 @@ export default function TemplateEditor() {
 					if (dotIdx > 0) {
 						const role = trimmed.substring(0, dotIdx).trim();
 						const prop = trimmed.substring(dotIdx + 1).trim().toLowerCase();
-						const propLabels: Record<string, string> = {
-							full_name: "Full Name", first_name: "First Name",
-							last_name: "Last Name", phone: "Phone", email: "Email",
-							address: "Address", city: "City", state: "State", zip: "ZIP",
-							relationship: "Relationship",
-						};
-						lookupName = `${role} ${propLabels[prop] ?? prop}`;
+						lookupName = `${role} ${PROP_LABELS[prop] ?? prop}`;
 					}
 					return previewValues[lookupName] ?? m;
 				});
@@ -173,13 +212,7 @@ export default function TemplateEditor() {
 					if (dotIdx > 0) {
 						const role = trimmed.substring(0, dotIdx).trim();
 						const prop = trimmed.substring(dotIdx + 1).trim().toLowerCase();
-						const propLabels: Record<string, string> = {
-							full_name: "Full Name", first_name: "First Name",
-							last_name: "Last Name", phone: "Phone", email: "Email",
-							address: "Address", city: "City", state: "State", zip: "ZIP",
-							relationship: "Relationship",
-						};
-						lookupName = `${role} ${propLabels[prop] ?? prop}`;
+						lookupName = `${role} ${PROP_LABELS[prop] ?? prop}`;
 					}
 					return previewValues[lookupName] ?? m;
 				});
@@ -625,7 +658,7 @@ export default function TemplateEditor() {
 						</div>
 
 						{/* Preview Values */}
-						{templateEditorVars.length > 0 && (
+						{allPreviewVars.length > 0 && (
 							<div>
 								<button
 									type="button"
@@ -645,39 +678,39 @@ export default function TemplateEditor() {
 											Enter sample values to preview what the template
 											will look like when filled.
 										</p>
-										{templateEditorVars.map((v) => (
-											<div key={v.display_name}>
-												{v.is_conditional ? (
+										{allPreviewVars.map((v) => (
+											<div key={v.name}>
+												{v.isConditional ? (
 													<label className="flex items-center gap-2 cursor-pointer">
 														<input
 															type="checkbox"
 															className="toggle toggle-sm toggle-primary"
-															checked={previewValues[v.display_name] === "true"}
+															checked={previewValues[v.name] === "true"}
 															onChange={(e) =>
 																setPreviewValues((prev) => ({
 																	...prev,
-																	[v.display_name]: e.target.checked ? "true" : "false",
+																	[v.name]: e.target.checked ? "true" : "false",
 																}))
 															}
 														/>
 														<span className="text-xs text-base-content/70">
-															{v.display_name}
+															{v.name}
 														</span>
 													</label>
 												) : (
 													<div>
 														<label className="text-xs text-base-content/50 block mb-0.5">
-															{v.display_name}
+															{v.name}
 														</label>
 														<input
 															type="text"
 															className="input input-bordered input-xs w-full"
-															placeholder={v.display_name}
-															value={previewValues[v.display_name] ?? ""}
+															placeholder={v.name}
+															value={previewValues[v.name] ?? ""}
 															onChange={(e) =>
 																setPreviewValues((prev) => ({
 																	...prev,
-																	[v.display_name]: e.target.value,
+																	[v.name]: e.target.value,
 																}))
 															}
 														/>
