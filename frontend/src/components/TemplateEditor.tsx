@@ -15,6 +15,8 @@ import type {
 } from "@/types";
 import type {
 	QuestionnaireDefFile,
+	QuestionnaireIndex,
+	QuestionnaireIndexEntry,
 	QuestionDef,
 	QuestionnaireSectionDef,
 } from "@/types/questionnaire";
@@ -267,29 +269,65 @@ export default function TemplateEditor() {
 			.catch(() => {});
 	}, [templatesDir, templateEditorRelPath, templateEditorVars]);
 
-	// Load the active questionnaire for variable contextualization
+	// Load questionnaire index and selected questionnaire for variable contextualization
 	const activeQuestionnaireId = useSettingsStore(
 		(s) => s.settings.active_questionnaire_id,
 	);
-	const [activeQuestionnaire, setActiveQuestionnaire] =
+	const [questionnaireEntries, setQuestionnaireEntries] = useState<
+		QuestionnaireIndexEntry[]
+	>([]);
+	const [selectedQuestionnaireId, setSelectedQuestionnaireId] = useState<
+		string | null
+	>(null);
+	const [selectedQuestionnaire, setSelectedQuestionnaire] =
 		useState<QuestionnaireDefFile | null>(null);
+
+	// Load the questionnaire index on mount
 	useEffect(() => {
-		if (!activeQuestionnaireId) {
-			setActiveQuestionnaire(null);
+		invoke<QuestionnaireIndex>("load_questionnaire_index")
+			.then((index) => {
+				setQuestionnaireEntries(index.questionnaires);
+				// Default to app-wide active questionnaire, or first available
+				const defaultId =
+					index.active_questionnaire_id ??
+					(index.questionnaires.length > 0
+						? index.questionnaires[0].id
+						: null);
+				setSelectedQuestionnaireId(defaultId);
+			})
+			.catch(() => {});
+	}, []);
+
+	// Also respect the app-wide setting if it changes
+	useEffect(() => {
+		if (
+			activeQuestionnaireId &&
+			selectedQuestionnaireId === null &&
+			questionnaireEntries.some((e) => e.id === activeQuestionnaireId)
+		) {
+			setSelectedQuestionnaireId(activeQuestionnaireId);
+		}
+	}, [activeQuestionnaireId, questionnaireEntries, selectedQuestionnaireId]);
+
+	// Load the full questionnaire definition when selection changes
+	useEffect(() => {
+		if (!selectedQuestionnaireId) {
+			setSelectedQuestionnaire(null);
 			return;
 		}
 		invoke<QuestionnaireDefFile>("load_questionnaire", {
-			id: activeQuestionnaireId,
+			id: selectedQuestionnaireId,
 		})
-			.then(setActiveQuestionnaire)
-			.catch(() => setActiveQuestionnaire(null));
-	}, [activeQuestionnaireId]);
+			.then(setSelectedQuestionnaire)
+			.catch(() => setSelectedQuestionnaire(null));
+	}, [selectedQuestionnaireId]);
 
 	// Build questionnaire → variable match map
 	const questionnaireMatchMap = useMemo(() => {
-		if (!activeQuestionnaire) return new Map<string, QuestionnaireMatch>();
-		return buildQuestionnaireMatchMap(activeQuestionnaire);
-	}, [activeQuestionnaire]);
+		if (!selectedQuestionnaire)
+			return new Map<string, QuestionnaireMatch>();
+		return buildQuestionnaireMatchMap(selectedQuestionnaire);
+	}, [selectedQuestionnaire]);
 
 	const previewRef = useRef<HTMLDivElement>(null);
 	const varNameInputRef = useRef<HTMLInputElement>(null);
@@ -1132,33 +1170,57 @@ export default function TemplateEditor() {
 						)}
 
 						{/* Questionnaire context */}
-						<div className="p-3 rounded-lg border border-base-300 bg-base-200/50">
-							<div className="text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-1.5">
+						<div className="p-3 rounded-lg border border-base-300 bg-base-200/50 space-y-2">
+							<div className="text-xs font-semibold text-base-content/50 uppercase tracking-wider">
 								Questionnaire
 							</div>
-							{activeQuestionnaire ? (
-								<div className="space-y-1.5">
-									<div className="text-sm font-medium">
-										{activeQuestionnaire.name}
-									</div>
-									<div className="text-xs text-base-content/50">
-										{(() => {
-											const linked =
-												templateEditorVars.filter(
-													(v) =>
-														questionnaireMatchMap.has(
-															v.display_name,
-														),
-												).length;
-											const total =
-												templateEditorVars.length;
-											return `${linked}/${total} variables linked`;
-										})()}
-									</div>
-								</div>
+							{questionnaireEntries.length > 0 ? (
+								<>
+									<select
+										className="select select-bordered select-sm w-full"
+										value={
+											selectedQuestionnaireId ?? ""
+										}
+										onChange={(e) =>
+											setSelectedQuestionnaireId(
+												e.target.value || null,
+											)
+										}
+									>
+										<option value="">
+											None
+										</option>
+										{questionnaireEntries.map(
+											(entry) => (
+												<option
+													key={entry.id}
+													value={entry.id}
+												>
+													{entry.name}
+												</option>
+											),
+										)}
+									</select>
+									{selectedQuestionnaire && (
+										<div className="text-xs text-base-content/50">
+											{(() => {
+												const linked =
+													templateEditorVars.filter(
+														(v) =>
+															questionnaireMatchMap.has(
+																v.display_name,
+															),
+													).length;
+												const total =
+													templateEditorVars.length;
+												return `${linked}/${total} variables linked`;
+											})()}
+										</div>
+									)}
+								</>
 							) : (
 								<p className="text-xs text-base-content/40 italic">
-									No active questionnaire selected
+									No questionnaire libraries configured
 								</p>
 							)}
 						</div>
