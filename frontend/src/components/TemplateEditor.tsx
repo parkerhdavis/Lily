@@ -1,11 +1,4 @@
-import {
-	forwardRef,
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
@@ -2029,8 +2022,7 @@ function VariableCard({
 	const isLinked = !!questionnaireMatch;
 	const isContactMember = questionnaireMatch?.kind === "contact-member";
 	const cardRef = useRef<HTMLDivElement>(null);
-	const [showLinkDropdown, setShowLinkDropdown] = useState(false);
-	const dropdownRef = useRef<HTMLDivElement>(null);
+	const [showEditModal, setShowEditModal] = useState(false);
 
 	// Scroll sidebar card into view when it becomes highlighted
 	useEffect(() => {
@@ -2070,42 +2062,23 @@ function VariableCard({
 						title="Required"
 					/>
 				)}
-				<div className="relative">
-					<button
-						type="button"
-						className="btn btn-ghost btn-xs text-base-content/40 hover:text-base-content/70"
-						onClick={() =>
-							setShowLinkDropdown(!showLinkDropdown)
-						}
-						title="Edit variable"
+				<button
+					type="button"
+					className="btn btn-outline btn-xs gap-1"
+					onClick={() => setShowEditModal(true)}
+					title="Edit variable"
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						viewBox="0 0 16 16"
+						fill="currentColor"
+						className="size-3"
 					>
-						Edit
-					</button>
-					{showLinkDropdown && (
-						<VariableLinkDropdown
-							ref={dropdownRef}
-							questionnaire={questionnaire}
-							currentVarName={variable.display_name}
-							onSelect={async (newName) => {
-								setShowLinkDropdown(false);
-								if (
-									newName !== variable.display_name &&
-									onRename
-								) {
-									await onRename(
-										variable.display_name,
-										newName,
-									);
-								}
-							}}
-							onRemove={() => {
-								setShowLinkDropdown(false);
-								onRemove();
-							}}
-							onClose={() => setShowLinkDropdown(false)}
-						/>
-					)}
-				</div>
+						<path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.262a1.75 1.75 0 0 0 0-2.474Z" />
+						<path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9A.75.75 0 0 1 14 9v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
+					</svg>
+					Edit
+				</button>
 			</div>
 
 			{/* Detail section */}
@@ -2290,6 +2263,25 @@ function VariableCard({
 					</>
 				)}
 			</div>
+
+			{/* Edit modal */}
+			{showEditModal && (
+				<VariableEditModal
+					questionnaire={questionnaire}
+					currentVarName={variable.display_name}
+					onSelect={async (newName) => {
+						setShowEditModal(false);
+						if (newName !== variable.display_name && onRename) {
+							await onRename(variable.display_name, newName);
+						}
+					}}
+					onRemove={() => {
+						setShowEditModal(false);
+						onRemove();
+					}}
+					onClose={() => setShowEditModal(false)}
+				/>
+			)}
 		</div>
 	);
 }
@@ -2562,19 +2554,20 @@ function NestedVariableCard({
 
 // ─── Variable Link Dropdown ─────────────────────────────────────────────────
 
-const VariableLinkDropdown = forwardRef<
-	HTMLDivElement,
-	{
-		questionnaire?: QuestionnaireDefFile | null;
-		currentVarName: string;
-		onSelect: (newName: string) => void;
-		onRemove?: () => void;
-		onClose: () => void;
-	}
->(function VariableLinkDropdown(
-	{ questionnaire, currentVarName, onSelect, onRemove, onClose },
-	ref,
-) {
+function VariableEditModal({
+	questionnaire,
+	currentVarName,
+	onSelect,
+	onRemove,
+	onClose,
+}: {
+	questionnaire?: QuestionnaireDefFile | null;
+	currentVarName: string;
+	onSelect: (newName: string) => void;
+	onRemove?: () => void;
+	onClose: () => void;
+}) {
+	const [expandedTabs, setExpandedTabs] = useState<Set<string>>(new Set());
 	const [expandedSections, setExpandedSections] = useState<Set<string>>(
 		new Set(),
 	);
@@ -2582,248 +2575,324 @@ const VariableLinkDropdown = forwardRef<
 		new Set(),
 	);
 
-	// Close on click-outside or Escape
-	useEffect(() => {
-		const handleClick = (e: MouseEvent) => {
-			const dropdown = (ref as React.RefObject<HTMLDivElement | null>)
-				?.current;
-			if (dropdown && !dropdown.contains(e.target as Node)) {
-				onClose();
-			}
-		};
-		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		const timer = setTimeout(() => {
-			document.addEventListener("mousedown", handleClick);
-			document.addEventListener("keydown", handleKeyDown);
-		}, 0);
-		return () => {
-			clearTimeout(timer);
-			document.removeEventListener("mousedown", handleClick);
-			document.removeEventListener("keydown", handleKeyDown);
-		};
-	}, [onClose, ref]);
-
-	const toggleSection = (title: string) => {
-		setExpandedSections((prev) => {
+	const toggle = (
+		setter: React.Dispatch<React.SetStateAction<Set<string>>>,
+		key: string,
+	) => {
+		setter((prev) => {
 			const next = new Set(prev);
-			if (next.has(title)) next.delete(title);
-			else next.add(title);
+			if (next.has(key)) next.delete(key);
+			else next.add(key);
 			return next;
 		});
 	};
 
-	const toggleRole = (role: string) => {
-		setExpandedRoles((prev) => {
-			const next = new Set(prev);
-			if (next.has(role)) next.delete(role);
-			else next.add(role);
-			return next;
-		});
-	};
+	// Chevron icon for tree nodes
+	const Chevron = ({ expanded }: { expanded: boolean }) => (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			viewBox="0 0 16 16"
+			fill="currentColor"
+			className={`size-3 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+		>
+			<path
+				fillRule="evenodd"
+				d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"
+				clipRule="evenodd"
+			/>
+		</svg>
+	);
+
+	// Group sections by tab
+	const tabs = questionnaire?.tabs ?? [];
+	const sectionsByTab = useMemo(() => {
+		const map = new Map<string, QuestionnaireSectionDef[]>();
+		if (!questionnaire) return map;
+		for (const section of questionnaire.sections) {
+			const existing = map.get(section.tab) ?? [];
+			existing.push(section);
+			map.set(section.tab, existing);
+		}
+		return map;
+	}, [questionnaire]);
 
 	return (
-		<div
-			ref={ref}
-			className="absolute right-0 top-full mt-1 z-50 bg-base-100 rounded-lg shadow-xl border border-base-300 py-1 w-72 max-h-80 overflow-y-auto text-xs"
+		// biome-ignore lint/a11y/useKeyWithClickEvents: modal backdrop
+		<dialog
+			className="modal modal-open"
+			onClick={(e) => {
+				if (e.target === e.currentTarget) onClose();
+			}}
 		>
-			{/* Questionnaire hierarchy */}
-			{questionnaire && (
-				<div>
-					<div className="px-3 py-1.5 font-semibold text-base-content/50 uppercase tracking-wider text-[10px]">
-						{questionnaire.name}
-					</div>
-					{questionnaire.sections
-						.filter(
-							(s) =>
-								s.questions.length > 0 ||
-								s.kind === "contacts",
-						)
-						.map((section) => (
-							<div key={section.title}>
-								<button
-									type="button"
-									className="w-full text-left px-3 py-1 hover:bg-base-200 flex items-center gap-1.5 text-base-content/70"
-									onClick={() =>
-										toggleSection(section.title)
-									}
-								>
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										viewBox="0 0 16 16"
-										fill="currentColor"
-										className={`size-3 shrink-0 transition-transform ${
-											expandedSections.has(
-												section.title,
-											)
-												? "rotate-90"
-												: ""
-										}`}
-									>
-										<path
-											fillRule="evenodd"
-											d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"
-											clipRule="evenodd"
-										/>
-									</svg>
-									<span>{section.title}</span>
-								</button>
-								{expandedSections.has(section.title) && (
-									<div>
-										{section.questions.map((q) => {
-											if (
-												q.kind === "text" ||
-												q.kind === "conditional" ||
-												q.kind === "derived"
-											) {
-												const isCurrent =
-													q.variable ===
-													currentVarName;
-												return (
-													<button
-														key={q.variable}
-														type="button"
-														className={`w-full text-left pl-8 pr-3 py-1 hover:bg-base-200 ${
-															isCurrent
-																? "text-primary font-medium"
-																: ""
-														}`}
-														onClick={() =>
-															onSelect(
-																q.variable,
-															)
-														}
-													>
-														{q.variable}
-														{q.kind !== "text" && (
-															<span className="ml-1.5 badge badge-xs badge-info badge-outline">
-																{q.kind}
-															</span>
-														)}
-													</button>
-												);
-											}
-											if (q.kind === "contact-role") {
-												return (
-													<div key={q.role}>
-														<button
-															type="button"
-															className="w-full text-left pl-8 pr-3 py-1 hover:bg-base-200 flex items-center gap-1.5"
-															onClick={() =>
-																toggleRole(
-																	q.role,
-																)
-															}
-														>
-															<svg
-																xmlns="http://www.w3.org/2000/svg"
-																viewBox="0 0 16 16"
-																fill="currentColor"
-																className={`size-2.5 shrink-0 transition-transform ${
-																	expandedRoles.has(
-																		q.role,
-																	)
-																		? "rotate-90"
-																		: ""
-																}`}
-															>
-																<path
-																	fillRule="evenodd"
-																	d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"
-																	clipRule="evenodd"
-																/>
-															</svg>
-															<span>
-																{q.role}
-															</span>
-															<span className="badge badge-xs badge-secondary badge-outline ml-auto">
-																contact
-															</span>
-														</button>
-														{expandedRoles.has(
-															q.role,
-														) && (
-															<div>
-																{Object.entries(
-																	q.variableMappings,
-																).map(
-																	([
-																		varName,
-																		prop,
-																	]) => {
-																		const isCurrent =
-																			varName ===
-																			currentVarName;
-																		return (
-																			<button
-																				key={
-																					varName
-																				}
-																				type="button"
-																				className={`w-full text-left pl-12 pr-3 py-1 hover:bg-base-200 ${
-																					isCurrent
-																						? "text-primary font-medium"
-																						: ""
-																				}`}
-																				onClick={() =>
-																					onSelect(
-																						varName,
-																					)
-																				}
-																			>
-																				{PROPERTY_LABELS[
-																					prop
-																				] ??
-																					prop}
-																			</button>
-																		);
-																	},
-																)}
-															</div>
-														)}
-													</div>
-												);
-											}
-											return null;
-										})}
-									</div>
-								)}
+			<div className="modal-box max-w-xl max-h-[80vh] flex flex-col">
+				<h3 className="font-bold text-lg mb-1">Edit Variable</h3>
+				<p className="text-sm text-base-content/60 mb-4">
+					Currently:{" "}
+					<code className="bg-base-200 px-1.5 py-0.5 rounded">
+						{currentVarName}
+					</code>
+				</p>
+
+				<div className="flex-1 overflow-y-auto space-y-1 -mx-2 px-2">
+					{/* Questionnaire hierarchy */}
+					{questionnaire && tabs.length > 0 && (
+						<div>
+							<div className="text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-2">
+								{questionnaire.name}
 							</div>
-						))}
+							{tabs.map((tab) => {
+								const sections = (
+									sectionsByTab.get(tab.id) ?? []
+								).filter(
+									(s) =>
+										s.questions.length > 0 ||
+										s.kind === "contacts",
+								);
+								if (sections.length === 0) return null;
+								const tabExpanded = expandedTabs.has(tab.id);
+								return (
+									<div key={tab.id} className="mb-1">
+										{/* Tab level */}
+										<button
+											type="button"
+											className="w-full text-left px-2 py-1.5 hover:bg-base-200 rounded flex items-center gap-2 font-medium text-sm"
+											onClick={() =>
+												toggle(
+													setExpandedTabs,
+													tab.id,
+												)
+											}
+										>
+											<Chevron
+												expanded={tabExpanded}
+											/>
+											{tab.label}
+										</button>
+										{tabExpanded && (
+											<div className="ml-3">
+												{sections.map((section) => {
+													const secExpanded =
+														expandedSections.has(
+															section.title,
+														);
+													return (
+														<div
+															key={
+																section.title
+															}
+															className="mb-0.5"
+														>
+															{/* Section level */}
+															<button
+																type="button"
+																className="w-full text-left px-2 py-1 hover:bg-base-200 rounded flex items-center gap-2 text-sm text-base-content/70"
+																onClick={() =>
+																	toggle(
+																		setExpandedSections,
+																		section.title,
+																	)
+																}
+															>
+																<Chevron
+																	expanded={
+																		secExpanded
+																	}
+																/>
+																{
+																	section.title
+																}
+															</button>
+															{secExpanded && (
+																<div className="ml-5">
+																	{section.questions.map(
+																		(
+																			q,
+																		) => {
+																			if (
+																				q.kind ===
+																					"text" ||
+																				q.kind ===
+																					"conditional" ||
+																				q.kind ===
+																					"derived"
+																			) {
+																				const isCurrent =
+																					q.variable ===
+																					currentVarName;
+																				return (
+																					<button
+																						key={
+																							q.variable
+																						}
+																						type="button"
+																						className={`w-full text-left px-2 py-1 hover:bg-base-200 rounded text-sm flex items-center gap-2 ${
+																							isCurrent
+																								? "text-primary font-medium bg-primary/5"
+																								: ""
+																						}`}
+																						onClick={() =>
+																							onSelect(
+																								q.variable,
+																							)
+																						}
+																					>
+																						<span className="flex-1">
+																							{
+																								q.variable
+																							}
+																						</span>
+																						{q.kind !==
+																							"text" && (
+																							<span className="badge badge-xs badge-info badge-outline">
+																								{
+																									q.kind
+																								}
+																							</span>
+																						)}
+																					</button>
+																				);
+																			}
+																			if (
+																				q.kind ===
+																				"contact-role"
+																			) {
+																				const roleExpanded =
+																					expandedRoles.has(
+																						q.role,
+																					);
+																				return (
+																					<div
+																						key={
+																							q.role
+																						}
+																					>
+																						{/* Role level */}
+																						<button
+																							type="button"
+																							className="w-full text-left px-2 py-1 hover:bg-base-200 rounded text-sm flex items-center gap-2"
+																							onClick={() =>
+																								toggle(
+																									setExpandedRoles,
+																									q.role,
+																								)
+																							}
+																						>
+																							<Chevron
+																								expanded={
+																									roleExpanded
+																								}
+																							/>
+																							<span className="flex-1">
+																								{
+																									q.role
+																								}
+																							</span>
+																							<span className="badge badge-xs badge-secondary badge-outline">
+																								contact
+																							</span>
+																						</button>
+																						{roleExpanded && (
+																							<div className="ml-5">
+																								{Object.entries(
+																									q.variableMappings,
+																								).map(
+																									([
+																										varName,
+																										prop,
+																									]) => {
+																										const isCurrent =
+																											varName ===
+																											currentVarName;
+																										return (
+																											<button
+																												key={
+																													varName
+																												}
+																												type="button"
+																												className={`w-full text-left px-2 py-1 hover:bg-base-200 rounded text-sm ${
+																													isCurrent
+																														? "text-primary font-medium bg-primary/5"
+																														: ""
+																												}`}
+																												onClick={() =>
+																													onSelect(
+																														varName,
+																													)
+																												}
+																											>
+																												{PROPERTY_LABELS[
+																													prop
+																												] ??
+																													prop}
+																											</button>
+																										);
+																									},
+																								)}
+																							</div>
+																						)}
+																					</div>
+																				);
+																			}
+																			return null;
+																		},
+																	)}
+																</div>
+															)}
+														</div>
+													);
+												})}
+											</div>
+										)}
+									</div>
+								);
+							})}
+						</div>
+					)}
+
+					{/* Divider */}
+					{questionnaire && (
+						<div className="border-t border-base-300 my-3" />
+					)}
+
+					{/* Local variable */}
+					<div>
+						<div className="text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-2">
+							Local Variable
+						</div>
+						<button
+							type="button"
+							className="w-full text-left px-2 py-1 hover:bg-base-200 rounded text-sm"
+							onClick={() => onSelect(currentVarName)}
+						>
+							Keep as local ({currentVarName})
+						</button>
+					</div>
+
+					{/* Remove */}
+					{onRemove && (
+						<>
+							<div className="border-t border-base-300 my-3" />
+							<button
+								type="button"
+								className="w-full text-left px-2 py-1.5 hover:bg-error/10 text-error/70 hover:text-error transition-colors rounded text-sm"
+								onClick={onRemove}
+							>
+								Remove variable...
+							</button>
+						</>
+					)}
 				</div>
-			)}
 
-			{/* Divider */}
-			{questionnaire && (
-				<div className="border-t border-base-300 my-1" />
-			)}
-
-			{/* Local variable option */}
-			<div className="px-3 py-1.5 font-semibold text-base-content/50 uppercase tracking-wider text-[10px]">
-				Local Variable
-			</div>
-			<button
-				type="button"
-				className="w-full text-left px-3 py-1 hover:bg-base-200 pl-6"
-				onClick={() => onSelect(currentVarName)}
-			>
-				Keep as local ({currentVarName})
-			</button>
-
-			{/* Remove section */}
-			{onRemove && (
-				<>
-					<div className="border-t border-base-300 my-1" />
+				<div className="modal-action">
 					<button
 						type="button"
-						className="w-full text-left px-3 py-1.5 hover:bg-error/10 text-error/70 hover:text-error transition-colors"
-						onClick={onRemove}
+						className="btn btn-ghost btn-sm"
+						onClick={onClose}
 					>
-						Remove variable...
+						Cancel
 					</button>
-				</>
-			)}
-		</div>
+				</div>
+			</div>
+		</dialog>
 	);
-});
+}
