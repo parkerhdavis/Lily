@@ -119,7 +119,7 @@ export default function TemplateEditor() {
 	} = useWorkflowStore();
 
 	// Sidebar resize state
-	const [sidebarWidth, setSidebarWidth] = useState(640);
+	const [sidebarWidth, setSidebarWidth] = useState(800);
 	const dragging = useRef(false);
 	const dragStartX = useRef(0);
 	const dragStartWidth = useRef(0);
@@ -415,7 +415,7 @@ export default function TemplateEditor() {
 				const delta = ev.clientX - dragStartX.current;
 				const newWidth = Math.max(
 					400,
-					Math.min(800, dragStartWidth.current + delta),
+					Math.min(1100, dragStartWidth.current + delta),
 				);
 				setSidebarWidth(newWidth);
 			};
