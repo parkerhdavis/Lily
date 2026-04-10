@@ -1691,8 +1691,6 @@ function VariableCard({
 	onScrollTo: () => void;
 	onRemove: () => void;
 }) {
-	const [expanded, setExpanded] = useState(false);
-
 	return (
 		<div
 			className={`rounded-lg border bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] transition-all ${
@@ -1732,26 +1730,6 @@ function VariableCard({
 				</span>
 				<button
 					type="button"
-					className="btn btn-ghost btn-xs text-base-content/30 hover:text-base-content/60"
-					onClick={() => setExpanded(!expanded)}
-					title={expanded ? "Collapse" : "Expand details"}
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						viewBox="0 0 16 16"
-						fill="currentColor"
-						className={`size-3 transition-transform ${expanded ? "rotate-180" : ""}`}
-					>
-						<title>Toggle details</title>
-						<path
-							fillRule="evenodd"
-							d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z"
-							clipRule="evenodd"
-						/>
-					</svg>
-				</button>
-				<button
-					type="button"
 					className="btn btn-ghost btn-xs text-base-content/30 hover:text-error"
 					onClick={onRemove}
 					title="Remove this variable"
@@ -1768,8 +1746,8 @@ function VariableCard({
 				</button>
 			</div>
 
-			{/* Expanded detail section */}
-			{expanded && (
+			{/* Detail section */}
+			{(variable.variants.length > 1 || schemaEntry) && (
 				<div className="px-3 pb-3 space-y-2 border-t border-base-200 pt-2">
 					{/* Case variants */}
 					{variable.variants.length > 1 && (
