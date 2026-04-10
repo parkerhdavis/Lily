@@ -244,7 +244,10 @@ export default function TemplateEditor() {
 	const [removalText, setRemovalText] = useState("");
 
 	// Highlighted variable in preview
-	const [highlightedVar, setHighlightedVar] = useState<string | null>(null);
+	// Highlighted occurrence index (1-based working number)
+	const [highlightedOccurrence, setHighlightedOccurrence] = useState<
+		number | null
+	>(null);
 
 	// Preview values state
 	const [previewValues, setPreviewValues] = useState<
@@ -580,16 +583,16 @@ export default function TemplateEditor() {
 		[sidebarWidth],
 	);
 
-	// Select a variable — highlights in both sidebar and document, scrolls document into view
-	const selectVariable = useCallback((displayName: string) => {
-		setHighlightedVar(displayName);
+	// Select a variable occurrence by its 1-based working number
+	const selectOccurrence = useCallback((occurrenceIndex: number) => {
+		setHighlightedOccurrence(occurrenceIndex);
 
-		// Scroll the document preview to the first occurrence
+		// Scroll the document preview to the nth variable-highlight span
 		if (previewRef.current) {
-			const canonical = displayName.toLowerCase();
-			const span = previewRef.current.querySelector(
-				`[data-variable="${CSS.escape(canonical)}"]`,
+			const spans = previewRef.current.querySelectorAll(
+				".variable-highlight",
 			);
+			const span = spans[occurrenceIndex - 1]; // 0-based DOM index
 			if (span) {
 				span.scrollIntoView({ behavior: "smooth", block: "center" });
 			}
@@ -622,15 +625,12 @@ export default function TemplateEditor() {
 			) as HTMLElement | null;
 			if (!target) return;
 
-			const originalCase = target.getAttribute("data-original-case");
-			if (originalCase) {
-				// Find the matching display name from templateEditorVars
-				const canonical = originalCase.toLowerCase();
-				const varInfo = templateEditorVars.find(
-					(v) => v.display_name.toLowerCase() === canonical,
-				);
-				if (varInfo) {
-					selectVariable(varInfo.display_name);
+			// Find the working number by counting which nth .variable-highlight this is
+			const allSpans = preview.querySelectorAll(".variable-highlight");
+			for (let i = 0; i < allSpans.length; i++) {
+				if (allSpans[i] === target || allSpans[i].contains(target)) {
+					selectOccurrence(i + 1); // 1-based
+					return;
 				}
 			}
 		};
@@ -641,7 +641,7 @@ export default function TemplateEditor() {
 			preview.removeEventListener("mouseup", handleMouseUp);
 			preview.removeEventListener("click", handleClick);
 		};
-	}, [templateEditorVars, selectVariable]);
+	}, [templateEditorVars, selectOccurrence]);
 
 	// Make SDT badges draggable after HTML renders
 	useEffect(() => {
@@ -787,18 +787,62 @@ export default function TemplateEditor() {
 			.slice(0, 8);
 	}, [variableName, templateEditorVars]);
 
-	// Count variable occurrences in preview HTML
-	const varOccurrences = useCallback(
-		(displayName: string): number => {
-			if (!previewRef.current) return 0;
-			const canonical = displayName.toLowerCase();
-			return previewRef.current.querySelectorAll(
-				`[data-variable="${CSS.escape(canonical)}"]`,
-			).length;
-		},
-		// biome-ignore lint/correctness/useExhaustiveDependencies: re-count when HTML changes
-		[templateEditorHtml],
-	);
+	/** An individual variable occurrence in document order. */
+	interface VarOccurrence {
+		/** Working number (1-based). */
+		index: number;
+		/** Display name of the variable. */
+		displayName: string;
+		/** Canonical (lowercase) key. */
+		canonical: string;
+		/** SDT ID if available. */
+		sdtId: string | null;
+		/** Whether this is a conditional variable. */
+		isConditional: boolean;
+	}
+
+	// Build ordered list of individual variable occurrences from the HTML
+	const orderedOccurrences = useMemo((): VarOccurrence[] => {
+		if (!templateEditorHtml) return [];
+
+		const results: VarOccurrence[] = [];
+		const re =
+			/<span class="variable-highlight[^"]*" data-variable="([^"]*)" data-original-case="([^"]*)"(?: data-sdt-id="([^"]*)")?/g;
+
+		let match: RegExpExecArray | null;
+		// biome-ignore lint/suspicious/noAssignInExpressions: regex exec loop
+		while ((match = re.exec(templateEditorHtml)) !== null) {
+			const canonical = match[1];
+			const originalCase = match[2];
+			const sdtId = match[3] ?? null;
+			const varInfo = templateEditorVars.find(
+				(v) => v.display_name.toLowerCase() === canonical,
+			);
+			results.push({
+				index: results.length + 1,
+				displayName: varInfo?.display_name ?? originalCase,
+				canonical,
+				sdtId,
+				isConditional: varInfo?.is_conditional ?? false,
+			});
+		}
+
+		return results;
+	}, [templateEditorHtml, templateEditorVars]);
+
+	// Build HTML with working numbers injected into SDT badges
+	const numberedTemplateHtml = useMemo(() => {
+		if (!templateEditorHtml) return "";
+
+		let idx = 0;
+		return templateEditorHtml.replace(
+			/(<span class="variable-highlight[^"]*" data-variable="[^"]*" data-original-case="[^"]*"(?:\s+data-sdt-id="[^"]*")?>)/g,
+			(openTag) => {
+				idx++;
+				return `${openTag}<span class="sdt-working-number">#${idx}</span> `;
+			},
+		);
+	}, [templateEditorHtml]);
 
 	// Save variable type to schema after inserting
 	const saveToSchema = useCallback(
@@ -1247,14 +1291,14 @@ export default function TemplateEditor() {
 										<div className="text-xs text-base-content/50">
 											{(() => {
 												const linked =
-													templateEditorVars.filter(
-														(v) =>
+													orderedOccurrences.filter(
+														(occ) =>
 															questionnaireMatchMap.has(
-																v.display_name,
+																occ.displayName,
 															),
 													).length;
 												const total =
-													templateEditorVars.length;
+													orderedOccurrences.length;
 												return `${linked}/${total} variables linked`;
 											})()}
 										</div>
@@ -1272,50 +1316,75 @@ export default function TemplateEditor() {
 							<SectionHeading className="mb-3">
 								Variables
 							</SectionHeading>
-							{templateEditorVars.length === 0 ? (
+							{orderedOccurrences.length === 0 ? (
 								<p className="text-sm text-base-content/50">
 									No variables in this template yet. Select
 									text in the preview to insert a variable.
 								</p>
 							) : (
 								<div className="flex flex-col gap-2">
-									{templateEditorVars.map((v) => (
-										<VariableCard
-											key={v.display_name}
-											variable={v}
-											schemaEntry={
-												templateSchema?.variables[
-													v.display_name
-												]
-											}
-											questionnaireMatch={questionnaireMatchMap.get(
-												v.display_name,
-											)}
-											occurrenceCount={varOccurrences(
-												v.display_name,
-											)}
-											isHighlighted={
-												highlightedVar ===
-												v.display_name
-											}
-											onScrollTo={() =>
-												selectVariable(
-													v.display_name,
-												)
-											}
-											onRemove={() => {
-												setRemovingVar(
-													v.display_name,
-												);
-												setRemovalText("");
-											}}
-											schema={templateSchema}
-											allVars={templateEditorVars}
-											questionnaireMatchMap={questionnaireMatchMap}
-											questionnaire={selectedQuestionnaire}
-											onRename={renameTemplateVariable}
-										/>
-									))}
+									{orderedOccurrences.map((occ) => {
+										const varInfo =
+											templateEditorVars.find(
+												(v) =>
+													v.display_name.toLowerCase() ===
+													occ.canonical,
+											);
+										return (
+											<VariableCard
+												key={`${occ.index}-${occ.canonical}`}
+												variable={
+													varInfo ?? {
+														display_name:
+															occ.displayName,
+														variants: [
+															occ.displayName,
+														],
+														is_conditional:
+															occ.isConditional,
+													}
+												}
+												workingNumber={occ.index}
+												schemaEntry={
+													templateSchema
+														?.variables[
+														occ.displayName
+													]
+												}
+												questionnaireMatch={questionnaireMatchMap.get(
+													occ.displayName,
+												)}
+												isHighlighted={
+													highlightedOccurrence ===
+													occ.index
+												}
+												onScrollTo={() =>
+													selectOccurrence(
+														occ.index,
+													)
+												}
+												onRemove={() => {
+													setRemovingVar(
+														occ.displayName,
+													);
+													setRemovalText("");
+												}}
+												schema={templateSchema}
+												allVars={
+													templateEditorVars
+												}
+												questionnaireMatchMap={
+													questionnaireMatchMap
+												}
+												questionnaire={
+													selectedQuestionnaire
+												}
+												onRename={
+													renameTemplateVariable
+												}
+											/>
+										);
+									})}
 								</div>
 							)}
 						</div>
@@ -1359,7 +1428,7 @@ export default function TemplateEditor() {
 								className="bg-base-100 rounded-lg shadow-lg border border-base-300 p-8 prose prose-sm template-editor-preview"
 								// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
 								dangerouslySetInnerHTML={{
-									__html: templateEditorHtml,
+									__html: numberedTemplateHtml,
 								}}
 								onContextMenu={handleContextMenu}
 							/>
@@ -1932,9 +2001,9 @@ const PROPERTY_LABELS: Record<string, string> = {
 
 function VariableCard({
 	variable,
+	workingNumber,
 	schemaEntry,
 	questionnaireMatch,
-	occurrenceCount,
 	isHighlighted,
 	onScrollTo,
 	onRemove,
@@ -1945,9 +2014,9 @@ function VariableCard({
 	onRename,
 }: {
 	variable: VariableInfo;
+	workingNumber: number;
 	schemaEntry?: VariableSchemaEntry;
 	questionnaireMatch?: QuestionnaireMatch;
-	occurrenceCount: number;
 	isHighlighted: boolean;
 	onScrollTo: () => void;
 	onRemove: () => void;
@@ -1988,8 +2057,11 @@ function VariableCard({
 					type="button"
 					className="flex-1 text-left text-sm font-medium truncate hover:text-primary transition-colors"
 					onClick={onScrollTo}
-					title={`Scroll to {${variable.display_name}} in preview`}
+					title={`Scroll to #${workingNumber} in preview`}
 				>
+					<span className="text-base-content/40 mr-1.5">
+						#{workingNumber}
+					</span>
 					{variable.display_name}
 				</button>
 				{schemaEntry?.required && (
@@ -1998,26 +2070,16 @@ function VariableCard({
 						title="Required"
 					/>
 				)}
-				<span className="badge badge-sm badge-ghost">
-					{occurrenceCount}
-				</span>
 				<div className="relative">
 					<button
 						type="button"
-						className="btn btn-ghost btn-xs text-base-content/30 hover:text-base-content/60"
-						onClick={() => setShowLinkDropdown(!showLinkDropdown)}
-						title="Change variable link"
+						className="btn btn-ghost btn-xs text-base-content/40 hover:text-base-content/70"
+						onClick={() =>
+							setShowLinkDropdown(!showLinkDropdown)
+						}
+						title="Edit variable"
 					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							viewBox="0 0 16 16"
-							fill="currentColor"
-							className="size-3.5"
-						>
-							<title>Edit link</title>
-							<path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.262a1.75 1.75 0 0 0 0-2.474Z" />
-							<path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9A.75.75 0 0 1 14 9v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
-						</svg>
+						Edit
 					</button>
 					{showLinkDropdown && (
 						<VariableLinkDropdown
@@ -2036,26 +2098,14 @@ function VariableCard({
 									);
 								}
 							}}
+							onRemove={() => {
+								setShowLinkDropdown(false);
+								onRemove();
+							}}
 							onClose={() => setShowLinkDropdown(false)}
 						/>
 					)}
 				</div>
-				<button
-					type="button"
-					className="btn btn-ghost btn-xs text-base-content/30 hover:text-error"
-					onClick={onRemove}
-					title="Remove this variable"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						viewBox="0 0 16 16"
-						fill="currentColor"
-						className="size-3.5"
-					>
-						<title>Remove</title>
-						<path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
-					</svg>
-				</button>
 			</div>
 
 			{/* Detail section */}
@@ -2518,10 +2568,11 @@ const VariableLinkDropdown = forwardRef<
 		questionnaire?: QuestionnaireDefFile | null;
 		currentVarName: string;
 		onSelect: (newName: string) => void;
+		onRemove?: () => void;
 		onClose: () => void;
 	}
 >(function VariableLinkDropdown(
-	{ questionnaire, currentVarName, onSelect, onClose },
+	{ questionnaire, currentVarName, onSelect, onRemove, onClose },
 	ref,
 ) {
 	const [expandedSections, setExpandedSections] = useState<Set<string>>(
@@ -2759,6 +2810,20 @@ const VariableLinkDropdown = forwardRef<
 			>
 				Keep as local ({currentVarName})
 			</button>
+
+			{/* Remove section */}
+			{onRemove && (
+				<>
+					<div className="border-t border-base-300 my-1" />
+					<button
+						type="button"
+						className="w-full text-left px-3 py-1.5 hover:bg-error/10 text-error/70 hover:text-error transition-colors"
+						onClick={onRemove}
+					>
+						Remove variable...
+					</button>
+				</>
+			)}
 		</div>
 	);
 });

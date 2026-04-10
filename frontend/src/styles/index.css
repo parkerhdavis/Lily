@@ -201,6 +201,13 @@
 	50% { opacity: 0.2; }
 }
 
+/* Working number inside SDT badges */
+.sdt-working-number {
+	font-size: 0.75em;
+	opacity: 0.5;
+	font-weight: 400;
+}
+
 /* ─── Document preview structural elements ────────────────────────────── */
 
 /* Override prose defaults so Word-sourced margins take precedence */
