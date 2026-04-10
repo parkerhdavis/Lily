@@ -3065,23 +3065,26 @@ function VariableEditModal({
 							>
 								Home
 							</button>
-							{/* Skip synthetic root entries (__questionnaire__, __local__) in breadcrumbs */}
-							{path.filter((c) => !c.key.startsWith("__")).map((crumb, i, filtered) => (
-								<span key={crumb.key} className="flex items-center gap-1 shrink-0">
-									<span className="text-base-content/20">/</span>
-									<button
-										type="button"
-										className={`hover:text-primary transition-colors ${i === filtered.length - 1 ? "text-base-content/80 font-medium" : ""}`}
-										onClick={() => {
-											// Find this crumb's index in the full path to navigate correctly
-											const fullIdx = path.indexOf(crumb);
-											navigate(path.slice(0, fullIdx + 1));
-										}}
-									>
-										{crumb.label}
-									</button>
-								</span>
-							))}
+							{path.map((crumb, i) => {
+								const displayLabel =
+									crumb.key === "__questionnaire__"
+										? "Questionnaire"
+										: crumb.key === "__local__"
+											? "Local Variable"
+											: crumb.label;
+								return (
+									<span key={crumb.key} className="flex items-center gap-1 shrink-0">
+										<span className="text-base-content/20">/</span>
+										<button
+											type="button"
+											className={`hover:text-primary transition-colors ${i === path.length - 1 ? "text-base-content/80 font-medium" : ""}`}
+											onClick={() => navigate(path.slice(0, i + 1))}
+										>
+											{displayLabel}
+										</button>
+									</span>
+								);
+							})}
 						</div>
 					</div>
 				)}
