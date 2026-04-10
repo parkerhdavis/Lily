@@ -2948,7 +2948,7 @@ function VariableEditModal({
 				if (e.target === e.currentTarget) onClose();
 			}}
 		>
-			<div className="modal-box max-w-2xl w-full h-[70vh] flex flex-col">
+			<div className="modal-box max-w-5xl w-full h-[70vh] flex flex-col">
 				{/* Header */}
 				<div className="flex items-center gap-3 mb-3">
 					<h3 className="font-bold text-lg">Edit Variable</h3>
