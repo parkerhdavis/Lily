@@ -2820,9 +2820,7 @@ function VariableEditModal({
 						const sections = (
 							sectionsByTab.get(tab.id) ?? []
 						).filter(
-							(s) =>
-								s.questions.length > 0 ||
-								s.kind === "contacts",
+							(s) => s.questions.length > 0,
 						);
 						if (sections.length === 0) return null;
 						return (
