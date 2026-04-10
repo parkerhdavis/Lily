@@ -2973,6 +2973,13 @@ function VariableEditModal({
 					/>
 				</div>
 
+				{/* Section heading for questionnaire linkage */}
+				<div className="border-t border-base-content/10 pt-3 mb-2">
+					<div className="text-xs font-semibold text-base-content/40 uppercase tracking-wider">
+						Link to Questionnaire
+					</div>
+				</div>
+
 				{/* Breadcrumbs + back/forward */}
 				{!search.trim() && (
 					<div className="flex items-center gap-1 mb-2 text-sm">
