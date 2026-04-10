@@ -119,7 +119,7 @@ export default function TemplateEditor() {
 	} = useWorkflowStore();
 
 	// Sidebar resize state
-	const [sidebarWidth, setSidebarWidth] = useState(384);
+	const [sidebarWidth, setSidebarWidth] = useState(480);
 	const dragging = useRef(false);
 	const dragStartX = useRef(0);
 	const dragStartWidth = useRef(0);
@@ -414,8 +414,8 @@ export default function TemplateEditor() {
 				if (!dragging.current) return;
 				const delta = ev.clientX - dragStartX.current;
 				const newWidth = Math.max(
-					280,
-					Math.min(600, dragStartWidth.current + delta),
+					360,
+					Math.min(720, dragStartWidth.current + delta),
 				);
 				setSidebarWidth(newWidth);
 			};
@@ -1137,7 +1137,7 @@ export default function TemplateEditor() {
 				</div>
 
 				{/* Right sidebar: Preview Values */}
-				<div className="w-72 shrink-0 overflow-y-auto border-l border-base-300 bg-base-100 p-4">
+				<div className="w-96 shrink-0 overflow-y-auto border-l border-base-300 bg-base-100 p-4">
 					<SectionHeading className="mb-3">
 						Preview Values
 					</SectionHeading>
