@@ -1075,6 +1075,8 @@ export default function TemplateEditor() {
 												);
 												setRemovalText("");
 											}}
+											schema={templateSchema}
+											allVars={templateEditorVars}
 										/>
 									))}
 								</div>
@@ -1683,6 +1685,8 @@ function VariableCard({
 	isHighlighted,
 	onScrollTo,
 	onRemove,
+	schema,
+	allVars,
 }: {
 	variable: VariableInfo;
 	schemaEntry?: VariableSchemaEntry;
@@ -1690,6 +1694,8 @@ function VariableCard({
 	isHighlighted: boolean;
 	onScrollTo: () => void;
 	onRemove: () => void;
+	schema?: VariableSchema | null;
+	allVars?: VariableInfo[];
 }) {
 	return (
 		<div
@@ -1839,6 +1845,8 @@ function VariableCard({
 								<ConditionalDetails
 									condition={schemaEntry.condition}
 									conditions={schemaEntry.conditions}
+									schema={schema}
+									allVars={allVars}
 								/>
 							)}
 						</>
@@ -1851,12 +1859,50 @@ function VariableCard({
 
 // ─── Conditional Details ────────────────────────────────────────────────────
 
+/** Property labels for dot-notation resolution in nested variables. */
+const NESTED_PROP_LABELS: Record<string, string> = {
+	full_name: "Full Name",
+	first_name: "First Name",
+	last_name: "Last Name",
+	middle_name: "Middle Name",
+	phone: "Phone",
+	email: "Email",
+	address: "Address",
+	city: "City",
+	state: "State",
+	zip: "ZIP",
+	relationship: "Relationship",
+};
+
+/** Extract nested variable references from a conditional branch template string. */
+function extractNestedVarNames(template: string): string[] {
+	const names: string[] = [];
+	for (const m of template.matchAll(/\{([^{}]+)\}/g)) {
+		const inner = m[1].trim();
+		const dotIdx = inner.lastIndexOf(".");
+		let displayName = inner;
+		if (dotIdx > 0) {
+			const role = inner.substring(0, dotIdx).trim();
+			const prop = inner.substring(dotIdx + 1).trim().toLowerCase();
+			displayName = `${role} ${NESTED_PROP_LABELS[prop] ?? prop}`;
+		}
+		if (!names.includes(displayName)) {
+			names.push(displayName);
+		}
+	}
+	return names;
+}
+
 function ConditionalDetails({
 	condition,
 	conditions,
+	schema,
+	allVars,
 }: {
 	condition?: ConditionalDef;
 	conditions?: ConditionalDef[];
+	schema?: VariableSchema | null;
+	allVars?: VariableInfo[];
 }) {
 	const defs =
 		conditions && conditions.length > 0
@@ -1866,8 +1912,19 @@ function ConditionalDetails({
 				: [];
 	if (defs.length === 0) return null;
 
+	// Collect all nested variable names across all branch templates
+	const nestedNames = new Set<string>();
+	for (const def of defs) {
+		for (const name of extractNestedVarNames(def.true_template)) {
+			nestedNames.add(name);
+		}
+		for (const name of extractNestedVarNames(def.false_template)) {
+			nestedNames.add(name);
+		}
+	}
+
 	return (
-		<div className="space-y-1.5">
+		<div className="space-y-2">
 			<div className="text-xs text-base-content/40">
 				Conditional branches
 			</div>
@@ -1878,7 +1935,9 @@ function ConditionalDetails({
 					className="text-xs bg-base-200 rounded p-2 space-y-1"
 				>
 					<div>
-						<span className="text-base-content/40">Controls: </span>
+						<span className="text-base-content/40">
+							Controls:{" "}
+						</span>
 						<span className="font-medium">
 							{def.controlling_variable}
 						</span>
@@ -1905,6 +1964,151 @@ function ConditionalDetails({
 					)}
 				</div>
 			))}
+
+			{/* Nested variable cards */}
+			{nestedNames.size > 0 && (
+				<div className="space-y-1.5 pt-1">
+					<div className="text-xs text-base-content/40">
+						Nested variables
+					</div>
+					{Array.from(nestedNames).map((name) => {
+						const varInfo = allVars?.find(
+							(v) => v.display_name === name,
+						);
+						const entry = schema?.variables[name];
+						return (
+							<NestedVariableCard
+								key={name}
+								name={name}
+								varInfo={varInfo}
+								schemaEntry={entry}
+								schema={schema}
+								allVars={allVars}
+							/>
+						);
+					})}
+				</div>
+			)}
+		</div>
+	);
+}
+
+// ─── Nested Variable Card ───────────────────────────────────────────────────
+
+function NestedVariableCard({
+	name,
+	varInfo,
+	schemaEntry,
+	schema,
+	allVars,
+}: {
+	name: string;
+	varInfo?: VariableInfo;
+	schemaEntry?: VariableSchemaEntry;
+	schema?: VariableSchema | null;
+	allVars?: VariableInfo[];
+}) {
+	const hasDetails =
+		(varInfo && varInfo.variants.length > 1) || schemaEntry;
+
+	return (
+		<div className="rounded border border-base-300 bg-base-100 text-xs">
+			<div className="flex items-center gap-2 px-2.5 py-1.5">
+				<span className="flex-1 font-medium truncate">{name}</span>
+				{schemaEntry?.var_type && schemaEntry.var_type !== "text" && (
+					<span className="badge badge-xs badge-info">
+						{TYPE_LABELS[schemaEntry.var_type] ??
+							schemaEntry.var_type}
+					</span>
+				)}
+				{schemaEntry?.required && (
+					<span
+						className="w-1.5 h-1.5 rounded-full bg-error shrink-0"
+						title="Required"
+					/>
+				)}
+			</div>
+
+			{hasDetails && (
+				<div className="px-2.5 pb-2 space-y-1.5 border-t border-base-200 pt-1.5">
+					{/* Case variants */}
+					{varInfo && varInfo.variants.length > 1 && (
+						<div>
+							<div className="text-base-content/40 mb-0.5">
+								Case variants
+							</div>
+							<div className="flex flex-wrap gap-1">
+								{varInfo.variants.map((v) => (
+									<code
+										key={v}
+										className="bg-base-200 px-1 py-0.5 rounded text-[10px]"
+									>
+										{v}
+									</code>
+								))}
+							</div>
+						</div>
+					)}
+
+					{schemaEntry && (
+						<>
+							{schemaEntry.default && (
+								<div className="flex gap-2">
+									<span className="text-base-content/40">
+										Default:
+									</span>
+									<code className="bg-base-200 px-1 rounded">
+										{schemaEntry.default}
+									</code>
+								</div>
+							)}
+							{schemaEntry.help && (
+								<div className="flex gap-2">
+									<span className="text-base-content/40">
+										Help:
+									</span>
+									<span className="text-base-content/60 italic">
+										{schemaEntry.help}
+									</span>
+								</div>
+							)}
+							{schemaEntry.date_format && (
+								<div className="flex gap-2">
+									<span className="text-base-content/40">
+										Format:
+									</span>
+									<code className="bg-base-200 px-1 rounded">
+										{schemaEntry.date_format}
+									</code>
+								</div>
+							)}
+							{schemaEntry.contact_role && (
+								<div className="flex gap-2">
+									<span className="text-base-content/40">
+										Contact:
+									</span>
+									<span>
+										{schemaEntry.contact_role}
+										{schemaEntry.contact_property &&
+											` > ${schemaEntry.contact_property}`}
+									</span>
+								</div>
+							)}
+							{/* Recurse for nested conditionals */}
+							{(schemaEntry.condition ||
+								(schemaEntry.conditions &&
+									schemaEntry.conditions.length > 0)) && (
+								<ConditionalDetails
+									condition={schemaEntry.condition}
+									conditions={schemaEntry.conditions}
+									schema={schema}
+									allVars={allVars}
+								/>
+							)}
+						</>
+					)}
+				</div>
+			)}
 		</div>
 	);
 }
