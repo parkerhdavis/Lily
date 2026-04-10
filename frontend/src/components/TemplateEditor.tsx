@@ -1126,7 +1126,7 @@ export default function TemplateEditor() {
 							/>
 						) : (
 							<div
-								className="bg-base-100 rounded-lg shadow-lg border border-base-300 p-8 prose prose-sm opacity-75"
+								className="bg-base-100 rounded-lg shadow-lg border border-base-300 p-8 prose prose-sm"
 								// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
 								dangerouslySetInnerHTML={{
 									__html: livePreviewHtml,
