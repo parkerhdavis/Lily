@@ -119,7 +119,7 @@ export default function TemplateEditor() {
 	} = useWorkflowStore();
 
 	// Sidebar resize state
-	const [sidebarWidth, setSidebarWidth] = useState(540);
+	const [sidebarWidth, setSidebarWidth] = useState(640);
 	const dragging = useRef(false);
 	const dragStartX = useRef(0);
 	const dragStartWidth = useRef(0);
@@ -1085,8 +1085,8 @@ export default function TemplateEditor() {
 					</div>
 				</div>
 
-				{/* Center: tabbed document view (constrained width) */}
-				<div className="flex flex-col flex-1 min-w-0 max-w-3xl">
+				{/* Center: tabbed document view */}
+				<div className="flex flex-col flex-1 min-w-0">
 					{/* Tab bar */}
 					<div className="flex border-b border-base-300 bg-base-100 shrink-0">
 						<button
@@ -1139,7 +1139,7 @@ export default function TemplateEditor() {
 				</div>
 
 				{/* Right sidebar: Preview Values */}
-				<div className="w-[28rem] shrink-0 overflow-y-auto border-l border-base-300 bg-base-100 p-4">
+				<div className="w-[32rem] shrink-0 overflow-y-auto border-l border-base-300 bg-base-100 p-4">
 					<SectionHeading className="mb-3">
 						Preview Values
 					</SectionHeading>
