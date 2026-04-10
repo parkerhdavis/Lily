@@ -2946,7 +2946,7 @@ function VariableEditModal({
 				if (e.target === e.currentTarget) onClose();
 			}}
 		>
-			<div className="modal-box max-w-lg w-full max-h-[70vh] flex flex-col overflow-x-hidden">
+			<div className="modal-box max-w-lg w-full h-[28rem] flex flex-col overflow-x-hidden">
 				{/* Header + search */}
 				<div className="mb-4">
 					<div className="flex items-center gap-3 mb-3">
@@ -3022,8 +3022,8 @@ function VariableEditModal({
 					</div>
 				)}
 
-				{/* Content area */}
-				<div className="overflow-y-auto -mx-2 px-2">
+				{/* Content area — fixed height so modal doesn't jump between levels */}
+				<div className="flex-1 overflow-y-auto -mx-2 px-2 min-h-0">
 					{renderItems()}
 				</div>
 			</div>
