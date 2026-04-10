@@ -572,7 +572,23 @@ export default function TemplateEditor() {
 		[sidebarWidth],
 	);
 
-	// Detect text selection in preview on mouseup
+	// Select a variable — highlights in both sidebar and document, scrolls document into view
+	const selectVariable = useCallback((displayName: string) => {
+		setHighlightedVar(displayName);
+
+		// Scroll the document preview to the first occurrence
+		if (previewRef.current) {
+			const canonical = displayName.toLowerCase();
+			const span = previewRef.current.querySelector(
+				`[data-variable="${CSS.escape(canonical)}"]`,
+			);
+			if (span) {
+				span.scrollIntoView({ behavior: "smooth", block: "center" });
+			}
+		}
+	}, []);
+
+	// Detect text selection and variable clicks in preview
 	useEffect(() => {
 		const preview = previewRef.current;
 		if (!preview) return;
@@ -592,9 +608,32 @@ export default function TemplateEditor() {
 			}
 		};
 
+		const handleClick = (e: MouseEvent) => {
+			const target = (e.target as HTMLElement).closest?.(
+				".variable-highlight",
+			) as HTMLElement | null;
+			if (!target) return;
+
+			const originalCase = target.getAttribute("data-original-case");
+			if (originalCase) {
+				// Find the matching display name from templateEditorVars
+				const canonical = originalCase.toLowerCase();
+				const varInfo = templateEditorVars.find(
+					(v) => v.display_name.toLowerCase() === canonical,
+				);
+				if (varInfo) {
+					selectVariable(varInfo.display_name);
+				}
+			}
+		};
+
 		preview.addEventListener("mouseup", handleMouseUp);
-		return () => preview.removeEventListener("mouseup", handleMouseUp);
-	}, []);
+		preview.addEventListener("click", handleClick);
+		return () => {
+			preview.removeEventListener("mouseup", handleMouseUp);
+			preview.removeEventListener("click", handleClick);
+		};
+	}, [templateEditorVars, selectVariable]);
 
 	// Make SDT badges draggable after HTML renders
 	useEffect(() => {
@@ -752,20 +791,6 @@ export default function TemplateEditor() {
 		// biome-ignore lint/correctness/useExhaustiveDependencies: re-count when HTML changes
 		[templateEditorHtml],
 	);
-
-	// Scroll to a variable occurrence in preview
-	const scrollToVariable = useCallback((displayName: string) => {
-		if (!previewRef.current) return;
-		const canonical = displayName.toLowerCase();
-		const span = previewRef.current.querySelector(
-			`[data-variable="${CSS.escape(canonical)}"]`,
-		);
-		if (span) {
-			span.scrollIntoView({ behavior: "smooth", block: "center" });
-			setHighlightedVar(displayName);
-			setTimeout(() => setHighlightedVar(null), 2000);
-		}
-	}, []);
 
 	// Save variable type to schema after inserting
 	const saveToSchema = useCallback(
@@ -1266,7 +1291,7 @@ export default function TemplateEditor() {
 												v.display_name
 											}
 											onScrollTo={() =>
-												scrollToVariable(
+												selectVariable(
 													v.display_name,
 												)
 											}
@@ -1920,9 +1945,21 @@ function VariableCard({
 }) {
 	const isLinked = !!questionnaireMatch;
 	const isContactMember = questionnaireMatch?.kind === "contact-member";
+	const cardRef = useRef<HTMLDivElement>(null);
+
+	// Scroll sidebar card into view when it becomes highlighted
+	useEffect(() => {
+		if (isHighlighted && cardRef.current) {
+			cardRef.current.scrollIntoView({
+				behavior: "smooth",
+				block: "nearest",
+			});
+		}
+	}, [isHighlighted]);
 
 	return (
 		<div
+			ref={cardRef}
 			className={`rounded-lg border bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] transition-all ${
 				isHighlighted
 					? "ring-2 ring-warning border-warning"
