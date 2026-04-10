@@ -975,13 +975,13 @@ pub fn get_template_text_occurrences(
 // ─── Template editing session ───────────────────────────────────────────────
 
 /// Start a template editing session by creating backup copies of the template
-/// and its schema sidecar. If backups already exist (from an interrupted
-/// session), they are left in place.
+/// docx and the template library file. If backups already exist (from an
+/// interrupted session), they are left in place.
 #[tauri::command]
 pub fn begin_template_editing(
     template_path: String,
     templates_dir: String,
-    template_rel_path: String,
+    _template_rel_path: String,
 ) -> Result<(), String> {
     let docx = Path::new(&template_path);
     let bak = docx.with_extension("docx.bak");
@@ -989,12 +989,11 @@ pub fn begin_template_editing(
         fs::copy(docx, &bak).map_err(|e| format!("Failed to create template backup: {}", e))?;
     }
 
-    let schema = schema_path_for_template(&templates_dir, &template_rel_path);
-    if schema.exists() {
-        let schema_bak = schema.with_extension("lily.bak");
-        if !schema_bak.exists() {
-            fs::copy(&schema, &schema_bak)
-                .map_err(|e| format!("Failed to create schema backup: {}", e))?;
+    if let Some(lib_path) = find_template_library(&templates_dir) {
+        let lib_bak = lib_path.with_extension("lily.bak");
+        if !lib_bak.exists() {
+            fs::copy(&lib_path, &lib_bak)
+                .map_err(|e| format!("Failed to create library backup: {}", e))?;
         }
     }
 
@@ -1006,7 +1005,7 @@ pub fn begin_template_editing(
 pub fn confirm_template_edits(
     template_path: String,
     templates_dir: String,
-    template_rel_path: String,
+    _template_rel_path: String,
 ) -> Result<(), String> {
     let bak = Path::new(&template_path).with_extension("docx.bak");
     if bak.exists() {
@@ -1014,11 +1013,12 @@ pub fn confirm_template_edits(
             .map_err(|e| format!("Failed to remove template backup: {}", e))?;
     }
 
-    let schema = schema_path_for_template(&templates_dir, &template_rel_path);
-    let schema_bak = schema.with_extension("lily.bak");
-    if schema_bak.exists() {
-        fs::remove_file(&schema_bak)
-            .map_err(|e| format!("Failed to remove schema backup: {}", e))?;
+    if let Some(lib_path) = find_template_library(&templates_dir) {
+        let lib_bak = lib_path.with_extension("lily.bak");
+        if lib_bak.exists() {
+            fs::remove_file(&lib_bak)
+                .map_err(|e| format!("Failed to remove library backup: {}", e))?;
+        }
     }
 
     Ok(())
@@ -1029,7 +1029,7 @@ pub fn confirm_template_edits(
 pub fn discard_template_edits(
     template_path: String,
     templates_dir: String,
-    template_rel_path: String,
+    _template_rel_path: String,
 ) -> Result<(), String> {
     let docx = Path::new(&template_path).to_path_buf();
     let bak = docx.with_extension("docx.bak");
@@ -1040,13 +1040,14 @@ pub fn discard_template_edits(
             .map_err(|e| format!("Failed to remove template backup: {}", e))?;
     }
 
-    let schema = schema_path_for_template(&templates_dir, &template_rel_path);
-    let schema_bak = schema.with_extension("lily.bak");
-    if schema_bak.exists() {
-        fs::copy(&schema_bak, &schema)
-            .map_err(|e| format!("Failed to restore schema from backup: {}", e))?;
-        fs::remove_file(&schema_bak)
-            .map_err(|e| format!("Failed to remove schema backup: {}", e))?;
+    if let Some(lib_path) = find_template_library(&templates_dir) {
+        let lib_bak = lib_path.with_extension("lily.bak");
+        if lib_bak.exists() {
+            fs::copy(&lib_bak, &lib_path)
+                .map_err(|e| format!("Failed to restore library from backup: {}", e))?;
+            fs::remove_file(&lib_bak)
+                .map_err(|e| format!("Failed to remove library backup: {}", e))?;
+        }
     }
 
     Ok(())
@@ -1783,9 +1784,66 @@ pub fn rename_template_variable(
 
 // ─── Template schema commands ───────────────────────────────────────────────
 
-/// Derive the schema file path from a template's relative path.
-/// E.g., "Trust Templates/Revocable Trust.docx" → "{templates_dir}/Trust Templates/Revocable Trust.lily"
-fn schema_path_for_template(templates_dir: &str, template_rel_path: &str) -> PathBuf {
+/// A template library file that stores schemas for all templates in one place.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TemplateLibrary {
+    lily_type: String,
+    templates: HashMap<String, TemplateLibraryEntry>,
+}
+
+/// An entry in the template library for a single template.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TemplateLibraryEntry {
+    variables: HashMap<String, VariableSchemaEntry>,
+}
+
+/// Find the template library .lily file in the templates directory.
+/// Scans for .lily files at the root with `lily_type: "template-library"`.
+/// Returns the first one found, or None.
+fn find_template_library(templates_dir: &str) -> Option<PathBuf> {
+    let dir = Path::new(templates_dir);
+    let entries = fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().map(|e| e == "lily").unwrap_or(false) && path.is_file() {
+            if let Ok(content) = fs::read_to_string(&path) {
+                // Quick check for lily_type before full parse
+                if content.contains("\"template-library\"") {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Load the full template library. Returns an empty library if none found.
+fn load_library(templates_dir: &str) -> TemplateLibrary {
+    if let Some(path) = find_template_library(templates_dir) {
+        if let Ok(content) = fs::read_to_string(&path) {
+            if let Ok(lib) = serde_json::from_str::<TemplateLibrary>(&content) {
+                return lib;
+            }
+        }
+    }
+    TemplateLibrary {
+        lily_type: "template-library".to_string(),
+        templates: HashMap::new(),
+    }
+}
+
+/// Save the template library back to disk. If no library file exists yet,
+/// creates one named "_templates.lily" in the templates directory.
+fn save_library(templates_dir: &str, library: &TemplateLibrary) -> Result<(), String> {
+    let path = find_template_library(templates_dir)
+        .unwrap_or_else(|| Path::new(templates_dir).join("_templates.lily"));
+    let content = serde_json::to_string_pretty(library)
+        .map_err(|e| format!("Failed to serialize template library: {}", e))?;
+    lily_file::atomic_write(&path, &content)
+}
+
+/// Legacy: derive the per-template sidecar path (for migration/fallback).
+fn legacy_schema_path(templates_dir: &str, template_rel_path: &str) -> PathBuf {
     let template_path = Path::new(templates_dir).join(template_rel_path);
     let stem = template_path
         .file_stem()
@@ -1795,43 +1853,60 @@ fn schema_path_for_template(templates_dir: &str, template_rel_path: &str) -> Pat
     parent.join(format!("{}.lily", stem))
 }
 
-/// Load the variable schema for a template. Returns a default (empty) schema
-/// if no schema file exists.
+/// Load the variable schema for a template. Reads from the template library
+/// file, falling back to a legacy per-template sidecar if present.
+/// Returns a default (empty) schema if neither exists.
 #[tauri::command]
 pub fn load_template_schema(
     templates_dir: String,
     template_rel_path: String,
 ) -> Result<VariableSchema, String> {
-    let path = schema_path_for_template(&templates_dir, &template_rel_path);
-    if !path.exists() {
-        let template_filename = Path::new(&template_rel_path)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
+    let template_filename = Path::new(&template_rel_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    // Try the library file first
+    let library = load_library(&templates_dir);
+    if let Some(entry) = library.templates.get(&template_rel_path) {
         return Ok(VariableSchema {
+            lily_type: "template-schema".to_string(),
             template_filename,
-            ..Default::default()
+            variables: entry.variables.clone(),
         });
     }
 
-    let content =
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read schema: {}", e))?;
-    let schema: VariableSchema =
-        serde_json::from_str(&content).map_err(|e| format!("Failed to parse schema: {}", e))?;
-    Ok(schema)
+    // Fall back to legacy per-template sidecar
+    let legacy_path = legacy_schema_path(&templates_dir, &template_rel_path);
+    if legacy_path.exists() {
+        let content = fs::read_to_string(&legacy_path)
+            .map_err(|e| format!("Failed to read schema: {}", e))?;
+        let schema: VariableSchema = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse schema: {}", e))?;
+        return Ok(schema);
+    }
+
+    Ok(VariableSchema {
+        template_filename,
+        ..Default::default()
+    })
 }
 
-/// Save the variable schema for a template.
+/// Save the variable schema for a template into the template library file.
 #[tauri::command]
 pub fn save_template_schema(
     templates_dir: String,
     template_rel_path: String,
     schema: VariableSchema,
 ) -> Result<(), String> {
-    let path = schema_path_for_template(&templates_dir, &template_rel_path);
-    let content = serde_json::to_string_pretty(&schema)
-        .map_err(|e| format!("Failed to serialize schema: {}", e))?;
-    lily_file::atomic_write(&path, &content)
+    let mut library = load_library(&templates_dir);
+    library.templates.insert(
+        template_rel_path,
+        TemplateLibraryEntry {
+            variables: schema.variables,
+        },
+    );
+    save_library(&templates_dir, &library)
 }
 
 // ─── Migration ─────────────────────────────────────────────────────────────
@@ -2073,20 +2148,28 @@ pub fn migrate_template_to_sdt(
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default()
         });
-    let schema_path = schema_path_for_template(&templates_dir, &rel_path);
-    let schema_json = serde_json::to_string_pretty(&schema)
-        .map_err(|e| format!("Failed to serialize schema: {}", e))?;
-    lily_file::atomic_write(&schema_path, &schema_json)?;
+    // Save schema to the template library (not a per-template sidecar)
+    let mut library = load_library(&templates_dir);
+    library.templates.insert(
+        rel_path.clone(),
+        TemplateLibraryEntry {
+            variables: schema.variables,
+        },
+    );
+    save_library(&templates_dir, &library)?;
+
+    let lib_path = find_template_library(&templates_dir)
+        .unwrap_or_else(|| Path::new(&templates_dir).join("_templates.lily"));
 
     info!(
         variables = report_entries.len(),
-        schema = %schema_path.display(),
+        schema = %lib_path.display(),
         "Migration complete"
     );
 
     Ok(MigrationReport {
         variables: report_entries,
-        schema_path: schema_path.to_string_lossy().to_string(),
+        schema_path: lib_path.to_string_lossy().to_string(),
     })
 }
 
