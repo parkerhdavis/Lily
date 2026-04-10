@@ -2554,6 +2554,12 @@ function NestedVariableCard({
 
 // ─── Variable Link Dropdown ─────────────────────────────────────────────────
 
+/** A breadcrumb segment in the drill-down path. */
+interface NavCrumb {
+	label: string;
+	key: string;
+}
+
 function VariableEditModal({
 	questionnaire,
 	currentVarName,
@@ -2567,44 +2573,38 @@ function VariableEditModal({
 	onRemove?: () => void;
 	onClose: () => void;
 }) {
-	const [expandedTabs, setExpandedTabs] = useState<Set<string>>(new Set());
-	const [expandedSections, setExpandedSections] = useState<Set<string>>(
-		new Set(),
-	);
-	const [expandedRoles, setExpandedRoles] = useState<Set<string>>(
-		new Set(),
-	);
+	// Drill-down navigation path: [] = root, [{tab}], [{tab},{section}], [{tab},{section},{role}]
+	const [path, setPath] = useState<NavCrumb[]>([]);
+	const [pathHistory, setPathHistory] = useState<NavCrumb[][]>([[]]);
+	const [historyIdx, setHistoryIdx] = useState(0);
+	const [search, setSearch] = useState("");
 
-	const toggle = (
-		setter: React.Dispatch<React.SetStateAction<Set<string>>>,
-		key: string,
-	) => {
-		setter((prev) => {
-			const next = new Set(prev);
-			if (next.has(key)) next.delete(key);
-			else next.add(key);
-			return next;
-		});
+	const navigate = (newPath: NavCrumb[]) => {
+		const trimmed = pathHistory.slice(0, historyIdx + 1);
+		const updated = [...trimmed, newPath];
+		setPathHistory(updated);
+		setHistoryIdx(updated.length - 1);
+		setPath(newPath);
+		setSearch("");
 	};
 
-	// Chevron icon for tree nodes
-	const Chevron = ({ expanded }: { expanded: boolean }) => (
-		<svg
-			xmlns="http://www.w3.org/2000/svg"
-			viewBox="0 0 16 16"
-			fill="currentColor"
-			className={`size-3 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
-		>
-			<path
-				fillRule="evenodd"
-				d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"
-				clipRule="evenodd"
-			/>
-		</svg>
-	);
+	const goBack = () => {
+		if (historyIdx <= 0) return;
+		const newIdx = historyIdx - 1;
+		setHistoryIdx(newIdx);
+		setPath(pathHistory[newIdx]);
+		setSearch("");
+	};
+
+	const goForward = () => {
+		if (historyIdx >= pathHistory.length - 1) return;
+		const newIdx = historyIdx + 1;
+		setHistoryIdx(newIdx);
+		setPath(pathHistory[newIdx]);
+		setSearch("");
+	};
 
 	// Group sections by tab
-	const tabs = questionnaire?.tabs ?? [];
 	const sectionsByTab = useMemo(() => {
 		const map = new Map<string, QuestionnaireSectionDef[]>();
 		if (!questionnaire) return map;
@@ -2616,6 +2616,330 @@ function VariableEditModal({
 		return map;
 	}, [questionnaire]);
 
+	// Build flat list of all selectable items for search
+	const allItems = useMemo(() => {
+		const items: {
+			varName: string;
+			label: string;
+			kind: string;
+			path: string;
+		}[] = [];
+		if (!questionnaire) return items;
+		for (const tab of questionnaire.tabs) {
+			for (const section of sectionsByTab.get(tab.id) ?? []) {
+				for (const q of section.questions) {
+					if (
+						q.kind === "text" ||
+						q.kind === "conditional" ||
+						q.kind === "derived"
+					) {
+						items.push({
+							varName: q.variable,
+							label: q.variable,
+							kind: q.kind,
+							path: `${tab.label} > ${section.title}`,
+						});
+					} else if (q.kind === "contact-role") {
+						for (const [varName, prop] of Object.entries(
+							q.variableMappings,
+						)) {
+							items.push({
+								varName,
+								label: `${q.role} > ${PROPERTY_LABELS[prop] ?? prop}`,
+								kind: "contact",
+								path: `${tab.label} > ${section.title} > ${q.role}`,
+							});
+						}
+					}
+				}
+			}
+		}
+		return items;
+	}, [questionnaire, sectionsByTab]);
+
+	// Filtered search results
+	const searchResults = useMemo(() => {
+		if (!search.trim()) return [];
+		const q = search.toLowerCase();
+		return allItems.filter(
+			(item) =>
+				item.varName.toLowerCase().includes(q) ||
+				item.label.toLowerCase().includes(q) ||
+				item.path.toLowerCase().includes(q),
+		);
+	}, [search, allItems]);
+
+	// Determine what to show at the current path level
+	const depth = path.length;
+	const tabs = questionnaire?.tabs ?? [];
+
+	// Right-arrow icon for drillable items
+	const DrillArrow = () => (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			viewBox="0 0 16 16"
+			fill="currentColor"
+			className="size-3.5 shrink-0 text-base-content/30"
+		>
+			<path
+				fillRule="evenodd"
+				d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"
+				clipRule="evenodd"
+			/>
+		</svg>
+	);
+
+	// Render current level items
+	const renderItems = () => {
+		// If searching, show filtered results
+		if (search.trim()) {
+			if (searchResults.length === 0) {
+				return (
+					<p className="text-sm text-base-content/40 py-4 text-center">
+						No results for &ldquo;{search}&rdquo;
+					</p>
+				);
+			}
+			return searchResults.map((item) => {
+				const isCurrent = item.varName === currentVarName;
+				return (
+					<button
+						key={item.varName}
+						type="button"
+						className={`w-full text-left px-3 py-2 hover:bg-base-200 rounded-lg flex items-center gap-3 ${
+							isCurrent ? "text-primary bg-primary/5" : ""
+						}`}
+						onClick={() => onSelect(item.varName)}
+					>
+						<div className="flex-1 min-w-0">
+							<div className={`text-sm ${isCurrent ? "font-medium" : ""}`}>
+								{item.label}
+							</div>
+							<div className="text-xs text-base-content/40 truncate">
+								{item.path}
+							</div>
+						</div>
+						<span className="badge badge-xs badge-outline shrink-0">
+							{item.kind}
+						</span>
+					</button>
+				);
+			});
+		}
+
+		// Root level: show questionnaire tabs + local + remove
+		if (depth === 0) {
+			return (
+				<>
+					{questionnaire &&
+						tabs.map((tab) => {
+							const sections = (
+								sectionsByTab.get(tab.id) ?? []
+							).filter(
+								(s) =>
+									s.questions.length > 0 ||
+									s.kind === "contacts",
+							);
+							if (sections.length === 0) return null;
+							return (
+								<button
+									key={tab.id}
+									type="button"
+									className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg flex items-center gap-3 text-sm"
+									onClick={() =>
+										navigate([
+											{
+												label: tab.label,
+												key: tab.id,
+											},
+										])
+									}
+								>
+									<span className="flex-1 font-medium">
+										{tab.label}
+									</span>
+									<span className="text-xs text-base-content/40">
+										{sections.length} section
+										{sections.length !== 1 ? "s" : ""}
+									</span>
+									<DrillArrow />
+								</button>
+							);
+						})}
+
+					{questionnaire && (
+						<div className="border-t border-base-300 my-2" />
+					)}
+
+					<button
+						type="button"
+						className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg text-sm"
+						onClick={() => onSelect(currentVarName)}
+					>
+						Keep as local variable
+					</button>
+
+					{onRemove && (
+						<>
+							<div className="border-t border-base-300 my-2" />
+							<button
+								type="button"
+								className="w-full text-left px-3 py-2.5 hover:bg-error/10 text-error/70 hover:text-error transition-colors rounded-lg text-sm"
+								onClick={onRemove}
+							>
+								Remove variable...
+							</button>
+						</>
+					)}
+				</>
+			);
+		}
+
+		// Tab level: show sections within the selected tab
+		if (depth === 1) {
+			const tabId = path[0].key;
+			const sections = (sectionsByTab.get(tabId) ?? []).filter(
+				(s) => s.questions.length > 0 || s.kind === "contacts",
+			);
+			return sections.map((section) => (
+				<button
+					key={section.title}
+					type="button"
+					className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg flex items-center gap-3 text-sm"
+					onClick={() =>
+						navigate([
+							...path,
+							{ label: section.title, key: section.title },
+						])
+					}
+				>
+					<span className="flex-1 font-medium">
+						{section.title}
+					</span>
+					{section.description && (
+						<span className="text-xs text-base-content/40 truncate max-w-48">
+							{section.description}
+						</span>
+					)}
+					<DrillArrow />
+				</button>
+			));
+		}
+
+		// Section level: show variables and contact roles
+		if (depth === 2) {
+			const tabId = path[0].key;
+			const sectionTitle = path[1].key;
+			const section = (sectionsByTab.get(tabId) ?? []).find(
+				(s) => s.title === sectionTitle,
+			);
+			if (!section) return null;
+
+			return section.questions.map((q) => {
+				if (
+					q.kind === "text" ||
+					q.kind === "conditional" ||
+					q.kind === "derived"
+				) {
+					const isCurrent = q.variable === currentVarName;
+					return (
+						<button
+							key={q.variable}
+							type="button"
+							className={`w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg flex items-center gap-3 text-sm ${
+								isCurrent ? "text-primary bg-primary/5" : ""
+							}`}
+							onClick={() => onSelect(q.variable)}
+						>
+							<span
+								className={`flex-1 ${isCurrent ? "font-medium" : ""}`}
+							>
+								{q.variable}
+							</span>
+							{q.kind !== "text" && (
+								<span className="badge badge-xs badge-info badge-outline">
+									{q.kind}
+								</span>
+							)}
+						</button>
+					);
+				}
+				if (q.kind === "contact-role") {
+					const memberCount = Object.keys(
+						q.variableMappings,
+					).length;
+					return (
+						<button
+							key={q.role}
+							type="button"
+							className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg flex items-center gap-3 text-sm"
+							onClick={() =>
+								navigate([
+									...path,
+									{ label: q.role, key: q.role },
+								])
+							}
+						>
+							<span className="flex-1 font-medium">
+								{q.role}
+							</span>
+							<span className="badge badge-xs badge-secondary badge-outline">
+								contact
+							</span>
+							<span className="text-xs text-base-content/40">
+								{memberCount} field
+								{memberCount !== 1 ? "s" : ""}
+							</span>
+							<DrillArrow />
+						</button>
+					);
+				}
+				return null;
+			});
+		}
+
+		// Role level: show contact properties
+		if (depth === 3) {
+			const tabId = path[0].key;
+			const sectionTitle = path[1].key;
+			const roleName = path[2].key;
+			const section = (sectionsByTab.get(tabId) ?? []).find(
+				(s) => s.title === sectionTitle,
+			);
+			const roleQ = section?.questions.find(
+				(q) => q.kind === "contact-role" && q.role === roleName,
+			);
+			if (!roleQ || roleQ.kind !== "contact-role") return null;
+
+			return Object.entries(roleQ.variableMappings).map(
+				([varName, prop]) => {
+					const isCurrent = varName === currentVarName;
+					return (
+						<button
+							key={varName}
+							type="button"
+							className={`w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg flex items-center gap-3 text-sm ${
+								isCurrent ? "text-primary bg-primary/5" : ""
+							}`}
+							onClick={() => onSelect(varName)}
+						>
+							<span
+								className={`flex-1 ${isCurrent ? "font-medium" : ""}`}
+							>
+								{PROPERTY_LABELS[prop] ?? prop}
+							</span>
+							<span className="text-xs text-base-content/40">
+								{varName}
+							</span>
+						</button>
+					);
+				},
+			);
+		}
+
+		return null;
+	};
+
 	return (
 		// biome-ignore lint/a11y/useKeyWithClickEvents: modal backdrop
 		<dialog
@@ -2624,265 +2948,111 @@ function VariableEditModal({
 				if (e.target === e.currentTarget) onClose();
 			}}
 		>
-			<div className="modal-box max-w-xl max-h-[80vh] flex flex-col">
-				<h3 className="font-bold text-lg mb-1">Edit Variable</h3>
-				<p className="text-sm text-base-content/60 mb-4">
-					Currently:{" "}
-					<code className="bg-base-200 px-1.5 py-0.5 rounded">
+			<div className="modal-box max-w-2xl w-full h-[70vh] flex flex-col">
+				{/* Header */}
+				<div className="flex items-center gap-3 mb-3">
+					<h3 className="font-bold text-lg">Edit Variable</h3>
+					<code className="bg-base-200 px-2 py-0.5 rounded text-sm">
 						{currentVarName}
 					</code>
-				</p>
-
-				<div className="flex-1 overflow-y-auto space-y-1 -mx-2 px-2">
-					{/* Questionnaire hierarchy */}
-					{questionnaire && tabs.length > 0 && (
-						<div>
-							<div className="text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-2">
-								{questionnaire.name}
-							</div>
-							{tabs.map((tab) => {
-								const sections = (
-									sectionsByTab.get(tab.id) ?? []
-								).filter(
-									(s) =>
-										s.questions.length > 0 ||
-										s.kind === "contacts",
-								);
-								if (sections.length === 0) return null;
-								const tabExpanded = expandedTabs.has(tab.id);
-								return (
-									<div key={tab.id} className="mb-1">
-										{/* Tab level */}
-										<button
-											type="button"
-											className="w-full text-left px-2 py-1.5 hover:bg-base-200 rounded flex items-center gap-2 font-medium text-sm"
-											onClick={() =>
-												toggle(
-													setExpandedTabs,
-													tab.id,
-												)
-											}
-										>
-											<Chevron
-												expanded={tabExpanded}
-											/>
-											{tab.label}
-										</button>
-										{tabExpanded && (
-											<div className="ml-3">
-												{sections.map((section) => {
-													const secExpanded =
-														expandedSections.has(
-															section.title,
-														);
-													return (
-														<div
-															key={
-																section.title
-															}
-															className="mb-0.5"
-														>
-															{/* Section level */}
-															<button
-																type="button"
-																className="w-full text-left px-2 py-1 hover:bg-base-200 rounded flex items-center gap-2 text-sm text-base-content/70"
-																onClick={() =>
-																	toggle(
-																		setExpandedSections,
-																		section.title,
-																	)
-																}
-															>
-																<Chevron
-																	expanded={
-																		secExpanded
-																	}
-																/>
-																{
-																	section.title
-																}
-															</button>
-															{secExpanded && (
-																<div className="ml-5">
-																	{section.questions.map(
-																		(
-																			q,
-																		) => {
-																			if (
-																				q.kind ===
-																					"text" ||
-																				q.kind ===
-																					"conditional" ||
-																				q.kind ===
-																					"derived"
-																			) {
-																				const isCurrent =
-																					q.variable ===
-																					currentVarName;
-																				return (
-																					<button
-																						key={
-																							q.variable
-																						}
-																						type="button"
-																						className={`w-full text-left px-2 py-1 hover:bg-base-200 rounded text-sm flex items-center gap-2 ${
-																							isCurrent
-																								? "text-primary font-medium bg-primary/5"
-																								: ""
-																						}`}
-																						onClick={() =>
-																							onSelect(
-																								q.variable,
-																							)
-																						}
-																					>
-																						<span className="flex-1">
-																							{
-																								q.variable
-																							}
-																						</span>
-																						{q.kind !==
-																							"text" && (
-																							<span className="badge badge-xs badge-info badge-outline">
-																								{
-																									q.kind
-																								}
-																							</span>
-																						)}
-																					</button>
-																				);
-																			}
-																			if (
-																				q.kind ===
-																				"contact-role"
-																			) {
-																				const roleExpanded =
-																					expandedRoles.has(
-																						q.role,
-																					);
-																				return (
-																					<div
-																						key={
-																							q.role
-																						}
-																					>
-																						{/* Role level */}
-																						<button
-																							type="button"
-																							className="w-full text-left px-2 py-1 hover:bg-base-200 rounded text-sm flex items-center gap-2"
-																							onClick={() =>
-																								toggle(
-																									setExpandedRoles,
-																									q.role,
-																								)
-																							}
-																						>
-																							<Chevron
-																								expanded={
-																									roleExpanded
-																								}
-																							/>
-																							<span className="flex-1">
-																								{
-																									q.role
-																								}
-																							</span>
-																							<span className="badge badge-xs badge-secondary badge-outline">
-																								contact
-																							</span>
-																						</button>
-																						{roleExpanded && (
-																							<div className="ml-5">
-																								{Object.entries(
-																									q.variableMappings,
-																								).map(
-																									([
-																										varName,
-																										prop,
-																									]) => {
-																										const isCurrent =
-																											varName ===
-																											currentVarName;
-																										return (
-																											<button
-																												key={
-																													varName
-																												}
-																												type="button"
-																												className={`w-full text-left px-2 py-1 hover:bg-base-200 rounded text-sm ${
-																													isCurrent
-																														? "text-primary font-medium bg-primary/5"
-																														: ""
-																												}`}
-																												onClick={() =>
-																													onSelect(
-																														varName,
-																													)
-																												}
-																											>
-																												{PROPERTY_LABELS[
-																													prop
-																												] ??
-																													prop}
-																											</button>
-																										);
-																									},
-																								)}
-																							</div>
-																						)}
-																					</div>
-																				);
-																			}
-																			return null;
-																		},
-																	)}
-																</div>
-															)}
-														</div>
-													);
-												})}
-											</div>
-										)}
-									</div>
-								);
-							})}
-						</div>
-					)}
-
-					{/* Divider */}
-					{questionnaire && (
-						<div className="border-t border-base-300 my-3" />
-					)}
-
-					{/* Local variable */}
-					<div>
-						<div className="text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-2">
-							Local Variable
-						</div>
-						<button
-							type="button"
-							className="w-full text-left px-2 py-1 hover:bg-base-200 rounded text-sm"
-							onClick={() => onSelect(currentVarName)}
-						>
-							Keep as local ({currentVarName})
-						</button>
-					</div>
-
-					{/* Remove */}
-					{onRemove && (
-						<>
-							<div className="border-t border-base-300 my-3" />
-							<button
-								type="button"
-								className="w-full text-left px-2 py-1.5 hover:bg-error/10 text-error/70 hover:text-error transition-colors rounded text-sm"
-								onClick={onRemove}
-							>
-								Remove variable...
-							</button>
-						</>
-					)}
 				</div>
 
+				{/* Search */}
+				<input
+					type="text"
+					className="input input-bordered input-sm w-full mb-3"
+					placeholder="Search variables..."
+					value={search}
+					onChange={(e) => setSearch(e.target.value)}
+					// biome-ignore lint/a11y/noAutofocus: modal search focus
+					autoFocus
+				/>
+
+				{/* Breadcrumbs + back/forward */}
+				{!search.trim() && (
+					<div className="flex items-center gap-1 mb-3 text-sm min-h-8">
+						<button
+							type="button"
+							className="btn btn-ghost btn-xs btn-square"
+							onClick={goBack}
+							disabled={historyIdx <= 0}
+							title="Back"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 16 16"
+								fill="currentColor"
+								className="size-3.5"
+							>
+								<path
+									fillRule="evenodd"
+									d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z"
+									clipRule="evenodd"
+								/>
+							</svg>
+						</button>
+						<button
+							type="button"
+							className="btn btn-ghost btn-xs btn-square"
+							onClick={goForward}
+							disabled={
+								historyIdx >= pathHistory.length - 1
+							}
+							title="Forward"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 16 16"
+								fill="currentColor"
+								className="size-3.5"
+							>
+								<path
+									fillRule="evenodd"
+									d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"
+									clipRule="evenodd"
+								/>
+							</svg>
+						</button>
+
+						<div className="flex items-center gap-1 text-base-content/60 ml-1 overflow-hidden">
+							<button
+								type="button"
+								className={`hover:text-primary transition-colors shrink-0 ${path.length === 0 ? "text-base-content font-medium" : ""}`}
+								onClick={() => navigate([])}
+							>
+								{questionnaire?.name ?? "Root"}
+							</button>
+							{path.map((crumb, i) => (
+								<span
+									key={crumb.key}
+									className="flex items-center gap-1 shrink-0"
+								>
+									<span className="text-base-content/30">
+										/
+									</span>
+									<button
+										type="button"
+										className={`hover:text-primary transition-colors ${i === path.length - 1 ? "text-base-content font-medium" : ""}`}
+										onClick={() =>
+											navigate(
+												path.slice(0, i + 1),
+											)
+										}
+									>
+										{crumb.label}
+									</button>
+								</span>
+							))}
+						</div>
+					</div>
+				)}
+
+				{/* Content area */}
+				<div className="flex-1 overflow-y-auto -mx-2 px-2 space-y-0.5">
+					{renderItems()}
+				</div>
+
+				{/* Footer */}
 				<div className="modal-action">
 					<button
 						type="button"
