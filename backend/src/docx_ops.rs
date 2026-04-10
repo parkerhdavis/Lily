@@ -972,6 +972,440 @@ pub fn get_template_text_occurrences(
     Ok(occurrences)
 }
 
+// ─── Template editing session ───────────────────────────────────────────────
+
+/// Start a template editing session by creating backup copies of the template
+/// and its schema sidecar. If backups already exist (from an interrupted
+/// session), they are left in place.
+#[tauri::command]
+pub fn begin_template_editing(
+    template_path: String,
+    templates_dir: String,
+    template_rel_path: String,
+) -> Result<(), String> {
+    let docx = Path::new(&template_path);
+    let bak = docx.with_extension("docx.bak");
+    if !bak.exists() {
+        fs::copy(docx, &bak).map_err(|e| format!("Failed to create template backup: {}", e))?;
+    }
+
+    let schema = schema_path_for_template(&templates_dir, &template_rel_path);
+    if schema.exists() {
+        let schema_bak = schema.with_extension("lily.bak");
+        if !schema_bak.exists() {
+            fs::copy(&schema, &schema_bak)
+                .map_err(|e| format!("Failed to create schema backup: {}", e))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Confirm (save) template edits by deleting the backup copies.
+#[tauri::command]
+pub fn confirm_template_edits(
+    template_path: String,
+    templates_dir: String,
+    template_rel_path: String,
+) -> Result<(), String> {
+    let bak = Path::new(&template_path).with_extension("docx.bak");
+    if bak.exists() {
+        fs::remove_file(&bak)
+            .map_err(|e| format!("Failed to remove template backup: {}", e))?;
+    }
+
+    let schema = schema_path_for_template(&templates_dir, &template_rel_path);
+    let schema_bak = schema.with_extension("lily.bak");
+    if schema_bak.exists() {
+        fs::remove_file(&schema_bak)
+            .map_err(|e| format!("Failed to remove schema backup: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// Discard template edits by restoring from backup copies, then deleting them.
+#[tauri::command]
+pub fn discard_template_edits(
+    template_path: String,
+    templates_dir: String,
+    template_rel_path: String,
+) -> Result<(), String> {
+    let docx = Path::new(&template_path).to_path_buf();
+    let bak = docx.with_extension("docx.bak");
+    if bak.exists() {
+        fs::copy(&bak, &docx)
+            .map_err(|e| format!("Failed to restore template from backup: {}", e))?;
+        fs::remove_file(&bak)
+            .map_err(|e| format!("Failed to remove template backup: {}", e))?;
+    }
+
+    let schema = schema_path_for_template(&templates_dir, &template_rel_path);
+    let schema_bak = schema.with_extension("lily.bak");
+    if schema_bak.exists() {
+        fs::copy(&schema_bak, &schema)
+            .map_err(|e| format!("Failed to restore schema from backup: {}", e))?;
+        fs::remove_file(&schema_bak)
+            .map_err(|e| format!("Failed to remove schema backup: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// Insert XML content at a specific paragraph + character offset position.
+///
+/// Finds the target paragraph (0-based index) and character offset within
+/// that paragraph's concatenated text, then splits the containing `<w:r>`
+/// run and inserts `xml_to_insert` between the two halves.
+///
+/// Returns the modified XML string.
+fn insert_xml_at_position(
+    xml: &str,
+    paragraph_index: usize,
+    char_offset: usize,
+    xml_to_insert: &str,
+) -> Result<String, String> {
+    let maps = build_paragraph_text_maps(xml);
+    let para = maps
+        .get(paragraph_index)
+        .ok_or_else(|| format!("Paragraph index {} out of range ({})", paragraph_index, maps.len()))?;
+
+    // If char_offset is beyond the text, insert at the end
+    let offset = char_offset.min(para.flat_text.len());
+
+    // Find the segment containing this offset
+    if para.segments.is_empty() {
+        return Err("Paragraph has no text segments".to_string());
+    }
+
+    // Find which segment the offset falls in (or insert at the end of last segment)
+    let (_seg_idx, seg) = if offset == 0 {
+        // Insert before the first segment — find the paragraph's first run and
+        // insert just before it.
+        (0, &para.segments[0])
+    } else if offset >= para.flat_text.len() {
+        // Insert after the last segment
+        let last = para.segments.len() - 1;
+        (last, &para.segments[last])
+    } else {
+        let mut found = None;
+        for (i, s) in para.segments.iter().enumerate() {
+            if offset >= s.text_start && offset <= s.text_end {
+                found = Some((i, s));
+                break;
+            }
+        }
+        found.ok_or_else(|| "Could not find segment for offset".to_string())?
+    };
+
+    let mut result = xml.to_string();
+
+    if offset == 0 {
+        // Insert before the first <w:t> content of this paragraph.
+        // Find the <w:r> element that contains the first segment.
+        let run_re = Regex::new(r#"(?s)<w:r\b[^>]*>"#).expect("invalid regex");
+        // Search backwards from the segment's xml_content_start to find the run start
+        let before_seg = &xml[..seg.xml_content_start];
+        if let Some(m) = run_re.find_iter(before_seg).last() {
+            result.insert_str(m.start(), xml_to_insert);
+        } else {
+            // Fallback: insert right before the segment content
+            result.insert_str(seg.xml_content_start, xml_to_insert);
+        }
+    } else if offset >= para.flat_text.len() {
+        // Insert after the last run in the paragraph. Find the </w:r> following
+        // the last segment's content.
+        let after_content = &xml[seg.xml_content_end..];
+        if let Some(pos) = after_content.find("</w:r>") {
+            let insert_pos = seg.xml_content_end + pos + "</w:r>".len();
+            result.insert_str(insert_pos, xml_to_insert);
+        } else {
+            result.insert_str(seg.xml_content_end, xml_to_insert);
+        }
+    } else {
+        // Split within a segment. We need to:
+        // 1. Find the containing <w:r>...</w:r> element
+        // 2. Split the text at the offset
+        // 3. Create two runs (before and after) with the same rPr
+        // 4. Insert the SDT XML between them
+        let local_offset = offset - seg.text_start;
+        let original_content = &xml[seg.xml_content_start..seg.xml_content_end];
+        let decoded = original_content
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'");
+
+        let before_text = &decoded[..local_offset];
+        let after_text = &decoded[local_offset..];
+
+        // Find the enclosing <w:r>...</w:r> that contains this <w:t>
+        let run_re = Regex::new(r#"(?s)<w:r\b[^>]*>.*?</w:r>"#).expect("invalid regex");
+        let rpr_re = Regex::new(r#"(?s)<w:rPr>.*?</w:rPr>"#).expect("invalid regex");
+
+        let mut run_start = 0;
+        let mut run_end = 0;
+        let mut rpr = String::new();
+
+        for m in run_re.find_iter(xml) {
+            if m.start() <= seg.xml_content_start && m.end() >= seg.xml_content_end {
+                run_start = m.start();
+                run_end = m.end();
+                if let Some(rpr_m) = rpr_re.find(m.as_str()) {
+                    rpr = rpr_m.as_str().to_string();
+                }
+                break;
+            }
+        }
+
+        if run_start == run_end {
+            return Err("Could not find enclosing run element".to_string());
+        }
+
+        // Build the replacement: before_run + SDT + after_run
+        let mut replacement = String::new();
+        if !before_text.is_empty() {
+            replacement.push_str(&format!(
+                "<w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r>",
+                rpr,
+                escape_xml_text(before_text)
+            ));
+        }
+        replacement.push_str(xml_to_insert);
+        if !after_text.is_empty() {
+            replacement.push_str(&format!(
+                "<w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r>",
+                rpr,
+                escape_xml_text(after_text)
+            ));
+        }
+
+        result.replace_range(run_start..run_end, &replacement);
+    }
+
+    Ok(result)
+}
+
+/// Move an SDT to a new position within the document.
+///
+/// Extracts the SDT identified by `sdt_id`, removes it from its current
+/// position, and inserts it at the target paragraph and character offset.
+/// Returns the updated variable list.
+#[tauri::command]
+pub fn move_template_sdt(
+    template_path: String,
+    sdt_id: String,
+    target_paragraph_index: usize,
+    target_char_offset: usize,
+) -> Result<Vec<VariableInfo>, String> {
+    info!(%template_path, %sdt_id, %target_paragraph_index, %target_char_offset, "Moving template SDT");
+
+    let file_bytes =
+        fs::read(&template_path).map_err(|e| format!("Failed to read docx: {}", e))?;
+    let cursor = Cursor::new(file_bytes);
+    let mut archive =
+        ZipArchive::new(cursor).map_err(|e| format!("Failed to open docx as zip: {}", e))?;
+
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("Failed to read zip entry: {}", e))?;
+        let name = entry.name().to_string();
+        let mut buf = Vec::new();
+        entry
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("Failed to read entry content: {}", e))?;
+        entries.push((name, buf));
+    }
+
+    // Find and extract the SDT from document.xml
+    let sdt_re = Regex::new(&format!(
+        r#"(?s)<w:sdt>.*?<w:id\s+w:val="{}"\s*/>.*?</w:sdt>"#,
+        regex::escape(&sdt_id)
+    ))
+    .map_err(|e| format!("Invalid regex: {}", e))?;
+
+    for (name, content) in entries.iter_mut() {
+        if name != "word/document.xml" {
+            continue;
+        }
+
+        let xml_str = String::from_utf8_lossy(content).to_string();
+
+        // Find the SDT
+        let sdt_match = sdt_re
+            .find(&xml_str)
+            .ok_or_else(|| format!("SDT with id {} not found", sdt_id))?;
+        let sdt_xml = sdt_match.as_str().to_string();
+
+        // Remove SDT from current position
+        let xml_without = format!(
+            "{}{}",
+            &xml_str[..sdt_match.start()],
+            &xml_str[sdt_match.end()..]
+        );
+
+        // Insert at target position
+        let modified = insert_xml_at_position(
+            &xml_without,
+            target_paragraph_index,
+            target_char_offset,
+            &sdt_xml,
+        )?;
+
+        *content = modified.into_bytes();
+    }
+
+    // Write back
+    let mut out_buf = Vec::new();
+    {
+        let cursor_out = Cursor::new(&mut out_buf);
+        let mut writer = ZipWriter::new(cursor_out);
+        let options = SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in &entries {
+            writer
+                .start_file(name, options)
+                .map_err(|e| format!("Zip write error: {}", e))?;
+            writer
+                .write_all(content)
+                .map_err(|e| format!("Zip write error: {}", e))?;
+        }
+        writer
+            .finish()
+            .map_err(|e| format!("Zip finish error: {}", e))?;
+    }
+    fs::write(&template_path, &out_buf)
+        .map_err(|e| format!("Failed to write docx: {}", e))?;
+
+    extract_variables(template_path)
+}
+
+/// Insert a new SDT at a specific position in the document, inheriting the
+/// formatting of the surrounding text.
+///
+/// Creates an empty SDT (with the variable display name as placeholder text)
+/// at the specified paragraph + character offset. The run properties (`<w:rPr>`)
+/// are copied from the nearest text run at the insertion point.
+#[tauri::command]
+pub fn insert_sdt_at_position(
+    template_path: String,
+    variable_name: String,
+    paragraph_index: usize,
+    char_offset: usize,
+) -> Result<Vec<VariableInfo>, String> {
+    info!(%template_path, %variable_name, %paragraph_index, %char_offset, "Inserting SDT at position");
+
+    let file_bytes =
+        fs::read(&template_path).map_err(|e| format!("Failed to read docx: {}", e))?;
+    let cursor = Cursor::new(file_bytes);
+    let mut archive =
+        ZipArchive::new(cursor).map_err(|e| format!("Failed to open docx as zip: {}", e))?;
+
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("Failed to read zip entry: {}", e))?;
+        let name = entry.name().to_string();
+        let mut buf = Vec::new();
+        entry
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("Failed to read entry content: {}", e))?;
+        entries.push((name, buf));
+    }
+
+    for (name, content) in entries.iter_mut() {
+        if name != "word/document.xml" {
+            continue;
+        }
+
+        let xml_str = String::from_utf8_lossy(content).to_string();
+
+        // Find max ID for unique SDT ID generation
+        let max_id = find_max_id(&xml_str);
+        let new_id = max_id + 1;
+
+        // Extract run properties from the run at/near the target position
+        let maps = build_paragraph_text_maps(&xml_str);
+        let rpr = if let Some(para) = maps.get(paragraph_index) {
+            extract_rpr_at_offset(&xml_str, para, char_offset)
+        } else {
+            String::new()
+        };
+
+        // Build the SDT XML
+        let escaped_name = escape_xml_text(&variable_name);
+        let sdt_xml = format!(
+            "<w:sdt><w:sdtPr><w:id w:val=\"{}\"/><w:tag w:val=\"{}{}\"/><w:alias w:val=\"{}\"/></w:sdtPr><w:sdtContent><w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:sdtContent></w:sdt>",
+            new_id, SDT_TAG_PREFIX, escaped_name, escaped_name, rpr, escaped_name
+        );
+
+        // Insert at position
+        let modified =
+            insert_xml_at_position(&xml_str, paragraph_index, char_offset, &sdt_xml)?;
+
+        *content = modified.into_bytes();
+    }
+
+    // Write back
+    let mut out_buf = Vec::new();
+    {
+        let cursor_out = Cursor::new(&mut out_buf);
+        let mut writer = ZipWriter::new(cursor_out);
+        let options = SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in &entries {
+            writer
+                .start_file(name, options)
+                .map_err(|e| format!("Zip write error: {}", e))?;
+            writer
+                .write_all(content)
+                .map_err(|e| format!("Zip write error: {}", e))?;
+        }
+        writer
+            .finish()
+            .map_err(|e| format!("Zip finish error: {}", e))?;
+    }
+    fs::write(&template_path, &out_buf)
+        .map_err(|e| format!("Failed to write docx: {}", e))?;
+
+    extract_variables(template_path)
+}
+
+/// Extract `<w:rPr>` from the run at or near a given character offset in a
+/// paragraph. Falls back to empty string if no run properties found.
+fn extract_rpr_at_offset(xml: &str, para: &ParagraphTextMap, char_offset: usize) -> String {
+    let rpr_re = Regex::new(r#"(?s)<w:rPr>.*?</w:rPr>"#).expect("invalid regex");
+    let run_re = Regex::new(r#"(?s)<w:r\b[^>]*>.*?</w:r>"#).expect("invalid regex");
+
+    // Find the segment containing or nearest to the offset
+    let target_seg = if para.segments.is_empty() {
+        return String::new();
+    } else if char_offset >= para.flat_text.len() {
+        &para.segments[para.segments.len() - 1]
+    } else {
+        para.segments
+            .iter()
+            .find(|s| char_offset >= s.text_start && char_offset <= s.text_end)
+            .unwrap_or(&para.segments[0])
+    };
+
+    // Find the run containing this segment
+    for m in run_re.find_iter(xml) {
+        if m.start() <= target_seg.xml_content_start && m.end() >= target_seg.xml_content_end {
+            if let Some(rpr_m) = rpr_re.find(m.as_str()) {
+                return rpr_m.as_str().to_string();
+            }
+            return String::new();
+        }
+    }
+
+    String::new()
+}
+
 /// Replace text in a template with a `lily:` SDT content control.
 ///
 /// Finds the `search_text` in the document XML, replaces it with an SDT
@@ -1201,6 +1635,124 @@ pub fn remove_template_variable(
                 "<w:r>{}<w:t xml:space=\"preserve\">{}</w:t></w:r>",
                 rpr, escaped_replacement
             )
+        });
+
+        *content = modified.into_owned().into_bytes();
+    }
+
+    let mut output = Cursor::new(Vec::new());
+    {
+        let mut writer = ZipWriter::new(&mut output);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in &entries {
+            writer
+                .start_file(name, options)
+                .map_err(|e| format!("Failed to write zip entry: {}", e))?;
+            writer
+                .write_all(content)
+                .map_err(|e| format!("Failed to write content: {}", e))?;
+        }
+        writer
+            .finish()
+            .map_err(|e| format!("Failed to finalize zip: {}", e))?;
+    }
+    fs::write(&template_path, output.into_inner())
+        .map_err(|e| format!("Failed to write docx: {}", e))?;
+
+    extract_variables(template_path)
+}
+
+/// Rename a template variable by changing its SDT tag, alias, and content text.
+/// All occurrences of the variable are renamed across document, headers, and footers.
+/// Returns the updated list of variables.
+#[tauri::command]
+pub fn rename_template_variable(
+    template_path: String,
+    old_name: String,
+    new_name: String,
+) -> Result<Vec<VariableInfo>, String> {
+    info!(%template_path, %old_name, %new_name, "Renaming template variable");
+
+    let file_bytes =
+        fs::read(&template_path).map_err(|e| format!("Failed to read docx: {}", e))?;
+    let cursor = Cursor::new(file_bytes);
+    let mut archive =
+        ZipArchive::new(cursor).map_err(|e| format!("Failed to open docx as zip: {}", e))?;
+
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("Failed to read zip entry: {}", e))?;
+        let name = entry.name().to_string();
+        let mut buf = Vec::new();
+        entry
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("Failed to read entry content: {}", e))?;
+        entries.push((name, buf));
+    }
+
+    let escaped_old = escape_xml_text(&old_name);
+    let escaped_new = escape_xml_text(&new_name);
+
+    // Match SDTs with lily: or lily-cond: tags for the old variable name
+    let sdt_pattern = format!(
+        r#"(?s)<w:sdt>(.*?<w:tag\s+w:val="(?:lily:|lily-cond:){}".*?)</w:sdt>"#,
+        regex::escape(&escaped_old)
+    );
+    let sdt_re = Regex::new(&sdt_pattern).map_err(|e| format!("Invalid regex: {}", e))?;
+
+    // Patterns to update tag, alias, and content text within each SDT
+    let tag_re = Regex::new(&format!(
+        r#"<w:tag\s+w:val="(lily:|lily-cond:){}"/>"#,
+        regex::escape(&escaped_old)
+    ))
+    .map_err(|e| format!("Invalid regex: {}", e))?;
+    let alias_re = Regex::new(&format!(
+        r#"<w:alias\s+w:val="{}"/>"#,
+        regex::escape(&escaped_old)
+    ))
+    .map_err(|e| format!("Invalid regex: {}", e))?;
+
+    for (name, content) in entries.iter_mut() {
+        if name != "word/document.xml"
+            && !name.starts_with("word/header")
+            && !name.starts_with("word/footer")
+        {
+            continue;
+        }
+
+        let xml_str = String::from_utf8_lossy(content).to_string();
+        if sdt_re.find(&xml_str).is_none() {
+            continue;
+        }
+
+        // Replace each matching SDT: update tag, alias, and content text
+        let modified = sdt_re.replace_all(&xml_str, |caps: &regex::Captures| {
+            let mut sdt = caps[0].to_string();
+            // Update tag value (preserve lily: or lily-cond: prefix)
+            sdt = tag_re
+                .replace_all(&sdt, |tcaps: &regex::Captures| {
+                    format!("<w:tag w:val=\"{}{}\"/>", &tcaps[1], escaped_new)
+                })
+                .to_string();
+            // Update alias value
+            sdt = alias_re
+                .replace_all(&sdt, &format!("<w:alias w:val=\"{}\"/>", escaped_new))
+                .to_string();
+            // Update the display text inside <w:t> within <w:sdtContent>
+            // The content text matches the old display name
+            sdt = sdt.replace(
+                &format!("<w:t xml:space=\"preserve\">{}</w:t>", escaped_old),
+                &format!("<w:t xml:space=\"preserve\">{}</w:t>", escaped_new),
+            );
+            // Also handle without xml:space attribute
+            sdt = sdt.replace(
+                &format!("<w:t>{}</w:t>", escaped_old),
+                &format!("<w:t>{}</w:t>", escaped_new),
+            );
+            sdt
         });
 
         *content = modified.into_owned().into_bytes();
@@ -3043,7 +3595,11 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
     let mut in_sdt = false;
     let mut in_sdt_pr = false;
     let mut sdt_var_name: Option<String> = None;
+    let mut sdt_id: Option<String> = None;
     let mut in_sdt_content = false;
+
+    // Paragraph index counter for position-aware HTML output
+    let mut para_idx: usize = 0;
 
     // Table state
     let mut in_table = false;
@@ -3227,9 +3783,17 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                     "sdt" => {
                         in_sdt = true;
                         sdt_var_name = None;
+                        sdt_id = None;
                     }
                     "sdtPr" if in_sdt => {
                         in_sdt_pr = true;
+                    }
+                    "id" if in_sdt_pr => {
+                        for attr in &attributes {
+                            if attr.name.local_name == "val" {
+                                sdt_id = Some(attr.value.clone());
+                            }
+                        }
                     }
                     "tag" if in_sdt_pr => {
                         for attr in &attributes {
@@ -3704,6 +4268,9 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                         para_content.push_str(&current_para);
                     }
 
+                    let para_idx_attr = format!(" data-para-idx=\"{}\"", para_idx);
+                    para_idx += 1;
+
                     if in_tc {
                         // Inside a table cell: collect paragraphs for later emission
                         if para_content.is_empty() {
@@ -3712,11 +4279,11 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                             tc_paras.push(para_content);
                         }
                     } else if para_content.is_empty() && list_label.is_none() {
-                        html.push_str(&format!("<{}{}>", tag, style_attr));
+                        html.push_str(&format!("<{}{}{}>", tag, para_idx_attr, style_attr));
                         html.push_str("&nbsp;");
                         html.push_str(&format!("</{}>", tag));
                     } else {
-                        html.push_str(&format!("<{}{}>", tag, style_attr));
+                        html.push_str(&format!("<{}{}{}>", tag, para_idx_attr, style_attr));
                         html.push_str(&para_content);
                         html.push_str(&format!("</{}>", tag));
                     }
@@ -3733,9 +4300,13 @@ fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &Styl
                         let escaped = escape_html(&text);
                         if let Some(ref var_name) = sdt_var_name {
                             let canonical = var_name.to_lowercase();
+                            let id_attr = match &sdt_id {
+                                Some(id) => format!(" data-sdt-id=\"{}\"", escape_html(id)),
+                                None => String::new(),
+                            };
                             format!(
-                                "<span class=\"variable-highlight filled\" data-variable=\"{}\" data-original-case=\"{}\">{}</span>",
-                                escape_html(&canonical), escape_html(var_name), escaped
+                                "<span class=\"variable-highlight filled\" data-variable=\"{}\" data-original-case=\"{}\"{}>{}</span>",
+                                escape_html(&canonical), escape_html(var_name), id_attr, escaped
                             )
                         } else {
                             escaped

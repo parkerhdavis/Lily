@@ -34,10 +34,17 @@ export default function App() {
 
 	// Track the current step in settings so LilyHub can offer "pick up where you left off"
 	// Only save non-hub steps — landing on hub at startup should not clear the previous value.
+	const templateEditorRelPath = useWorkflowStore(
+		(s) => s.templateEditorRelPath,
+	);
 	useEffect(() => {
 		if (!loaded || step === "hub") return;
-		useSettingsStore.getState().save({ last_step: step });
-	}, [step, loaded]);
+		const update: Record<string, unknown> = { last_step: step };
+		if (step === "template-editor" && templateEditorRelPath) {
+			update.last_template_rel_path = templateEditorRelPath;
+		}
+		useSettingsStore.getState().save(update);
+	}, [step, loaded, templateEditorRelPath]);
 
 	// Global zoom keyboard shortcuts: Ctrl+= / Ctrl+- / Ctrl+0
 	useEffect(() => {

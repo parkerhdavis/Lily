@@ -92,6 +92,7 @@ export interface WorkflowState {
 	templateEditorHtml: string;
 	templateEditorVars: VariableInfo[];
 	templateEditorRelPath: string | null;
+	templateEditorDirty: boolean;
 
 	// Template editor actions
 	openTemplateEditor: (
@@ -110,6 +111,22 @@ export interface WorkflowState {
 		occurrenceIndex?: number,
 	) => Promise<void>;
 	findTextOccurrences: (searchText: string) => Promise<TextOccurrence[]>;
+	confirmTemplateEdits: () => Promise<void>;
+	discardTemplateEdits: () => Promise<void>;
+	moveTemplateSdt: (
+		sdtId: string,
+		targetParaIdx: number,
+		targetCharOffset: number,
+	) => Promise<void>;
+	insertSdtAtPosition: (
+		variableName: string,
+		paraIdx: number,
+		charOffset: number,
+	) => Promise<void>;
+	renameTemplateVariable: (
+		oldName: string,
+		newName: string,
+	) => Promise<void>;
 	returnFromTemplateEditor: () => void;
 }
 

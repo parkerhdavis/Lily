@@ -31,6 +31,7 @@ export function toastSuccess(message: string) {
 export function navLabel(
 	step: WorkflowStep,
 	workingDir: string | null,
+	templateEditorRelPath?: string | null,
 ): string {
 	const folderName = workingDir ? extractFolderName(workingDir) : "";
 	switch (step) {
@@ -50,8 +51,14 @@ export function navLabel(
 			return "Pipeline";
 		case "questionnaire-editor":
 			return "Pipeline \u203A Questionnaire Editor";
-		case "template-editor":
-			return "Pipeline \u203A Edit Template";
+		case "template-editor": {
+			const templateName = templateEditorRelPath
+				? extractFilename(templateEditorRelPath)
+						.replace(/\.docx?$/i, "")
+						.replace(/\.dotx$/i, "")
+				: "Template";
+			return `Pipeline \u203A ${templateName}`;
+		}
 		default:
 			return step;
 	}
@@ -59,12 +66,21 @@ export function navLabel(
 
 /** Push the current state to navigation history before navigating away. */
 export function pushNav(state: WorkflowState) {
+	// For template-editor, use templateEditorRelPath as the template context
+	const templateRelPath =
+		state.step === "template-editor"
+			? state.templateEditorRelPath
+			: state.templateRelPath;
 	const entry = {
 		step: state.step,
 		workingDir: state.workingDir,
 		documentPath: state.documentPath,
-		templateRelPath: state.templateRelPath,
-		label: navLabel(state.step, state.workingDir),
+		templateRelPath,
+		label: navLabel(
+			state.step,
+			state.workingDir,
+			state.templateEditorRelPath,
+		),
 	};
 	useNavigationStore.getState().push(entry);
 	debouncedPersistNavEntry(entry);

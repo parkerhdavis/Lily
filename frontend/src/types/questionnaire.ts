@@ -32,6 +32,17 @@ export type QuestionDef =
 			/** Map from variable display name to contact property key.
 			 *  Defines which variables auto-fill from the selected contact. */
 			variableMappings: Record<string, string>;
+	  }
+	| {
+			kind: "derived";
+			/** The variable name this derived question produces. */
+			variable: string;
+			/** Human-readable label shown in the form. */
+			label: string;
+			/** Variable names that this value is computed from. */
+			sources: string[];
+			/** String used to join non-empty source values. Defaults to " ". */
+			join?: string;
 	  };
 
 /** A section grouping related questions.

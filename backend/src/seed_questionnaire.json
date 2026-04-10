@@ -16,6 +16,7 @@
 				{ "kind": "text", "variable": "Client First Name", "label": "First Name", "third": true },
 				{ "kind": "text", "variable": "Client Middle Name", "label": "Middle Name", "third": true },
 				{ "kind": "text", "variable": "Client Last Name", "label": "Last Name", "third": true },
+				{ "kind": "derived", "variable": "Client Full Name", "label": "Full Name", "sources": ["Client First Name", "Client Middle Name", "Client Last Name"] },
 				{ "kind": "text", "variable": "Client Phone", "label": "Phone Number", "placeholder": "e.g. (303) 555-1234", "half": true },
 				{ "kind": "text", "variable": "Client Email", "label": "Email Address", "half": true },
 				{ "kind": "text", "variable": "Client Address", "label": "Street Address" },

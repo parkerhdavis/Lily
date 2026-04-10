@@ -121,6 +121,21 @@ export const createProjectSlice: WorkflowSlice = (set, get) => ({
 	},
 
 	restoreNavigationEntry: async (entry) => {
+		// For template-editor, delegate to openTemplateEditor which handles
+		// backup creation, HTML loading, and variable extraction.
+		if (entry.step === "template-editor" && entry.templateRelPath) {
+			const templatesDir = (
+				await import("@/stores/settingsStore")
+			).useSettingsStore.getState().settings.templates_dir;
+			if (templatesDir) {
+				await get().openTemplateEditor(
+					entry.templateRelPath,
+					templatesDir,
+				);
+				return;
+			}
+		}
+
 		const current = get();
 		const needsLilyReload =
 			entry.workingDir !== current.workingDir && entry.workingDir;
