@@ -2727,54 +2727,49 @@ function VariableEditModal({
 			});
 		}
 
-		// Root level: show questionnaire tabs + local + remove
+		// Root level: top-level actions
 		if (depth === 0) {
 			return (
 				<div className="space-y-0.5">
-					{questionnaire &&
-						tabs.map((tab) => {
-							const sections = (
-								sectionsByTab.get(tab.id) ?? []
-							).filter(
-								(s) =>
-									s.questions.length > 0 ||
-									s.kind === "contacts",
-							);
-							if (sections.length === 0) return null;
-							return (
-								<button
-									key={tab.id}
-									type="button"
-									className="w-full text-left px-3 py-2 hover:bg-base-200 rounded flex items-center gap-3 text-sm"
-									onClick={() =>
-										navigate([
-											{
-												label: tab.label,
-												key: tab.id,
-											},
-										])
-									}
-								>
-									<span className="flex-1 font-medium">
-										{tab.label}
-									</span>
-									<span className="text-xs text-base-content/40">
-										{sections.length} section
-										{sections.length !== 1 ? "s" : ""}
-									</span>
-									<DrillArrow />
-								</button>
-							);
-						})}
-
-					<div className="border-t border-base-content/10 my-2" />
+					{questionnaire && (
+						<button
+							type="button"
+							className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded flex items-center gap-3 text-sm"
+							onClick={() =>
+								navigate([
+									{
+										label: questionnaire.name,
+										key: "__questionnaire__",
+									},
+								])
+							}
+						>
+							<span className="flex-1 font-medium">
+								Link to Questionnaire
+							</span>
+							<span className="text-xs text-base-content/40">
+								{questionnaire.name}
+							</span>
+							<DrillArrow />
+						</button>
+					)}
 
 					<button
 						type="button"
-						className="w-full text-left px-3 py-2 hover:bg-base-200 rounded text-sm text-base-content/60"
-						onClick={() => onSelect(currentVarName)}
+						className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded flex items-center gap-3 text-sm"
+						onClick={() =>
+							navigate([
+								{
+									label: "Local Variable",
+									key: "__local__",
+								},
+							])
+						}
 					>
-						Keep as local variable
+						<span className="flex-1 font-medium">
+							Set as Local Variable
+						</span>
+						<DrillArrow />
 					</button>
 
 					{onRemove && (
@@ -2782,7 +2777,7 @@ function VariableEditModal({
 							<div className="border-t border-base-content/10 my-2" />
 							<button
 								type="button"
-								className="w-full text-left px-3 py-2 hover:bg-error/10 text-error/60 hover:text-error transition-colors rounded text-sm"
+								className="w-full text-left px-3 py-2.5 hover:bg-error/10 text-error/60 hover:text-error transition-colors rounded text-sm"
 								onClick={onRemove}
 							>
 								Remove variable...
@@ -2793,9 +2788,76 @@ function VariableEditModal({
 			);
 		}
 
+		// Local variable type picker
+		if (path[0]?.key === "__local__") {
+			return (
+				<div className="space-y-0.5">
+					{(
+						["text", "date", "currency"] as const
+					).map((varType) => (
+						<button
+							key={varType}
+							type="button"
+							className="w-full text-left px-3 py-2 hover:bg-base-200 rounded text-sm capitalize"
+							onClick={() => onSelect(currentVarName)}
+						>
+							{TYPE_LABELS[varType] ?? varType}
+						</button>
+					))}
+				</div>
+			);
+		}
+
+		// From here, we're inside the questionnaire hierarchy.
+		// Shift depth by 1 since path[0] is the "__questionnaire__" entry.
+		const qDepth = depth - 1;
+
+		// Questionnaire root: show tabs
+		if (qDepth === 0) {
+			return (
+				<div className="space-y-0.5">
+					{tabs.map((tab) => {
+						const sections = (
+							sectionsByTab.get(tab.id) ?? []
+						).filter(
+							(s) =>
+								s.questions.length > 0 ||
+								s.kind === "contacts",
+						);
+						if (sections.length === 0) return null;
+						return (
+							<button
+								key={tab.id}
+								type="button"
+								className="w-full text-left px-3 py-2 hover:bg-base-200 rounded flex items-center gap-3 text-sm"
+								onClick={() =>
+									navigate([
+										...path,
+										{
+											label: tab.label,
+											key: tab.id,
+										},
+									])
+								}
+							>
+								<span className="flex-1 font-medium">
+									{tab.label}
+								</span>
+								<span className="text-xs text-base-content/40">
+									{sections.length} section
+									{sections.length !== 1 ? "s" : ""}
+								</span>
+								<DrillArrow />
+							</button>
+						);
+					})}
+				</div>
+			);
+		}
+
 		// Tab level: show sections within the selected tab
-		if (depth === 1) {
-			const tabId = path[0].key;
+		if (qDepth === 1) {
+			const tabId = path[1].key;
 			const sections = (sectionsByTab.get(tabId) ?? []).filter(
 				(s) => s.questions.length > 0 || s.kind === "contacts",
 			);
@@ -2803,7 +2865,7 @@ function VariableEditModal({
 				<button
 					key={section.title}
 					type="button"
-					className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg flex items-center gap-3 text-sm"
+					className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded flex items-center gap-3 text-sm"
 					onClick={() =>
 						navigate([
 							...path,
@@ -2825,9 +2887,9 @@ function VariableEditModal({
 		}
 
 		// Section level: show variables and contact roles
-		if (depth === 2) {
-			const tabId = path[0].key;
-			const sectionTitle = path[1].key;
+		if (qDepth === 2) {
+			const tabId = path[1].key;
+			const sectionTitle = path[2].key;
 			const section = (sectionsByTab.get(tabId) ?? []).find(
 				(s) => s.title === sectionTitle,
 			);
@@ -2897,10 +2959,10 @@ function VariableEditModal({
 		}
 
 		// Role level: show contact properties
-		if (depth === 3) {
-			const tabId = path[0].key;
-			const sectionTitle = path[1].key;
-			const roleName = path[2].key;
+		if (qDepth === 3) {
+			const tabId = path[1].key;
+			const sectionTitle = path[2].key;
+			const roleName = path[3].key;
 			const section = (sectionsByTab.get(tabId) ?? []).find(
 				(s) => s.title === sectionTitle,
 			);
@@ -2973,15 +3035,8 @@ function VariableEditModal({
 					/>
 				</div>
 
-				{/* Section heading for questionnaire linkage */}
-				<div className="border-t border-base-content/10 pt-3 mb-2">
-					<div className="text-xs font-semibold text-base-content/40 uppercase tracking-wider">
-						Link to Questionnaire
-					</div>
-				</div>
-
-				{/* Breadcrumbs + back/forward */}
-				{!search.trim() && (
+				{/* Breadcrumbs + back/forward (only when drilled into a sub-level) */}
+				{!search.trim() && path.length > 0 && (
 					<div className="flex items-center gap-1 mb-2 text-sm">
 						<button
 							type="button"
