@@ -27,7 +27,7 @@ import { extractFilename } from "@/utils/path";
 /** Describes how a template variable maps to a questionnaire question. */
 interface QuestionnaireMatch {
 	/** What kind of questionnaire link this is. */
-	kind: "text" | "conditional" | "contact-member";
+	kind: "text" | "conditional" | "contact-member" | "derived";
 	/** The questionnaire section this question lives in. */
 	section: QuestionnaireSectionDef;
 	/** The question definition. */
@@ -38,6 +38,8 @@ interface QuestionnaireMatch {
 	property?: string;
 	/** For contact-member: all mapped properties for the same role. */
 	availableProperties?: { varName: string; property: string }[];
+	/** For derived: the source variable names. */
+	sources?: string[];
 }
 
 /** Build a map from variable display name → questionnaire match. */
@@ -80,6 +82,13 @@ function buildQuestionnaireMatchMap(
 					kind: "conditional",
 					section,
 					question: q,
+				});
+			} else if (q.kind === "derived") {
+				map.set(q.variable, {
+					kind: "derived",
+					section,
+					question: q,
+					sources: q.sources,
 				});
 			}
 		}
@@ -1985,6 +1994,11 @@ function VariableCard({
 							Contact
 						</span>
 					)}
+					{questionnaireMatch?.kind === "derived" && (
+						<span className="badge badge-xs badge-accent badge-outline">
+							Derived
+						</span>
+					)}
 				</div>
 
 				{/* Questionnaire context: section name */}
@@ -1994,6 +2008,21 @@ function VariableCard({
 						<span>{questionnaireMatch.section.title}</span>
 					</div>
 				)}
+
+				{/* Derived variable sources */}
+				{questionnaireMatch?.kind === "derived" &&
+					questionnaireMatch.sources && (
+						<div className="rounded border border-base-300 bg-base-200/50 p-2 space-y-1 text-xs">
+							<div className="text-base-content/40">
+								Derived from:
+							</div>
+							{questionnaireMatch.sources.map((src) => (
+								<div key={src} className="pl-2 font-medium">
+									{src}
+								</div>
+							))}
+						</div>
+					)}
 
 				{/* Contact role hierarchy */}
 				{isContactMember && questionnaireMatch.role && (

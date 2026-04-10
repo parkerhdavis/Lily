@@ -123,27 +123,64 @@ export default function Questionnaire() {
 		saveTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
 	}, []);
 
+	// Collect derived variable definitions from the questionnaire
+	const derivedDefs = useMemo(() => {
+		const defs: {
+			variable: string;
+			sources: string[];
+			join: string;
+		}[] = [];
+		for (const section of questionnaireDef) {
+			for (const q of section.questions) {
+				if (q.kind === "derived") {
+					defs.push({
+						variable: q.variable,
+						sources: q.sources,
+						join: q.join ?? " ",
+					});
+				}
+			}
+		}
+		return defs;
+	}, [questionnaireDef]);
+
+	// Build a reverse map: source variable → derived defs that depend on it
+	const sourceToDeriveds = useMemo(() => {
+		const map = new Map<
+			string,
+			{ variable: string; sources: string[]; join: string }[]
+		>();
+		for (const def of derivedDefs) {
+			for (const src of def.sources) {
+				const existing = map.get(src) ?? [];
+				existing.push(def);
+				map.set(src, existing);
+			}
+		}
+		return map;
+	}, [derivedDefs]);
+
 	const handleSaveVariable = useCallback(
 		async (name: string, value: string) => {
 			setSaveStatus("saving");
 			await saveClientVariable(name, value);
-			// Auto-compose Client Full Name from First + Middle + Last
-			const nameFields = ["Client First Name", "Client Middle Name", "Client Last Name"];
-			if (nameFields.includes(name)) {
+
+			// Recompute any derived variables whose sources include this variable
+			const affected = sourceToDeriveds.get(name);
+			if (affected) {
 				const current = { ...variables, [name]: value };
-				const fullName = [
-					current["Client First Name"],
-					current["Client Middle Name"],
-					current["Client Last Name"],
-				]
-					.map((s) => s?.trim())
-					.filter(Boolean)
-					.join(" ");
-				await saveClientVariable("Client Full Name", fullName);
+				for (const def of affected) {
+					const derived = def.sources
+						.map((s) => current[s]?.trim())
+						.filter(Boolean)
+						.join(def.join);
+					await saveClientVariable(def.variable, derived);
+				}
 			}
+
 			showSaved();
 		},
-		[saveClientVariable, showSaved, variables],
+		[saveClientVariable, showSaved, variables, sourceToDeriveds],
 	);
 
 	const handleSaveNote = useCallback(

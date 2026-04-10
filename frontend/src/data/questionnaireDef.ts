@@ -36,6 +36,16 @@ export const questionnaireDef: QuestionnaireDef = [
 				third: true,
 			},
 			{
+				kind: "derived",
+				variable: "Client Full Name",
+				label: "Full Name",
+				sources: [
+					"Client First Name",
+					"Client Middle Name",
+					"Client Last Name",
+				],
+			},
+			{
 				kind: "text",
 				variable: "Client Phone",
 				label: "Phone Number",
