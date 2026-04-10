@@ -245,6 +245,35 @@ export const createTemplateEditorSlice: WorkflowSlice = (set, get) => ({
 		}
 	},
 
+	renameTemplateVariable: async (oldName, newName) => {
+		const { templateEditorPath } = get();
+		if (!templateEditorPath) return;
+
+		try {
+			const vars = await invoke<VariableInfo[]>(
+				"rename_template_variable",
+				{
+					templatePath: templateEditorPath,
+					oldName,
+					newName,
+				},
+			);
+
+			const html = await invoke<string>("get_document_html", {
+				docxPath: templateEditorPath,
+			});
+
+			set({
+				templateEditorVars: vars,
+				templateEditorHtml: html,
+				templateEditorDirty: true,
+			});
+			toastSuccess(`Renamed {${oldName}} → {${newName}}`);
+		} catch (err) {
+			toastError("Failed to rename variable", err);
+		}
+	},
+
 	returnFromTemplateEditor: () => {
 		pushNav(get());
 		set({

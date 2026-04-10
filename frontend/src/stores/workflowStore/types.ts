@@ -123,6 +123,10 @@ export interface WorkflowState {
 		paraIdx: number,
 		charOffset: number,
 	) => Promise<void>;
+	renameTemplateVariable: (
+		oldName: string,
+		newName: string,
+	) => Promise<void>;
 	returnFromTemplateEditor: () => void;
 }
 

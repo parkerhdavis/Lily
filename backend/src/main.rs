@@ -11,7 +11,7 @@ use docx_ops::{
     extract_variables, get_document_html, get_template_text_occurrences,
     insert_sdt_at_position, insert_template_variable, load_template_schema,
     migrate_template_to_sdt, move_template_sdt, remove_template_variable, rename_document,
-    replace_variables_v2, save_template_schema,
+    rename_template_variable, replace_variables_v2, save_template_schema,
 };
 use lily_file::{
     add_client_variable, add_contact, add_required_document, delete_contact, delete_document,
@@ -146,6 +146,7 @@ fn main() {
             discard_template_edits,
             move_template_sdt,
             insert_sdt_at_position,
+            rename_template_variable,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

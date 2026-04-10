@@ -1663,6 +1663,124 @@ pub fn remove_template_variable(
     extract_variables(template_path)
 }
 
+/// Rename a template variable by changing its SDT tag, alias, and content text.
+/// All occurrences of the variable are renamed across document, headers, and footers.
+/// Returns the updated list of variables.
+#[tauri::command]
+pub fn rename_template_variable(
+    template_path: String,
+    old_name: String,
+    new_name: String,
+) -> Result<Vec<VariableInfo>, String> {
+    info!(%template_path, %old_name, %new_name, "Renaming template variable");
+
+    let file_bytes =
+        fs::read(&template_path).map_err(|e| format!("Failed to read docx: {}", e))?;
+    let cursor = Cursor::new(file_bytes);
+    let mut archive =
+        ZipArchive::new(cursor).map_err(|e| format!("Failed to open docx as zip: {}", e))?;
+
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("Failed to read zip entry: {}", e))?;
+        let name = entry.name().to_string();
+        let mut buf = Vec::new();
+        entry
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("Failed to read entry content: {}", e))?;
+        entries.push((name, buf));
+    }
+
+    let escaped_old = escape_xml_text(&old_name);
+    let escaped_new = escape_xml_text(&new_name);
+
+    // Match SDTs with lily: or lily-cond: tags for the old variable name
+    let sdt_pattern = format!(
+        r#"(?s)<w:sdt>(.*?<w:tag\s+w:val="(?:lily:|lily-cond:){}".*?)</w:sdt>"#,
+        regex::escape(&escaped_old)
+    );
+    let sdt_re = Regex::new(&sdt_pattern).map_err(|e| format!("Invalid regex: {}", e))?;
+
+    // Patterns to update tag, alias, and content text within each SDT
+    let tag_re = Regex::new(&format!(
+        r#"<w:tag\s+w:val="(lily:|lily-cond:){}"/>"#,
+        regex::escape(&escaped_old)
+    ))
+    .map_err(|e| format!("Invalid regex: {}", e))?;
+    let alias_re = Regex::new(&format!(
+        r#"<w:alias\s+w:val="{}"/>"#,
+        regex::escape(&escaped_old)
+    ))
+    .map_err(|e| format!("Invalid regex: {}", e))?;
+
+    for (name, content) in entries.iter_mut() {
+        if name != "word/document.xml"
+            && !name.starts_with("word/header")
+            && !name.starts_with("word/footer")
+        {
+            continue;
+        }
+
+        let xml_str = String::from_utf8_lossy(content).to_string();
+        if sdt_re.find(&xml_str).is_none() {
+            continue;
+        }
+
+        // Replace each matching SDT: update tag, alias, and content text
+        let modified = sdt_re.replace_all(&xml_str, |caps: &regex::Captures| {
+            let mut sdt = caps[0].to_string();
+            // Update tag value (preserve lily: or lily-cond: prefix)
+            sdt = tag_re
+                .replace_all(&sdt, |tcaps: &regex::Captures| {
+                    format!("<w:tag w:val=\"{}{}\"/>", &tcaps[1], escaped_new)
+                })
+                .to_string();
+            // Update alias value
+            sdt = alias_re
+                .replace_all(&sdt, &format!("<w:alias w:val=\"{}\"/>", escaped_new))
+                .to_string();
+            // Update the display text inside <w:t> within <w:sdtContent>
+            // The content text matches the old display name
+            sdt = sdt.replace(
+                &format!("<w:t xml:space=\"preserve\">{}</w:t>", escaped_old),
+                &format!("<w:t xml:space=\"preserve\">{}</w:t>", escaped_new),
+            );
+            // Also handle without xml:space attribute
+            sdt = sdt.replace(
+                &format!("<w:t>{}</w:t>", escaped_old),
+                &format!("<w:t>{}</w:t>", escaped_new),
+            );
+            sdt
+        });
+
+        *content = modified.into_owned().into_bytes();
+    }
+
+    let mut output = Cursor::new(Vec::new());
+    {
+        let mut writer = ZipWriter::new(&mut output);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in &entries {
+            writer
+                .start_file(name, options)
+                .map_err(|e| format!("Failed to write zip entry: {}", e))?;
+            writer
+                .write_all(content)
+                .map_err(|e| format!("Failed to write content: {}", e))?;
+        }
+        writer
+            .finish()
+            .map_err(|e| format!("Failed to finalize zip: {}", e))?;
+    }
+    fs::write(&template_path, output.into_inner())
+        .map_err(|e| format!("Failed to write docx: {}", e))?;
+
+    extract_variables(template_path)
+}
+
 // ─── Template schema commands ───────────────────────────────────────────────
 
 /// Derive the schema file path from a template's relative path.

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	forwardRef,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
@@ -197,6 +204,7 @@ export default function TemplateEditor() {
 		discardTemplateEdits,
 		moveTemplateSdt,
 		insertSdtAtPosition,
+		renameTemplateVariable,
 		returnFromTemplateEditor,
 	} = useWorkflowStore();
 
@@ -1304,6 +1312,8 @@ export default function TemplateEditor() {
 											schema={templateSchema}
 											allVars={templateEditorVars}
 											questionnaireMatchMap={questionnaireMatchMap}
+											questionnaire={selectedQuestionnaire}
+											onRename={renameTemplateVariable}
 										/>
 									))}
 								</div>
@@ -1931,6 +1941,8 @@ function VariableCard({
 	schema,
 	allVars,
 	questionnaireMatchMap,
+	questionnaire,
+	onRename,
 }: {
 	variable: VariableInfo;
 	schemaEntry?: VariableSchemaEntry;
@@ -1942,10 +1954,14 @@ function VariableCard({
 	schema?: VariableSchema | null;
 	allVars?: VariableInfo[];
 	questionnaireMatchMap?: Map<string, QuestionnaireMatch>;
+	questionnaire?: QuestionnaireDefFile | null;
+	onRename?: (oldName: string, newName: string) => Promise<void>;
 }) {
 	const isLinked = !!questionnaireMatch;
 	const isContactMember = questionnaireMatch?.kind === "contact-member";
 	const cardRef = useRef<HTMLDivElement>(null);
+	const [showLinkDropdown, setShowLinkDropdown] = useState(false);
+	const dropdownRef = useRef<HTMLDivElement>(null);
 
 	// Scroll sidebar card into view when it becomes highlighted
 	useEffect(() => {
@@ -1985,6 +2001,45 @@ function VariableCard({
 				<span className="badge badge-sm badge-ghost">
 					{occurrenceCount}
 				</span>
+				<div className="relative">
+					<button
+						type="button"
+						className="btn btn-ghost btn-xs text-base-content/30 hover:text-base-content/60"
+						onClick={() => setShowLinkDropdown(!showLinkDropdown)}
+						title="Change variable link"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							viewBox="0 0 16 16"
+							fill="currentColor"
+							className="size-3.5"
+						>
+							<title>Edit link</title>
+							<path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.262a1.75 1.75 0 0 0 0-2.474Z" />
+							<path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9A.75.75 0 0 1 14 9v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
+						</svg>
+					</button>
+					{showLinkDropdown && (
+						<VariableLinkDropdown
+							ref={dropdownRef}
+							questionnaire={questionnaire}
+							currentVarName={variable.display_name}
+							onSelect={async (newName) => {
+								setShowLinkDropdown(false);
+								if (
+									newName !== variable.display_name &&
+									onRename
+								) {
+									await onRename(
+										variable.display_name,
+										newName,
+									);
+								}
+							}}
+							onClose={() => setShowLinkDropdown(false)}
+						/>
+					)}
+				</div>
 				<button
 					type="button"
 					className="btn btn-ghost btn-xs text-base-content/30 hover:text-error"
@@ -2454,3 +2509,256 @@ function NestedVariableCard({
 		</div>
 	);
 }
+
+// ─── Variable Link Dropdown ─────────────────────────────────────────────────
+
+const VariableLinkDropdown = forwardRef<
+	HTMLDivElement,
+	{
+		questionnaire?: QuestionnaireDefFile | null;
+		currentVarName: string;
+		onSelect: (newName: string) => void;
+		onClose: () => void;
+	}
+>(function VariableLinkDropdown(
+	{ questionnaire, currentVarName, onSelect, onClose },
+	ref,
+) {
+	const [expandedSections, setExpandedSections] = useState<Set<string>>(
+		new Set(),
+	);
+	const [expandedRoles, setExpandedRoles] = useState<Set<string>>(
+		new Set(),
+	);
+
+	// Close on click-outside or Escape
+	useEffect(() => {
+		const handleClick = (e: MouseEvent) => {
+			const dropdown = (ref as React.RefObject<HTMLDivElement | null>)
+				?.current;
+			if (dropdown && !dropdown.contains(e.target as Node)) {
+				onClose();
+			}
+		};
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") onClose();
+		};
+		const timer = setTimeout(() => {
+			document.addEventListener("mousedown", handleClick);
+			document.addEventListener("keydown", handleKeyDown);
+		}, 0);
+		return () => {
+			clearTimeout(timer);
+			document.removeEventListener("mousedown", handleClick);
+			document.removeEventListener("keydown", handleKeyDown);
+		};
+	}, [onClose, ref]);
+
+	const toggleSection = (title: string) => {
+		setExpandedSections((prev) => {
+			const next = new Set(prev);
+			if (next.has(title)) next.delete(title);
+			else next.add(title);
+			return next;
+		});
+	};
+
+	const toggleRole = (role: string) => {
+		setExpandedRoles((prev) => {
+			const next = new Set(prev);
+			if (next.has(role)) next.delete(role);
+			else next.add(role);
+			return next;
+		});
+	};
+
+	return (
+		<div
+			ref={ref}
+			className="absolute right-0 top-full mt-1 z-50 bg-base-100 rounded-lg shadow-xl border border-base-300 py-1 w-72 max-h-80 overflow-y-auto text-xs"
+		>
+			{/* Questionnaire hierarchy */}
+			{questionnaire && (
+				<div>
+					<div className="px-3 py-1.5 font-semibold text-base-content/50 uppercase tracking-wider text-[10px]">
+						{questionnaire.name}
+					</div>
+					{questionnaire.sections
+						.filter(
+							(s) =>
+								s.questions.length > 0 ||
+								s.kind === "contacts",
+						)
+						.map((section) => (
+							<div key={section.title}>
+								<button
+									type="button"
+									className="w-full text-left px-3 py-1 hover:bg-base-200 flex items-center gap-1.5 text-base-content/70"
+									onClick={() =>
+										toggleSection(section.title)
+									}
+								>
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										viewBox="0 0 16 16"
+										fill="currentColor"
+										className={`size-3 shrink-0 transition-transform ${
+											expandedSections.has(
+												section.title,
+											)
+												? "rotate-90"
+												: ""
+										}`}
+									>
+										<path
+											fillRule="evenodd"
+											d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"
+											clipRule="evenodd"
+										/>
+									</svg>
+									<span>{section.title}</span>
+								</button>
+								{expandedSections.has(section.title) && (
+									<div>
+										{section.questions.map((q) => {
+											if (
+												q.kind === "text" ||
+												q.kind === "conditional" ||
+												q.kind === "derived"
+											) {
+												const isCurrent =
+													q.variable ===
+													currentVarName;
+												return (
+													<button
+														key={q.variable}
+														type="button"
+														className={`w-full text-left pl-8 pr-3 py-1 hover:bg-base-200 ${
+															isCurrent
+																? "text-primary font-medium"
+																: ""
+														}`}
+														onClick={() =>
+															onSelect(
+																q.variable,
+															)
+														}
+													>
+														{q.variable}
+														{q.kind !== "text" && (
+															<span className="ml-1.5 badge badge-xs badge-info badge-outline">
+																{q.kind}
+															</span>
+														)}
+													</button>
+												);
+											}
+											if (q.kind === "contact-role") {
+												return (
+													<div key={q.role}>
+														<button
+															type="button"
+															className="w-full text-left pl-8 pr-3 py-1 hover:bg-base-200 flex items-center gap-1.5"
+															onClick={() =>
+																toggleRole(
+																	q.role,
+																)
+															}
+														>
+															<svg
+																xmlns="http://www.w3.org/2000/svg"
+																viewBox="0 0 16 16"
+																fill="currentColor"
+																className={`size-2.5 shrink-0 transition-transform ${
+																	expandedRoles.has(
+																		q.role,
+																	)
+																		? "rotate-90"
+																		: ""
+																}`}
+															>
+																<path
+																	fillRule="evenodd"
+																	d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"
+																	clipRule="evenodd"
+																/>
+															</svg>
+															<span>
+																{q.role}
+															</span>
+															<span className="badge badge-xs badge-secondary badge-outline ml-auto">
+																contact
+															</span>
+														</button>
+														{expandedRoles.has(
+															q.role,
+														) && (
+															<div>
+																{Object.entries(
+																	q.variableMappings,
+																).map(
+																	([
+																		varName,
+																		prop,
+																	]) => {
+																		const isCurrent =
+																			varName ===
+																			currentVarName;
+																		return (
+																			<button
+																				key={
+																					varName
+																				}
+																				type="button"
+																				className={`w-full text-left pl-12 pr-3 py-1 hover:bg-base-200 ${
+																					isCurrent
+																						? "text-primary font-medium"
+																						: ""
+																				}`}
+																				onClick={() =>
+																					onSelect(
+																						varName,
+																					)
+																				}
+																			>
+																				{PROPERTY_LABELS[
+																					prop
+																				] ??
+																					prop}
+																			</button>
+																		);
+																	},
+																)}
+															</div>
+														)}
+													</div>
+												);
+											}
+											return null;
+										})}
+									</div>
+								)}
+							</div>
+						))}
+				</div>
+			)}
+
+			{/* Divider */}
+			{questionnaire && (
+				<div className="border-t border-base-300 my-1" />
+			)}
+
+			{/* Local variable option */}
+			<div className="px-3 py-1.5 font-semibold text-base-content/50 uppercase tracking-wider text-[10px]">
+				Local Variable
+			</div>
+			<button
+				type="button"
+				className="w-full text-left px-3 py-1 hover:bg-base-200 pl-6"
+				onClick={() => onSelect(currentVarName)}
+			>
+				Keep as local ({currentVarName})
+			</button>
+		</div>
+	);
+});
