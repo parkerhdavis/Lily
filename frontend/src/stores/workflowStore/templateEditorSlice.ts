@@ -8,6 +8,7 @@ export const createTemplateEditorSlice: WorkflowSlice = (set, get) => ({
 	templateEditorHtml: "",
 	templateEditorVars: [],
 	templateEditorRelPath: null,
+	templateEditorDirty: false,
 
 	openTemplateEditor: async (relPath, templatesDir) => {
 		const fullPath = `${templatesDir}/${relPath}`;
@@ -16,11 +17,19 @@ export const createTemplateEditorSlice: WorkflowSlice = (set, get) => ({
 			step: "template-editor",
 			templateEditorRelPath: relPath,
 			templateEditorPath: fullPath,
+			templateEditorDirty: false,
 			loading: true,
 			error: null,
 		});
 
 		try {
+			// Create backup for safe editing
+			await invoke("begin_template_editing", {
+				templatePath: fullPath,
+				templatesDir,
+				templateRelPath: relPath,
+			});
+
 			const [html, vars] = await Promise.all([
 				invoke<string>("get_document_html", { docxPath: fullPath }),
 				invoke<VariableInfo[]>("extract_variables", {
@@ -67,6 +76,7 @@ export const createTemplateEditorSlice: WorkflowSlice = (set, get) => ({
 			set({
 				templateEditorVars: vars,
 				templateEditorHtml: html,
+				templateEditorDirty: true,
 			});
 			toastSuccess(`Inserted {${variableName}}`);
 		} catch (err) {
@@ -101,6 +111,7 @@ export const createTemplateEditorSlice: WorkflowSlice = (set, get) => ({
 			set({
 				templateEditorVars: vars,
 				templateEditorHtml: html,
+				templateEditorDirty: true,
 			});
 			toastSuccess(`Removed {${variableName}}`);
 		} catch (err) {
@@ -118,6 +129,122 @@ export const createTemplateEditorSlice: WorkflowSlice = (set, get) => ({
 		});
 	},
 
+	confirmTemplateEdits: async () => {
+		const { templateEditorPath, templateEditorRelPath } = get();
+		if (!templateEditorPath || !templateEditorRelPath) return;
+
+		const templatesDir =
+			(await import("@/stores/settingsStore")).useSettingsStore.getState()
+				.settings.templates_dir;
+		if (!templatesDir) return;
+
+		try {
+			await invoke("confirm_template_edits", {
+				templatePath: templateEditorPath,
+				templatesDir,
+				templateRelPath: templateEditorRelPath,
+			});
+			set({ templateEditorDirty: false });
+			toastSuccess("Template saved");
+		} catch (err) {
+			toastError("Failed to save template", err);
+		}
+	},
+
+	discardTemplateEdits: async () => {
+		const { templateEditorPath, templateEditorRelPath } = get();
+		if (!templateEditorPath || !templateEditorRelPath) return;
+
+		const templatesDir =
+			(await import("@/stores/settingsStore")).useSettingsStore.getState()
+				.settings.templates_dir;
+		if (!templatesDir) return;
+
+		try {
+			await invoke("discard_template_edits", {
+				templatePath: templateEditorPath,
+				templatesDir,
+				templateRelPath: templateEditorRelPath,
+			});
+
+			// Reload from restored file
+			const [html, vars] = await Promise.all([
+				invoke<string>("get_document_html", {
+					docxPath: templateEditorPath,
+				}),
+				invoke<VariableInfo[]>("extract_variables", {
+					docxPath: templateEditorPath,
+				}),
+			]);
+
+			set({
+				templateEditorHtml: html,
+				templateEditorVars: vars,
+				templateEditorDirty: false,
+			});
+			toastSuccess("Changes discarded");
+		} catch (err) {
+			toastError("Failed to discard changes", err);
+		}
+	},
+
+	moveTemplateSdt: async (sdtId, targetParaIdx, targetCharOffset) => {
+		const { templateEditorPath } = get();
+		if (!templateEditorPath) return;
+
+		try {
+			const vars = await invoke<VariableInfo[]>("move_template_sdt", {
+				templatePath: templateEditorPath,
+				sdtId,
+				targetParagraphIndex: targetParaIdx,
+				targetCharOffset,
+			});
+
+			const html = await invoke<string>("get_document_html", {
+				docxPath: templateEditorPath,
+			});
+
+			set({
+				templateEditorVars: vars,
+				templateEditorHtml: html,
+				templateEditorDirty: true,
+			});
+			toastSuccess("Variable moved");
+		} catch (err) {
+			toastError("Failed to move variable", err);
+		}
+	},
+
+	insertSdtAtPosition: async (variableName, paraIdx, charOffset) => {
+		const { templateEditorPath } = get();
+		if (!templateEditorPath) return;
+
+		try {
+			const vars = await invoke<VariableInfo[]>(
+				"insert_sdt_at_position",
+				{
+					templatePath: templateEditorPath,
+					variableName,
+					paragraphIndex: paraIdx,
+					charOffset,
+				},
+			);
+
+			const html = await invoke<string>("get_document_html", {
+				docxPath: templateEditorPath,
+			});
+
+			set({
+				templateEditorVars: vars,
+				templateEditorHtml: html,
+				templateEditorDirty: true,
+			});
+			toastSuccess(`Inserted {${variableName}}`);
+		} catch (err) {
+			toastError("Failed to insert variable", err);
+		}
+	},
+
 	returnFromTemplateEditor: () => {
 		pushNav(get());
 		set({
@@ -126,6 +253,7 @@ export const createTemplateEditorSlice: WorkflowSlice = (set, get) => ({
 			templateEditorHtml: "",
 			templateEditorVars: [],
 			templateEditorRelPath: null,
+			templateEditorDirty: false,
 		});
 	},
 });

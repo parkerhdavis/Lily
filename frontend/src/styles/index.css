@@ -133,6 +133,74 @@
 	font-size: 0;
 }
 
+/* ─── Template editor: SDT badge/pill styling ────────────────────────── */
+
+.template-editor-preview .variable-highlight {
+	border: 1.5px solid oklch(0.65 0.12 25);
+	border-radius: 9999px;
+	padding: 1px 8px;
+	font-size: 0.9em;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+	white-space: nowrap;
+	vertical-align: baseline;
+}
+
+.template-editor-preview .variable-highlight.filled {
+	background-color: oklch(0.92 0.08 145);
+	border-color: oklch(0.70 0.12 145);
+}
+
+.template-editor-preview .variable-highlight.selected {
+	background-color: oklch(0.92 0.12 88);
+	border-color: oklch(0.65 0.14 88);
+	box-shadow: 0 0 0 2px oklch(0.65 0.14 88 / 0.3);
+}
+
+/* Draggable badge cursor states */
+.template-editor-preview .variable-highlight[draggable="true"] {
+	cursor: grab;
+}
+
+.template-editor-preview .variable-highlight[draggable="true"]:active {
+	cursor: grabbing;
+}
+
+.template-editor-preview .variable-highlight.dragging {
+	opacity: 0.4;
+}
+
+/* Dark-mode badge variants */
+[data-theme="dark"] .template-editor-preview .variable-highlight {
+	border-color: oklch(0.50 0.12 25);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .template-editor-preview .variable-highlight.filled {
+	background-color: oklch(0.35 0.10 145);
+	border-color: oklch(0.50 0.10 145);
+}
+
+[data-theme="dark"] .template-editor-preview .variable-highlight.selected {
+	background-color: oklch(0.40 0.14 88);
+	border-color: oklch(0.50 0.14 88);
+}
+
+/* Drop indicator caret */
+.template-editor-drop-caret {
+	display: inline;
+	width: 2px;
+	height: 1.2em;
+	background-color: oklch(0.55 0.20 260);
+	vertical-align: text-bottom;
+	animation: caret-blink 0.8s ease-in-out infinite;
+	pointer-events: none;
+}
+
+@keyframes caret-blink {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.2; }
+}
+
 /* ─── Document preview structural elements ────────────────────────────── */
 
 /* Override prose defaults so Word-sourced margins take precedence */
