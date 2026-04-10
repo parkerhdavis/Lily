@@ -2660,13 +2660,12 @@ function VariableEditModal({
 	// Filtered search results
 	const searchResults = useMemo(() => {
 		if (!search.trim()) return [];
-		const q = search.toLowerCase();
-		return allItems.filter(
-			(item) =>
-				item.varName.toLowerCase().includes(q) ||
-				item.label.toLowerCase().includes(q) ||
-				item.path.toLowerCase().includes(q),
-		);
+		const terms = search.toLowerCase().split(/\s+/).filter(Boolean);
+		if (terms.length === 0) return [];
+		return allItems.filter((item) => {
+			const haystack = `${item.varName} ${item.label} ${item.path}`.toLowerCase();
+			return terms.every((term) => haystack.includes(term));
+		});
 	}, [search, allItems]);
 
 	// Determine what to show at the current path level
