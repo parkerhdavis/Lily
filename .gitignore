@@ -98,3 +98,4 @@ CLAUDE.md
 
 # Local config
 *.local
+scripts/__pycache__/
