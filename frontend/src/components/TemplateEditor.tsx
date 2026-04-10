@@ -13,7 +13,78 @@ import type {
 	TextOccurrence,
 	ConditionalDef,
 } from "@/types";
+import type {
+	QuestionnaireDefFile,
+	QuestionDef,
+	QuestionnaireSectionDef,
+} from "@/types/questionnaire";
 import { extractFilename } from "@/utils/path";
+
+// ─── Questionnaire matching ─────────────────────────────────────────────────
+
+/** Describes how a template variable maps to a questionnaire question. */
+interface QuestionnaireMatch {
+	/** What kind of questionnaire link this is. */
+	kind: "text" | "conditional" | "contact-member";
+	/** The questionnaire section this question lives in. */
+	section: QuestionnaireSectionDef;
+	/** The question definition. */
+	question: QuestionDef;
+	/** For contact-member: the role name (e.g. "Healthcare POA Agent"). */
+	role?: string;
+	/** For contact-member: the contact property key (e.g. "full_name"). */
+	property?: string;
+	/** For contact-member: all mapped properties for the same role. */
+	availableProperties?: { varName: string; property: string }[];
+}
+
+/** Build a map from variable display name → questionnaire match. */
+function buildQuestionnaireMatchMap(
+	questionnaire: QuestionnaireDefFile,
+): Map<string, QuestionnaireMatch> {
+	const map = new Map<string, QuestionnaireMatch>();
+
+	for (const section of questionnaire.sections) {
+		for (const q of section.questions) {
+			if (q.kind === "text") {
+				map.set(q.variable, { kind: "text", section, question: q });
+			} else if (q.kind === "conditional") {
+				map.set(q.variable, {
+					kind: "conditional",
+					section,
+					question: q,
+				});
+			} else if (q.kind === "contact-role") {
+				const availableProperties = Object.entries(
+					q.variableMappings,
+				).map(([varName, property]) => ({ varName, property }));
+
+				for (const [varName, property] of Object.entries(
+					q.variableMappings,
+				)) {
+					map.set(varName, {
+						kind: "contact-member",
+						section,
+						question: q,
+						role: q.role,
+						property,
+						availableProperties,
+					});
+				}
+
+				// Also match the auto-generated "Has {role}" conditional
+				const hasVar = `Has ${q.role}`;
+				map.set(hasVar, {
+					kind: "conditional",
+					section,
+					question: q,
+				});
+			}
+		}
+	}
+
+	return map;
+}
 
 /** Strip the .docx/.dotx extension for display. */
 function stripDocx(name: string): string {
@@ -195,6 +266,30 @@ export default function TemplateEditor() {
 			.then(setTemplateSchema)
 			.catch(() => {});
 	}, [templatesDir, templateEditorRelPath, templateEditorVars]);
+
+	// Load the active questionnaire for variable contextualization
+	const activeQuestionnaireId = useSettingsStore(
+		(s) => s.settings.active_questionnaire_id,
+	);
+	const [activeQuestionnaire, setActiveQuestionnaire] =
+		useState<QuestionnaireDefFile | null>(null);
+	useEffect(() => {
+		if (!activeQuestionnaireId) {
+			setActiveQuestionnaire(null);
+			return;
+		}
+		invoke<QuestionnaireDefFile>("load_questionnaire", {
+			id: activeQuestionnaireId,
+		})
+			.then(setActiveQuestionnaire)
+			.catch(() => setActiveQuestionnaire(null));
+	}, [activeQuestionnaireId]);
+
+	// Build questionnaire → variable match map
+	const questionnaireMatchMap = useMemo(() => {
+		if (!activeQuestionnaire) return new Map<string, QuestionnaireMatch>();
+		return buildQuestionnaireMatchMap(activeQuestionnaire);
+	}, [activeQuestionnaire]);
 
 	const previewRef = useRef<HTMLDivElement>(null);
 	const varNameInputRef = useRef<HTMLInputElement>(null);
@@ -1036,6 +1131,38 @@ export default function TemplateEditor() {
 							</div>
 						)}
 
+						{/* Questionnaire context */}
+						<div className="p-3 rounded-lg border border-base-300 bg-base-200/50">
+							<div className="text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-1.5">
+								Questionnaire
+							</div>
+							{activeQuestionnaire ? (
+								<div className="space-y-1.5">
+									<div className="text-sm font-medium">
+										{activeQuestionnaire.name}
+									</div>
+									<div className="text-xs text-base-content/50">
+										{(() => {
+											const linked =
+												templateEditorVars.filter(
+													(v) =>
+														questionnaireMatchMap.has(
+															v.display_name,
+														),
+												).length;
+											const total =
+												templateEditorVars.length;
+											return `${linked}/${total} variables linked`;
+										})()}
+									</div>
+								</div>
+							) : (
+								<p className="text-xs text-base-content/40 italic">
+									No active questionnaire selected
+								</p>
+							)}
+						</div>
+
 						{/* Variable list */}
 						<div>
 							<SectionHeading className="mb-3">
@@ -1057,6 +1184,9 @@ export default function TemplateEditor() {
 													v.display_name
 												]
 											}
+											questionnaireMatch={questionnaireMatchMap.get(
+												v.display_name,
+											)}
 											occurrenceCount={varOccurrences(
 												v.display_name,
 											)}
@@ -1077,6 +1207,7 @@ export default function TemplateEditor() {
 											}}
 											schema={templateSchema}
 											allVars={templateEditorVars}
+											questionnaireMatchMap={questionnaireMatchMap}
 										/>
 									))}
 								</div>
@@ -1678,25 +1809,47 @@ const TYPE_LABELS: Record<string, string> = {
 	conditional: "Conditional",
 };
 
+/** Human-readable property labels for contact fields. */
+const PROPERTY_LABELS: Record<string, string> = {
+	full_name: "Full Name",
+	first_name: "First Name",
+	last_name: "Last Name",
+	middle_name: "Middle Name",
+	phone: "Phone",
+	email: "Email",
+	address: "Address",
+	city: "City",
+	state: "State",
+	zip: "ZIP",
+	relationship: "Relationship",
+};
+
 function VariableCard({
 	variable,
 	schemaEntry,
+	questionnaireMatch,
 	occurrenceCount,
 	isHighlighted,
 	onScrollTo,
 	onRemove,
 	schema,
 	allVars,
+	questionnaireMatchMap,
 }: {
 	variable: VariableInfo;
 	schemaEntry?: VariableSchemaEntry;
+	questionnaireMatch?: QuestionnaireMatch;
 	occurrenceCount: number;
 	isHighlighted: boolean;
 	onScrollTo: () => void;
 	onRemove: () => void;
 	schema?: VariableSchema | null;
 	allVars?: VariableInfo[];
+	questionnaireMatchMap?: Map<string, QuestionnaireMatch>;
 }) {
+	const isLinked = !!questionnaireMatch;
+	const isContactMember = questionnaireMatch?.kind === "contact-member";
+
 	return (
 		<div
 			className={`rounded-lg border bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] transition-all ${
@@ -1705,6 +1858,7 @@ function VariableCard({
 					: "border-base-300"
 			}`}
 		>
+			{/* Header row */}
 			<div className="flex items-center gap-2 px-3 py-2">
 				<button
 					type="button"
@@ -1714,17 +1868,6 @@ function VariableCard({
 				>
 					{variable.display_name}
 				</button>
-				{schemaEntry?.var_type && schemaEntry.var_type !== "text" && (
-					<span className="badge badge-xs badge-info">
-						{TYPE_LABELS[schemaEntry.var_type] ??
-							schemaEntry.var_type}
-					</span>
-				)}
-				{variable.is_conditional && !schemaEntry?.var_type && (
-					<span className="badge badge-xs badge-info">
-						conditional
-					</span>
-				)}
 				{schemaEntry?.required && (
 					<span
 						className="w-2 h-2 rounded-full bg-error shrink-0"
@@ -1753,106 +1896,167 @@ function VariableCard({
 			</div>
 
 			{/* Detail section */}
-			{(variable.variants.length > 1 || schemaEntry) && (
-				<div className="px-3 pb-3 space-y-2 border-t border-base-200 pt-2">
-					{/* Case variants */}
-					{variable.variants.length > 1 && (
-						<div>
-							<div className="text-xs text-base-content/40 mb-1">
-								Case variants
-							</div>
-							<div className="flex flex-wrap gap-1">
-								{variable.variants.map((v) => (
-									<code
-										key={v}
-										className="text-xs bg-base-200 px-1.5 py-0.5 rounded"
-									>
-										{v}
-									</code>
-								))}
-							</div>
-						</div>
+			<div className="px-3 pb-3 space-y-2 border-t border-base-200 pt-2">
+				{/* Source & type badges */}
+				<div className="flex flex-wrap items-center gap-1.5">
+					{isLinked ? (
+						<span className="badge badge-xs badge-success badge-outline">
+							Questionnaire
+						</span>
+					) : (
+						<span className="badge badge-xs badge-ghost">
+							Local
+						</span>
 					)}
-
-					{/* Schema info */}
-					{schemaEntry && (
-						<>
-							{schemaEntry.var_type && (
-								<div className="flex gap-2 text-xs">
-									<span className="text-base-content/40">
-										Type:
-									</span>
-									<span>
-										{TYPE_LABELS[schemaEntry.var_type] ??
-											schemaEntry.var_type}
-									</span>
-								</div>
-							)}
-							{schemaEntry.required && (
-								<div className="flex gap-2 text-xs">
-									<span className="text-base-content/40">
-										Required:
-									</span>
-									<span className="text-error">Yes</span>
-								</div>
-							)}
-							{schemaEntry.default && (
-								<div className="flex gap-2 text-xs">
-									<span className="text-base-content/40">
-										Default:
-									</span>
-									<code className="bg-base-200 px-1 rounded">
-										{schemaEntry.default}
-									</code>
-								</div>
-							)}
-							{schemaEntry.help && (
-								<div className="flex gap-2 text-xs">
-									<span className="text-base-content/40">
-										Help:
-									</span>
-									<span className="text-base-content/60 italic">
-										{schemaEntry.help}
-									</span>
-								</div>
-							)}
-							{schemaEntry.date_format && (
-								<div className="flex gap-2 text-xs">
-									<span className="text-base-content/40">
-										Format:
-									</span>
-									<code className="bg-base-200 px-1 rounded">
-										{schemaEntry.date_format}
-									</code>
-								</div>
-							)}
-							{schemaEntry.contact_role && (
-								<div className="flex gap-2 text-xs">
-									<span className="text-base-content/40">
-										Contact:
-									</span>
-									<span>
-										{schemaEntry.contact_role}
-										{schemaEntry.contact_property &&
-											` > ${schemaEntry.contact_property}`}
-									</span>
-								</div>
-							)}
-							{/* Conditional definitions */}
-							{(schemaEntry.condition ||
-								(schemaEntry.conditions &&
-									schemaEntry.conditions.length > 0)) && (
-								<ConditionalDetails
-									condition={schemaEntry.condition}
-									conditions={schemaEntry.conditions}
-									schema={schema}
-									allVars={allVars}
-								/>
-							)}
-						</>
+					{(schemaEntry?.var_type ?? (variable.is_conditional ? "conditional" : null)) && (
+						<span className="badge badge-xs badge-info badge-outline">
+							{TYPE_LABELS[
+								schemaEntry?.var_type ??
+									(variable.is_conditional
+										? "conditional"
+										: "text")
+							] ?? schemaEntry?.var_type}
+						</span>
+					)}
+					{isContactMember && (
+						<span className="badge badge-xs badge-secondary badge-outline">
+							Contact
+						</span>
 					)}
 				</div>
-			)}
+
+				{/* Questionnaire context: section name */}
+				{isLinked && questionnaireMatch.section && (
+					<div className="flex gap-2 text-xs">
+						<span className="text-base-content/40">Section:</span>
+						<span>{questionnaireMatch.section.title}</span>
+					</div>
+				)}
+
+				{/* Contact role hierarchy */}
+				{isContactMember && questionnaireMatch.role && (
+					<div className="rounded border border-base-300 bg-base-200/50 p-2 space-y-1.5">
+						<div className="text-xs">
+							<span className="text-base-content/40">
+								Role:{" "}
+							</span>
+							<span className="font-medium">
+								{questionnaireMatch.role}
+							</span>
+						</div>
+						<div className="text-xs">
+							<span className="text-base-content/40">
+								Property:{" "}
+							</span>
+							<span className="font-medium">
+								{PROPERTY_LABELS[
+									questionnaireMatch.property ?? ""
+								] ?? questionnaireMatch.property}
+							</span>
+						</div>
+						{/* Other available properties from the same role */}
+						{questionnaireMatch.availableProperties &&
+							questionnaireMatch.availableProperties.length >
+								1 && (
+								<div className="text-xs pt-1 border-t border-base-300">
+									<span className="text-base-content/40">
+										Other members:{" "}
+									</span>
+									<span className="text-base-content/60">
+										{questionnaireMatch.availableProperties
+											.filter(
+												(p) =>
+													p.property !==
+													questionnaireMatch.property,
+											)
+											.map(
+												(p) =>
+													PROPERTY_LABELS[
+														p.property
+													] ?? p.property,
+											)
+											.join(", ")}
+									</span>
+								</div>
+							)}
+					</div>
+				)}
+
+				{/* Case variants */}
+				{variable.variants.length > 1 && (
+					<div>
+						<div className="text-xs text-base-content/40 mb-1">
+							Case variants
+						</div>
+						<div className="flex flex-wrap gap-1">
+							{variable.variants.map((v) => (
+								<code
+									key={v}
+									className="text-xs bg-base-200 px-1.5 py-0.5 rounded"
+								>
+									{v}
+								</code>
+							))}
+						</div>
+					</div>
+				)}
+
+				{/* Additional schema info */}
+				{schemaEntry && (
+					<>
+						{schemaEntry.required && (
+							<div className="flex gap-2 text-xs">
+								<span className="text-base-content/40">
+									Required:
+								</span>
+								<span className="text-error">Yes</span>
+							</div>
+						)}
+						{schemaEntry.default && (
+							<div className="flex gap-2 text-xs">
+								<span className="text-base-content/40">
+									Default:
+								</span>
+								<code className="bg-base-200 px-1 rounded">
+									{schemaEntry.default}
+								</code>
+							</div>
+						)}
+						{schemaEntry.help && (
+							<div className="flex gap-2 text-xs">
+								<span className="text-base-content/40">
+									Help:
+								</span>
+								<span className="text-base-content/60 italic">
+									{schemaEntry.help}
+								</span>
+							</div>
+						)}
+						{schemaEntry.date_format && (
+							<div className="flex gap-2 text-xs">
+								<span className="text-base-content/40">
+									Format:
+								</span>
+								<code className="bg-base-200 px-1 rounded">
+									{schemaEntry.date_format}
+								</code>
+							</div>
+						)}
+						{/* Conditional definitions */}
+						{(schemaEntry.condition ||
+							(schemaEntry.conditions &&
+								schemaEntry.conditions.length > 0)) && (
+							<ConditionalDetails
+								condition={schemaEntry.condition}
+								conditions={schemaEntry.conditions}
+								schema={schema}
+								allVars={allVars}
+								questionnaireMatchMap={questionnaireMatchMap}
+							/>
+						)}
+					</>
+				)}
+			</div>
 		</div>
 	);
 }
@@ -1898,11 +2102,13 @@ function ConditionalDetails({
 	conditions,
 	schema,
 	allVars,
+	questionnaireMatchMap,
 }: {
 	condition?: ConditionalDef;
 	conditions?: ConditionalDef[];
 	schema?: VariableSchema | null;
 	allVars?: VariableInfo[];
+	questionnaireMatchMap?: Map<string, QuestionnaireMatch>;
 }) {
 	const defs =
 		conditions && conditions.length > 0
@@ -1982,8 +2188,10 @@ function ConditionalDetails({
 								name={name}
 								varInfo={varInfo}
 								schemaEntry={entry}
+								questionnaireMatch={questionnaireMatchMap?.get(name)}
 								schema={schema}
 								allVars={allVars}
+								questionnaireMatchMap={questionnaireMatchMap}
 							/>
 						);
 					})}
@@ -1999,27 +2207,32 @@ function NestedVariableCard({
 	name,
 	varInfo,
 	schemaEntry,
+	questionnaireMatch,
 	schema,
 	allVars,
+	questionnaireMatchMap,
 }: {
 	name: string;
 	varInfo?: VariableInfo;
 	schemaEntry?: VariableSchemaEntry;
+	questionnaireMatch?: QuestionnaireMatch;
 	schema?: VariableSchema | null;
 	allVars?: VariableInfo[];
+	questionnaireMatchMap?: Map<string, QuestionnaireMatch>;
 }) {
-	const hasDetails =
-		(varInfo && varInfo.variants.length > 1) || schemaEntry;
+	const isLinked = !!questionnaireMatch;
+	const isContactMember = questionnaireMatch?.kind === "contact-member";
 
 	return (
 		<div className="rounded border border-base-300 bg-base-100 text-xs">
 			<div className="flex items-center gap-2 px-2.5 py-1.5">
 				<span className="flex-1 font-medium truncate">{name}</span>
-				{schemaEntry?.var_type && schemaEntry.var_type !== "text" && (
-					<span className="badge badge-xs badge-info">
-						{TYPE_LABELS[schemaEntry.var_type] ??
-							schemaEntry.var_type}
+				{isLinked ? (
+					<span className="badge badge-xs badge-success badge-outline">
+						Q
 					</span>
+				) : (
+					<span className="badge badge-xs badge-ghost">Local</span>
 				)}
 				{schemaEntry?.required && (
 					<span
@@ -2029,86 +2242,87 @@ function NestedVariableCard({
 				)}
 			</div>
 
-			{hasDetails && (
-				<div className="px-2.5 pb-2 space-y-1.5 border-t border-base-200 pt-1.5">
-					{/* Case variants */}
-					{varInfo && varInfo.variants.length > 1 && (
+			<div className="px-2.5 pb-2 space-y-1.5 border-t border-base-200 pt-1.5">
+				{/* Contact role hierarchy */}
+				{isContactMember && questionnaireMatch.role && (
+					<div className="rounded border border-base-300 bg-base-200/50 p-1.5 space-y-1">
 						<div>
-							<div className="text-base-content/40 mb-0.5">
-								Case variants
-							</div>
-							<div className="flex flex-wrap gap-1">
-								{varInfo.variants.map((v) => (
-									<code
-										key={v}
-										className="bg-base-200 px-1 py-0.5 rounded text-[10px]"
-									>
-										{v}
-									</code>
-								))}
-							</div>
+							<span className="text-base-content/40">
+								Role:{" "}
+							</span>
+							<span className="font-medium">
+								{questionnaireMatch.role}
+							</span>
 						</div>
-					)}
+						<div>
+							<span className="text-base-content/40">
+								Property:{" "}
+							</span>
+							<span className="font-medium">
+								{PROPERTY_LABELS[
+									questionnaireMatch.property ?? ""
+								] ?? questionnaireMatch.property}
+							</span>
+						</div>
+					</div>
+				)}
 
-					{schemaEntry && (
-						<>
-							{schemaEntry.default && (
-								<div className="flex gap-2">
-									<span className="text-base-content/40">
-										Default:
-									</span>
-									<code className="bg-base-200 px-1 rounded">
-										{schemaEntry.default}
-									</code>
-								</div>
-							)}
-							{schemaEntry.help && (
-								<div className="flex gap-2">
-									<span className="text-base-content/40">
-										Help:
-									</span>
-									<span className="text-base-content/60 italic">
-										{schemaEntry.help}
-									</span>
-								</div>
-							)}
-							{schemaEntry.date_format && (
-								<div className="flex gap-2">
-									<span className="text-base-content/40">
-										Format:
-									</span>
-									<code className="bg-base-200 px-1 rounded">
-										{schemaEntry.date_format}
-									</code>
-								</div>
-							)}
-							{schemaEntry.contact_role && (
-								<div className="flex gap-2">
-									<span className="text-base-content/40">
-										Contact:
-									</span>
-									<span>
-										{schemaEntry.contact_role}
-										{schemaEntry.contact_property &&
-											` > ${schemaEntry.contact_property}`}
-									</span>
-								</div>
-							)}
-							{/* Recurse for nested conditionals */}
-							{(schemaEntry.condition ||
-								(schemaEntry.conditions &&
-									schemaEntry.conditions.length > 0)) && (
-								<ConditionalDetails
-									condition={schemaEntry.condition}
-									conditions={schemaEntry.conditions}
-									schema={schema}
-									allVars={allVars}
-								/>
-							)}
-						</>
-					)}
-				</div>
-			)}
+				{/* Case variants */}
+				{varInfo && varInfo.variants.length > 1 && (
+					<div>
+						<div className="text-base-content/40 mb-0.5">
+							Case variants
+						</div>
+						<div className="flex flex-wrap gap-1">
+							{varInfo.variants.map((v) => (
+								<code
+									key={v}
+									className="bg-base-200 px-1 py-0.5 rounded text-[10px]"
+								>
+									{v}
+								</code>
+							))}
+						</div>
+					</div>
+				)}
+
+				{schemaEntry && (
+					<>
+						{schemaEntry.default && (
+							<div className="flex gap-2">
+								<span className="text-base-content/40">
+									Default:
+								</span>
+								<code className="bg-base-200 px-1 rounded">
+									{schemaEntry.default}
+								</code>
+							</div>
+						)}
+						{schemaEntry.help && (
+							<div className="flex gap-2">
+								<span className="text-base-content/40">
+									Help:
+								</span>
+								<span className="text-base-content/60 italic">
+									{schemaEntry.help}
+								</span>
+							</div>
+						)}
+						{/* Recurse for nested conditionals */}
+						{(schemaEntry.condition ||
+							(schemaEntry.conditions &&
+								schemaEntry.conditions.length > 0)) && (
+							<ConditionalDetails
+								condition={schemaEntry.condition}
+								conditions={schemaEntry.conditions}
+								schema={schema}
+								allVars={allVars}
+								questionnaireMatchMap={questionnaireMatchMap}
+							/>
+						)}
+					</>
+				)}
+			</div>
 		</div>
 	);
 }
