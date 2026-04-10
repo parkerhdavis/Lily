@@ -2859,7 +2859,7 @@ function VariableEditModal({
 		if (qDepth === 1) {
 			const tabId = path[1].key;
 			const sections = (sectionsByTab.get(tabId) ?? []).filter(
-				(s) => s.questions.length > 0 || s.kind === "contacts",
+				(s) => s.questions.length > 0,
 			);
 			return sections.map((section) => (
 				<button
@@ -3063,18 +3063,23 @@ function VariableEditModal({
 						<div className="flex items-center gap-1 text-base-content/50 ml-1 overflow-hidden text-xs">
 							<button
 								type="button"
-								className={`hover:text-primary transition-colors shrink-0 ${path.length === 0 ? "text-base-content/80 font-medium" : ""}`}
+								className="hover:text-primary transition-colors shrink-0"
 								onClick={() => navigate([])}
 							>
-								{questionnaire?.name ?? "Root"}
+								Home
 							</button>
-							{path.map((crumb, i) => (
+							{/* Skip synthetic root entries (__questionnaire__, __local__) in breadcrumbs */}
+							{path.filter((c) => !c.key.startsWith("__")).map((crumb, i, filtered) => (
 								<span key={crumb.key} className="flex items-center gap-1 shrink-0">
 									<span className="text-base-content/20">/</span>
 									<button
 										type="button"
-										className={`hover:text-primary transition-colors ${i === path.length - 1 ? "text-base-content/80 font-medium" : ""}`}
-										onClick={() => navigate(path.slice(0, i + 1))}
+										className={`hover:text-primary transition-colors ${i === filtered.length - 1 ? "text-base-content/80 font-medium" : ""}`}
+										onClick={() => {
+											// Find this crumb's index in the full path to navigate correctly
+											const fullIdx = path.indexOf(crumb);
+											navigate(path.slice(0, fullIdx + 1));
+										}}
 									>
 										{crumb.label}
 									</button>
