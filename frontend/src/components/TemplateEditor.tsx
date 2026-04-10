@@ -2731,8 +2731,9 @@ function VariableEditModal({
 		if (depth === 0) {
 			return (
 				<>
-					{questionnaire &&
-						tabs.map((tab) => {
+					{questionnaire && (
+						<div className="rounded-lg border border-base-300 bg-base-200/30 p-1 space-y-0.5">
+						{tabs.map((tab) => {
 							const sections = (
 								sectionsByTab.get(tab.id) ?? []
 							).filter(
@@ -2766,22 +2767,23 @@ function VariableEditModal({
 								</button>
 							);
 						})}
-
-					{questionnaire && (
-						<div className="border-t border-base-300 my-2" />
+						</div>
 					)}
 
-					<button
-						type="button"
-						className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg text-sm"
-						onClick={() => onSelect(currentVarName)}
-					>
-						Keep as local variable
-					</button>
+					{questionnaire && <div className="my-4" />}
+
+					<div className="rounded-lg border border-base-300 bg-base-200/30 p-1">
+						<button
+							type="button"
+							className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg text-sm"
+							onClick={() => onSelect(currentVarName)}
+						>
+							Keep as local variable
+						</button>
+					</div>
 
 					{onRemove && (
-						<>
-							<div className="border-t border-base-300 my-2" />
+						<div className="rounded-lg border border-error/20 bg-error/5 p-1 mt-4">
 							<button
 								type="button"
 								className="w-full text-left px-3 py-2.5 hover:bg-error/10 text-error/70 hover:text-error transition-colors rounded-lg text-sm"
@@ -2789,7 +2791,7 @@ function VariableEditModal({
 							>
 								Remove variable...
 							</button>
-						</>
+						</div>
 					)}
 				</>
 			);
@@ -2948,7 +2950,7 @@ function VariableEditModal({
 				if (e.target === e.currentTarget) onClose();
 			}}
 		>
-			<div className="modal-box max-w-5xl w-full h-[70vh] flex flex-col overflow-x-hidden">
+			<div className="modal-box max-w-3xl w-full h-[55vh] flex flex-col overflow-x-hidden">
 				{/* Header */}
 				<div className="flex items-center gap-3 mb-3">
 					<h3 className="font-bold text-lg">Edit Variable</h3>
@@ -3048,8 +3050,10 @@ function VariableEditModal({
 				)}
 
 				{/* Content area */}
-				<div className="flex-1 overflow-y-auto -mx-2 px-2 space-y-0.5">
-					{renderItems()}
+				<div className="flex-1 overflow-y-auto -mx-2 px-2 flex flex-col justify-center">
+					<div className="space-y-0.5 py-2">
+						{renderItems()}
+					</div>
 				</div>
 
 				{/* Footer */}
