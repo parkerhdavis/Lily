@@ -3006,7 +3006,7 @@ function VariableEditModal({
 				if (e.target === e.currentTarget) onClose();
 			}}
 		>
-			<div className="modal-box max-w-lg w-full h-[28rem] flex flex-col overflow-x-hidden">
+			<div className="modal-box max-w-2xl w-full h-[34rem] flex flex-col overflow-x-hidden">
 				{/* Header + search */}
 				<div className="mb-4">
 					<div className="flex items-center gap-3 mb-3">
