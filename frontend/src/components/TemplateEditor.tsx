@@ -166,6 +166,11 @@ export default function TemplateEditor() {
 	const discardDialogRef = useRef<HTMLDialogElement>(null);
 	const unsavedDialogRef = useRef<HTMLDialogElement>(null);
 
+	// Active tab for center pane
+	const [activeTab, setActiveTab] = useState<"template" | "preview">(
+		"template",
+	);
+
 	// Context menu state
 	const [contextMenu, setContextMenu] = useState<{
 		x: number;
@@ -1078,37 +1083,56 @@ export default function TemplateEditor() {
 					</div>
 				</div>
 
-				{/* Center: dual document panes */}
-				<div className="flex flex-1 min-w-0">
-					{/* Raw template view */}
-					<div className="flex-1 overflow-y-auto p-6 bg-base-200 border-r border-base-300">
-						<div className="text-xs text-base-content/40 font-semibold uppercase tracking-wider mb-2 text-center">
+				{/* Center: tabbed document view */}
+				<div className="flex flex-col flex-1 min-w-0">
+					{/* Tab bar */}
+					<div className="flex border-b border-base-300 bg-base-100 shrink-0">
+						<button
+							type="button"
+							className={`px-5 py-2 text-sm font-medium transition-colors border-b-2 ${
+								activeTab === "template"
+									? "border-primary text-primary"
+									: "border-transparent text-base-content/50 hover:text-base-content/80"
+							}`}
+							onClick={() => setActiveTab("template")}
+						>
 							Template
-						</div>
-						{/* biome-ignore lint/a11y/useKeyWithClickEvents: context menu */}
-						<div
-							ref={previewRef}
-							className="bg-base-100 rounded-lg shadow-lg border border-base-300 p-8 prose prose-sm template-editor-preview"
-							// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
-							dangerouslySetInnerHTML={{
-								__html: templateEditorHtml,
-							}}
-							onContextMenu={handleContextMenu}
-						/>
+						</button>
+						<button
+							type="button"
+							className={`px-5 py-2 text-sm font-medium transition-colors border-b-2 ${
+								activeTab === "preview"
+									? "border-primary text-primary"
+									: "border-transparent text-base-content/50 hover:text-base-content/80"
+							}`}
+							onClick={() => setActiveTab("preview")}
+						>
+							Preview
+						</button>
 					</div>
 
-					{/* Live preview */}
+					{/* Tab content */}
 					<div className="flex-1 overflow-y-auto p-6 bg-base-200">
-						<div className="text-xs text-base-content/40 font-semibold uppercase tracking-wider mb-2 text-center">
-							Preview
-						</div>
-						<div
-							className="bg-base-100 rounded-lg shadow-lg border border-base-300 p-8 prose prose-sm opacity-75"
-							// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
-							dangerouslySetInnerHTML={{
-								__html: livePreviewHtml,
-							}}
-						/>
+						{activeTab === "template" ? (
+							/* biome-ignore lint/a11y/useKeyWithClickEvents: context menu */
+							<div
+								ref={previewRef}
+								className="bg-base-100 rounded-lg shadow-lg border border-base-300 p-8 prose prose-sm template-editor-preview"
+								// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
+								dangerouslySetInnerHTML={{
+									__html: templateEditorHtml,
+								}}
+								onContextMenu={handleContextMenu}
+							/>
+						) : (
+							<div
+								className="bg-base-100 rounded-lg shadow-lg border border-base-300 p-8 prose prose-sm opacity-75"
+								// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
+								dangerouslySetInnerHTML={{
+									__html: livePreviewHtml,
+								}}
+							/>
+						)}
 					</div>
 				</div>
 
