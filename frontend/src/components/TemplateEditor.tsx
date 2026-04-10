@@ -2730,10 +2730,9 @@ function VariableEditModal({
 		// Root level: show questionnaire tabs + local + remove
 		if (depth === 0) {
 			return (
-				<>
-					{questionnaire && (
-						<div className="rounded-lg border border-base-300 bg-base-200/30 p-1 space-y-0.5">
-						{tabs.map((tab) => {
+				<div className="space-y-0.5">
+					{questionnaire &&
+						tabs.map((tab) => {
 							const sections = (
 								sectionsByTab.get(tab.id) ?? []
 							).filter(
@@ -2746,7 +2745,7 @@ function VariableEditModal({
 								<button
 									key={tab.id}
 									type="button"
-									className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg flex items-center gap-3 text-sm"
+									className="w-full text-left px-3 py-2 hover:bg-base-200 rounded flex items-center gap-3 text-sm"
 									onClick={() =>
 										navigate([
 											{
@@ -2767,33 +2766,30 @@ function VariableEditModal({
 								</button>
 							);
 						})}
-						</div>
-					)}
 
-					{questionnaire && <div className="my-4" />}
+					<div className="border-t border-base-content/10 my-2" />
 
-					<div className="rounded-lg border border-base-300 bg-base-200/30 p-1">
-						<button
-							type="button"
-							className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg text-sm"
-							onClick={() => onSelect(currentVarName)}
-						>
-							Keep as local variable
-						</button>
-					</div>
+					<button
+						type="button"
+						className="w-full text-left px-3 py-2 hover:bg-base-200 rounded text-sm text-base-content/60"
+						onClick={() => onSelect(currentVarName)}
+					>
+						Keep as local variable
+					</button>
 
 					{onRemove && (
-						<div className="rounded-lg border border-error/20 bg-error/5 p-1 mt-4">
+						<>
+							<div className="border-t border-base-content/10 my-2" />
 							<button
 								type="button"
-								className="w-full text-left px-3 py-2.5 hover:bg-error/10 text-error/70 hover:text-error transition-colors rounded-lg text-sm"
+								className="w-full text-left px-3 py-2 hover:bg-error/10 text-error/60 hover:text-error transition-colors rounded text-sm"
 								onClick={onRemove}
 							>
 								Remove variable...
 							</button>
-						</div>
+						</>
 					)}
-				</>
+				</div>
 			);
 		}
 
@@ -2950,29 +2946,36 @@ function VariableEditModal({
 				if (e.target === e.currentTarget) onClose();
 			}}
 		>
-			<div className="modal-box max-w-3xl w-full h-[55vh] flex flex-col overflow-x-hidden">
-				{/* Header */}
-				<div className="flex items-center gap-3 mb-3">
-					<h3 className="font-bold text-lg">Edit Variable</h3>
-					<code className="bg-base-200 px-2 py-0.5 rounded text-sm">
-						{currentVarName}
-					</code>
+			<div className="modal-box max-w-lg w-full max-h-[70vh] flex flex-col overflow-x-hidden">
+				{/* Header + search */}
+				<div className="mb-4">
+					<div className="flex items-center gap-3 mb-3">
+						<h3 className="font-bold text-lg">Edit Variable</h3>
+						<code className="bg-base-200 px-2 py-0.5 rounded text-sm">
+							{currentVarName}
+						</code>
+						<button
+							type="button"
+							className="btn btn-ghost btn-sm ml-auto"
+							onClick={onClose}
+						>
+							Cancel
+						</button>
+					</div>
+					<input
+						type="text"
+						className="input input-bordered input-sm w-full"
+						placeholder="Search variables..."
+						value={search}
+						onChange={(e) => setSearch(e.target.value)}
+						// biome-ignore lint/a11y/noAutofocus: modal search focus
+						autoFocus
+					/>
 				</div>
-
-				{/* Search */}
-				<input
-					type="text"
-					className="input input-bordered input-sm w-full mb-3"
-					placeholder="Search variables..."
-					value={search}
-					onChange={(e) => setSearch(e.target.value)}
-					// biome-ignore lint/a11y/noAutofocus: modal search focus
-					autoFocus
-				/>
 
 				{/* Breadcrumbs + back/forward */}
 				{!search.trim() && (
-					<div className="flex items-center gap-1 mb-3 text-sm min-h-8">
+					<div className="flex items-center gap-1 mb-2 text-sm">
 						<button
 							type="button"
 							className="btn btn-ghost btn-xs btn-square"
@@ -2980,66 +2983,36 @@ function VariableEditModal({
 							disabled={historyIdx <= 0}
 							title="Back"
 						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 0 16 16"
-								fill="currentColor"
-								className="size-3.5"
-							>
-								<path
-									fillRule="evenodd"
-									d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z"
-									clipRule="evenodd"
-								/>
+							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-3.5">
+								<path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
 							</svg>
 						</button>
 						<button
 							type="button"
 							className="btn btn-ghost btn-xs btn-square"
 							onClick={goForward}
-							disabled={
-								historyIdx >= pathHistory.length - 1
-							}
+							disabled={historyIdx >= pathHistory.length - 1}
 							title="Forward"
 						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 0 16 16"
-								fill="currentColor"
-								className="size-3.5"
-							>
-								<path
-									fillRule="evenodd"
-									d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"
-									clipRule="evenodd"
-								/>
+							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-3.5">
+								<path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
 							</svg>
 						</button>
-
-						<div className="flex items-center gap-1 text-base-content/60 ml-1 overflow-hidden">
+						<div className="flex items-center gap-1 text-base-content/50 ml-1 overflow-hidden text-xs">
 							<button
 								type="button"
-								className={`hover:text-primary transition-colors shrink-0 ${path.length === 0 ? "text-base-content font-medium" : ""}`}
+								className={`hover:text-primary transition-colors shrink-0 ${path.length === 0 ? "text-base-content/80 font-medium" : ""}`}
 								onClick={() => navigate([])}
 							>
 								{questionnaire?.name ?? "Root"}
 							</button>
 							{path.map((crumb, i) => (
-								<span
-									key={crumb.key}
-									className="flex items-center gap-1 shrink-0"
-								>
-									<span className="text-base-content/30">
-										/
-									</span>
+								<span key={crumb.key} className="flex items-center gap-1 shrink-0">
+									<span className="text-base-content/20">/</span>
 									<button
 										type="button"
-										className={`hover:text-primary transition-colors ${i === path.length - 1 ? "text-base-content font-medium" : ""}`}
-										onClick={() =>
-											navigate(
-												path.slice(0, i + 1),
-											)
-										}
+										className={`hover:text-primary transition-colors ${i === path.length - 1 ? "text-base-content/80 font-medium" : ""}`}
+										onClick={() => navigate(path.slice(0, i + 1))}
 									>
 										{crumb.label}
 									</button>
@@ -3050,21 +3023,8 @@ function VariableEditModal({
 				)}
 
 				{/* Content area */}
-				<div className="flex-1 overflow-y-auto -mx-2 px-2 flex flex-col justify-center">
-					<div className="space-y-0.5 py-2">
-						{renderItems()}
-					</div>
-				</div>
-
-				{/* Footer */}
-				<div className="modal-action">
-					<button
-						type="button"
-						className="btn btn-ghost btn-sm"
-						onClick={onClose}
-					>
-						Cancel
-					</button>
+				<div className="overflow-y-auto -mx-2 px-2">
+					{renderItems()}
 				</div>
 			</div>
 		</dialog>
