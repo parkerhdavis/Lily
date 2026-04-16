@@ -241,15 +241,33 @@ export default function ContactPicker({
 	const bindings = lilyFile?.contact_bindings ?? {};
 
 	const hasCoAgent = Boolean(question.coAgentRole && question.coAgentVariableMappings);
-	const coAgentActive = hasCoAgent && bindings[question.coAgentRole!] !== undefined;
+	const bindingExists = hasCoAgent && bindings[question.coAgentRole!] !== undefined;
+
+	// Local toggle state — initialised from the binding so it stays in
+	// sync on mount / reload, but lets the user open the picker before
+	// they've actually selected a contact.
+	const [coAgentOpen, setCoAgentOpen] = useState(bindingExists);
+
+	// Keep local state in sync when the binding appears or disappears
+	// externally (e.g. file reload).
+	const [prevBindingExists, setPrevBindingExists] = useState(bindingExists);
+	if (bindingExists !== prevBindingExists) {
+		setPrevBindingExists(bindingExists);
+		if (bindingExists && !coAgentOpen) setCoAgentOpen(true);
+	}
 
 	const handleToggleCoAgent = useCallback(async () => {
-		if (coAgentActive) {
-			await clearContactBinding(question.coAgentRole!);
+		if (coAgentOpen) {
+			// Toggling off — clear binding if one exists
+			setCoAgentOpen(false);
+			if (bindingExists) {
+				await clearContactBinding(question.coAgentRole!);
+			}
+		} else {
+			// Toggling on — just show the picker
+			setCoAgentOpen(true);
 		}
-		// When toggling on, we don't create a binding yet — the user
-		// selects a contact (or None/Other) which creates the binding.
-	}, [coAgentActive, question.coAgentRole, clearContactBinding]);
+	}, [coAgentOpen, bindingExists, question.coAgentRole, clearContactBinding]);
 
 	return (
 		<div className="form-control w-full">
@@ -269,7 +287,7 @@ export default function ContactPicker({
 						<input
 							type="checkbox"
 							className="toggle toggle-sm toggle-primary"
-							checked={coAgentActive}
+							checked={coAgentOpen}
 							onChange={handleToggleCoAgent}
 						/>
 						<span className="label-text text-xs text-base-content/60">
@@ -277,7 +295,7 @@ export default function ContactPicker({
 						</span>
 					</label>
 
-					{coAgentActive && (
+					{coAgentOpen && (
 						<div className="mt-1 ml-4 pl-3 border-l-2 border-secondary/30">
 							<SingleContactPicker
 								role={question.coAgentRole!}
