@@ -902,7 +902,7 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
         let co_has = lily
             .variables
             .get(&format!("Has {}", co_role))
-            .map_or(false, |v| v == "true");
+            .is_some_and(|v| v == "true");
 
         let (co_name, co_phone) = if co_has {
             let name_key = format!("{} Full Name", co_role);
