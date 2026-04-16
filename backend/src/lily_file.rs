@@ -922,8 +922,8 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
             )
         } else if parent_role.contains("FPOA") {
             (
-                "agent.".to_string(),
-                "co-agents. Either co-agent may act individually if the other is unable or unwilling to serve.".to_string(),
+                "Agent.".to_string(),
+                "co-Agents. Either co-agent may act individually if the other is unable or unwilling to serve.".to_string(),
             )
         } else if parent_role.contains("Personal Representative") {
             (
@@ -994,7 +994,7 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
         let solo_title = if role.contains("HPOA") {
             "Healthcare Representative."
         } else if role.contains("FPOA") {
-            "agent."
+            "Agent."
         } else if role.contains("Personal Representative") {
             "Personal Representative."
         } else {
