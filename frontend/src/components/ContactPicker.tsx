@@ -23,45 +23,47 @@ function getProperty(contact: Contact, key: string): string {
 	return (contact as unknown as Record<string, string>)[key] ?? "";
 }
 
-export default function ContactPicker({
-	question,
+type ContactRoleQuestion = Extract<QuestionDef, { kind: "contact-role" }>;
+
+/** A single contact selection dropdown with resolved values / manual entry. */
+function SingleContactPicker({
+	role,
+	label,
+	variableMappings,
+	contacts,
+	variables,
+	bindings,
 	onAddContact,
 }: {
-	question: Extract<QuestionDef, { kind: "contact-role" }>;
+	role: string;
+	label: string;
+	variableMappings: Record<string, string>;
+	contacts: Contact[];
+	variables: Record<string, string>;
+	bindings: Record<string, ContactBinding>;
 	onAddContact?: () => void;
 }) {
-	const {
-		lilyFile,
-		saveClientVariable,
-		setContactBinding,
-		clearContactBinding,
-	} = useWorkflowStore();
+	const { saveClientVariable, setContactBinding, clearContactBinding } =
+		useWorkflowStore();
 
-	const contacts = lilyFile?.contacts ?? [];
-	const variables = lilyFile?.variables ?? {};
-	const bindings = lilyFile?.contact_bindings ?? {};
-	const binding = bindings[question.role] as ContactBinding | undefined;
-
+	const binding = bindings[role] as ContactBinding | undefined;
 	const boundContactId = binding?.contact_id ?? null;
 	const isNone = boundContactId === "__none__";
 	const isOther = binding !== undefined && boundContactId === null;
 
-	// Determine which contact is currently selected
 	const selectedContact = useMemo(
 		() => contacts.find((c) => c.id === boundContactId) ?? null,
 		[contacts, boundContactId],
 	);
 
-	// Track local values for "Other" manual entry
 	const [manualValues, setManualValues] = useState<Record<string, string>>(
 		{},
 	);
 
-	// Sync manual values from variables when entering "Other" mode
 	const [prevIsOther, setPrevIsOther] = useState(isOther);
 	if (isOther && !prevIsOther) {
 		const vals: Record<string, string> = {};
-		for (const varName of Object.keys(question.variableMappings)) {
+		for (const varName of Object.keys(variableMappings)) {
 			vals[varName] = variables[varName] ?? "";
 		}
 		setManualValues(vals);
@@ -73,31 +75,27 @@ export default function ContactPicker({
 	const handleSelectChange = useCallback(
 		async (value: string) => {
 			if (value === "__none__") {
-				// Explicitly "no one" for this role
-				await setContactBinding(question.role, {
+				await setContactBinding(role, {
 					contact_id: "__none__",
-					variable_mappings: question.variableMappings,
+					variable_mappings: variableMappings,
 				});
 			} else if (value === "__other__") {
-				// Switch to manual entry — clear contact_id but keep mappings
-				await setContactBinding(question.role, {
+				await setContactBinding(role, {
 					contact_id: null,
-					variable_mappings: question.variableMappings,
+					variable_mappings: variableMappings,
 				});
 			} else if (value === "__add__") {
 				onAddContact?.();
 			} else if (value === "") {
-				// No selection — remove binding entirely
-				await clearContactBinding(question.role);
+				await clearContactBinding(role);
 			} else {
-				// Selected a contact
-				await setContactBinding(question.role, {
+				await setContactBinding(role, {
 					contact_id: value,
-					variable_mappings: question.variableMappings,
+					variable_mappings: variableMappings,
 				});
 			}
 		},
-		[question.role, question.variableMappings, setContactBinding, clearContactBinding, onAddContact],
+		[role, variableMappings, setContactBinding, clearContactBinding, onAddContact],
 	);
 
 	const handleManualBlur = useCallback(
@@ -109,7 +107,6 @@ export default function ContactPicker({
 		[variables, saveClientVariable],
 	);
 
-	// Build the select value
 	const selectValue = selectedContact
 		? selectedContact.id
 		: isNone
@@ -122,7 +119,7 @@ export default function ContactPicker({
 		<div className="form-control w-full">
 			<label className="label pb-1">
 				<span className="label-text text-sm font-medium">
-					{question.label}
+					{label}
 				</span>
 			</label>
 
@@ -158,7 +155,7 @@ export default function ContactPicker({
 			{/* Show resolved values when a contact is selected */}
 			{selectedContact && (
 				<div className="mt-2 pl-3 border-l-2 border-primary/30 space-y-1">
-					{Object.entries(question.variableMappings).map(
+					{Object.entries(variableMappings).map(
 						([varName, propKey]) => {
 							const value = getProperty(
 								selectedContact,
@@ -191,7 +188,7 @@ export default function ContactPicker({
 			{/* Manual entry fields when "Other" is selected */}
 			{isOther && (
 				<div className="mt-2 pl-3 border-l-2 border-warning/30 space-y-2">
-					{Object.entries(question.variableMappings).map(
+					{Object.entries(variableMappings).map(
 						([varName, propKey]) => (
 							<div key={varName}>
 								<label className="label pb-0.5">
@@ -223,6 +220,75 @@ export default function ContactPicker({
 								/>
 							</div>
 						),
+					)}
+				</div>
+			)}
+		</div>
+	);
+}
+
+export default function ContactPicker({
+	question,
+	onAddContact,
+}: {
+	question: ContactRoleQuestion;
+	onAddContact?: () => void;
+}) {
+	const { lilyFile, clearContactBinding } = useWorkflowStore();
+
+	const contacts = lilyFile?.contacts ?? [];
+	const variables = lilyFile?.variables ?? {};
+	const bindings = lilyFile?.contact_bindings ?? {};
+
+	const hasCoAgent = Boolean(question.coAgentRole && question.coAgentVariableMappings);
+	const coAgentActive = hasCoAgent && bindings[question.coAgentRole!] !== undefined;
+
+	const handleToggleCoAgent = useCallback(async () => {
+		if (coAgentActive) {
+			await clearContactBinding(question.coAgentRole!);
+		}
+		// When toggling on, we don't create a binding yet — the user
+		// selects a contact (or None/Other) which creates the binding.
+	}, [coAgentActive, question.coAgentRole, clearContactBinding]);
+
+	return (
+		<div className="form-control w-full">
+			<SingleContactPicker
+				role={question.role}
+				label={question.label}
+				variableMappings={question.variableMappings}
+				contacts={contacts}
+				variables={variables}
+				bindings={bindings}
+				onAddContact={onAddContact}
+			/>
+
+			{hasCoAgent && (
+				<div className="mt-2">
+					<label className="label cursor-pointer justify-start gap-2 py-1">
+						<input
+							type="checkbox"
+							className="toggle toggle-sm toggle-primary"
+							checked={coAgentActive}
+							onChange={handleToggleCoAgent}
+						/>
+						<span className="label-text text-xs text-base-content/60">
+							Assign co-agent
+						</span>
+					</label>
+
+					{coAgentActive && (
+						<div className="mt-1 ml-4 pl-3 border-l-2 border-secondary/30">
+							<SingleContactPicker
+								role={question.coAgentRole!}
+								label={`Co-Agent for ${question.label}`}
+								variableMappings={question.coAgentVariableMappings!}
+								contacts={contacts}
+								variables={variables}
+								bindings={bindings}
+								onAddContact={onAddContact}
+							/>
+						</div>
 					)}
 				</div>
 			)}

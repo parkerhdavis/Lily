@@ -25,13 +25,20 @@ export type QuestionDef =
 	  }
 	| {
 			kind: "contact-role";
-			/** The role name (e.g., "Healthcare POA Agent"). Used as the key
+			/** The role name (e.g., "Primary HPOA Agent"). Used as the key
 			 *  in the contact_bindings map. */
 			role: string;
 			label: string;
 			/** Map from variable display name to contact property key.
 			 *  Defines which variables auto-fill from the selected contact. */
 			variableMappings: Record<string, string>;
+			/** Optional co-agent role name. When set, the UI offers a toggle
+			 *  to assign a second person who serves alongside the primary
+			 *  contact in the same role (e.g., co-agents for a POA). */
+			coAgentRole?: string;
+			/** Variable mappings for the co-agent, following the same
+			 *  structure as `variableMappings`. */
+			coAgentVariableMappings?: Record<string, string>;
 	  }
 	| {
 			kind: "derived";
