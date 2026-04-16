@@ -935,16 +935,19 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
         };
 
         if co_has && !co_name.is_empty() {
+            // Uppercase the co-agent name so it matches the ALL CAPS
+            // convention used for names in legal documents.  The " and "
+            // conjunction stays lowercase.
             lily.variables.insert(
                 format!("{} And Name", co_role),
-                format!(" and {}", co_name),
+                format!(" and {}", co_name.to_uppercase()),
             );
             lily.variables.insert(
                 format!("{} And Phone", co_role),
                 if co_phone.is_empty() {
                     String::new()
                 } else {
-                    format!(" and {}", co_phone)
+                    format!(" and {}, respectively", co_phone)
                 },
             );
             lily.variables
