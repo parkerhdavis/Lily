@@ -1282,38 +1282,101 @@ def replace_text_in_xml(
 
 
 # ── Template schema I/O ─────────────────────────────────────────────────────
+#
+# Schemas are stored in a centralized template-library .lily file (not per-
+# template sidecars).  The library file has lily_type "template-library" and
+# a "templates" dict keyed by relative path from the library's directory.
+#
+# The functions below locate the library by walking up from the template,
+# compute the relative key, and read/write the appropriate entry.
+
+
+def _find_template_library(start: Path) -> Path | None:
+	"""Walk up from *start* looking for a .lily file with lily_type 'template-library'."""
+	for directory in [start.parent] + list(start.parent.parents):
+		for candidate in directory.glob("*.lily"):
+			try:
+				with open(candidate, "r", encoding="utf-8") as f:
+					data = json.load(f)
+				if data.get("lily_type") == "template-library":
+					return candidate
+			except (json.JSONDecodeError, OSError):
+				continue
+	return None
+
+
+def _template_key(library_path: Path, template_path: Path) -> str:
+	"""Compute the relative key for a template within its library."""
+	try:
+		return str(template_path.resolve().relative_to(library_path.parent.resolve()))
+	except ValueError:
+		return template_path.name
+
 
 def schema_path_for_template(template_path: str) -> Path:
-	"""Derive the .lily schema sidecar path from a template path."""
-	p = Path(template_path)
-	return p.with_suffix(".lily")
+	"""Return the path to the template-library .lily file that contains
+	this template's schema.  Falls back to a per-template sidecar path
+	if no library is found (for backwards compatibility)."""
+	p = Path(template_path).resolve()
+	lib = _find_template_library(p)
+	return lib if lib else p.with_suffix(".lily")
 
 
 def load_template_schema(template_path: str) -> dict:
 	"""
-	Load the .lily schema sidecar for a template.
-	Returns a default empty schema if no sidecar exists.
+	Load the schema for a template from the template-library .lily file.
+	Returns a default empty schema if no library or entry is found.
 	"""
-	schema_path = schema_path_for_template(template_path)
-	if not schema_path.exists():
-		template_filename = Path(template_path).name
+	p = Path(template_path).resolve()
+	template_filename = p.name
+
+	lib_path = _find_template_library(p)
+	if lib_path is None:
 		return {
 			"lily_type": "template-schema",
 			"template_filename": template_filename,
 			"variables": {},
 		}
 
-	with open(schema_path, "r", encoding="utf-8") as f:
-		return json.load(f)
+	with open(lib_path, "r", encoding="utf-8") as f:
+		library = json.load(f)
+
+	key = _template_key(lib_path, p)
+	entry = library.get("templates", {}).get(key, {})
+
+	return {
+		"lily_type": "template-schema",
+		"template_filename": template_filename,
+		"variables": entry.get("variables", {}),
+	}
 
 
 def save_template_schema(template_path: str, schema: dict) -> Path:
 	"""
-	Save a .lily schema sidecar for a template.
-	Returns the path where the schema was written.
+	Save the schema for a template into the template-library .lily file.
+	Creates the library entry if it doesn't exist.  Returns the library path.
 	"""
-	schema_path = schema_path_for_template(template_path)
-	with open(schema_path, "w", encoding="utf-8") as f:
-		json.dump(schema, f, indent="\t", ensure_ascii=False)
+	p = Path(template_path).resolve()
+	lib_path = _find_template_library(p)
+
+	if lib_path is None:
+		# No library found — create one next to the template's parent dir
+		lib_path = p.parent.parent / "Templates.lily"
+		library = {"lily_type": "template-library", "templates": {}}
+	else:
+		with open(lib_path, "r", encoding="utf-8") as f:
+			library = json.load(f)
+
+	key = _template_key(lib_path, p)
+	if "templates" not in library:
+		library["templates"] = {}
+
+	library["templates"][key] = {
+		"variables": schema.get("variables", {}),
+	}
+
+	with open(lib_path, "w", encoding="utf-8") as f:
+		json.dump(library, f, indent="\t", ensure_ascii=False)
 		f.write("\n")
-	return schema_path
+
+	return lib_path

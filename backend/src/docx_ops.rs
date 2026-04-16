@@ -3486,14 +3486,12 @@ fn resolve_nested_variables(text: &str, variables: &HashMap<String, String>) -> 
                     .find(|(k, _)| k.to_lowercase() == key)
                     .map(|(_, v)| apply_casing(v, trimmed));
                 if let Some(value) = resolved {
-                    if !value.is_empty() {
-                        result.push_str(&value);
-                    } else {
-                        // Empty value — keep the placeholder
-                        result.push('{');
-                        result.push_str(&inner);
-                        result.push('}');
-                    }
+                    // Variable exists in pool — use its value (even if empty).
+                    // An empty value means the variable was intentionally set to
+                    // "" (e.g., auto-generated co-agent helpers when no co-agent
+                    // is assigned).  Only truly unknown variables (not in the pool
+                    // at all) keep the {Placeholder} text.
+                    result.push_str(&value);
                 } else {
                     // Unknown variable — keep the placeholder
                     result.push('{');
