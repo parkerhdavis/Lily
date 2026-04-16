@@ -866,6 +866,144 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
         if has_minor_children { "true" } else { "false" }.to_string(),
     );
 
+    // ── Pass 4: Co-agent composite helper variables ────────────────────
+    // Detect co-agent pairs by naming convention and generate composite
+    // variables that templates can use for combined names, phones, verb
+    // agreement, and role titles.
+    //
+    // Convention: "X Co-Agent" is the co-agent for "X Agent", and
+    // "X Co-Personal Representative" is the co-agent for "X Personal
+    // Representative".
+    let roles: Vec<String> = lily.contact_bindings.keys().cloned().collect();
+    let mut co_agent_map: Vec<(String, String)> = Vec::new(); // (parent_role, co_role)
+    for role in &roles {
+        if let Some(parent) = role
+            .strip_suffix(" Co-Agent")
+            .map(|prefix| format!("{} Agent", prefix.trim_end()))
+        {
+            if roles.contains(&parent) {
+                co_agent_map.push((parent, role.clone()));
+            }
+        } else if role.contains("Co-Personal Representative") {
+            let parent = role.replace("Co-Personal Representative", "Personal Representative");
+            if roles.contains(&parent) {
+                co_agent_map.push((parent, role.clone()));
+            }
+        }
+    }
+
+    // For every co-agent-capable parent role, generate helpers.
+    // First collect all parent roles that COULD have co-agents (even those
+    // that don't currently) by also scanning for parent roles without a pair.
+    let parents_with_co: std::collections::HashSet<String> =
+        co_agent_map.iter().map(|(p, _)| p.clone()).collect();
+
+    for (parent_role, co_role) in &co_agent_map {
+        let co_has = lily
+            .variables
+            .get(&format!("Has {}", co_role))
+            .map_or(false, |v| v == "true");
+
+        let (co_name, co_phone) = if co_has {
+            let name_key = format!("{} Full Name", co_role);
+            let phone_key = format!("{} Phone", co_role);
+            let name = lily.variables.get(&name_key).cloned().unwrap_or_default();
+            let phone = lily.variables.get(&phone_key).cloned().unwrap_or_default();
+            (name, phone)
+        } else {
+            (String::new(), String::new())
+        };
+
+        // Determine role title based on role type
+        let (solo_title, co_title) = if parent_role.contains("HPOA") {
+            (
+                "Healthcare Representative.".to_string(),
+                "co-Healthcare Representatives. Either co-representative may act individually if the other is unable or unwilling to serve.".to_string(),
+            )
+        } else if parent_role.contains("FPOA") {
+            (
+                "agent.".to_string(),
+                "co-agents. Either co-agent may act individually if the other is unable or unwilling to serve.".to_string(),
+            )
+        } else if parent_role.contains("Personal Representative") {
+            (
+                "Personal Representative.".to_string(),
+                "co-Personal Representatives. Either co-representative may act individually if the other is unable or unwilling to serve.".to_string(),
+            )
+        } else {
+            ("representative.".to_string(), "co-representatives.".to_string())
+        };
+
+        if co_has && !co_name.is_empty() {
+            lily.variables.insert(
+                format!("{} Co-Agent And Name", parent_role),
+                format!(" and {}", co_name),
+            );
+            lily.variables.insert(
+                format!("{} Co-Agent And Phone", parent_role),
+                if co_phone.is_empty() {
+                    String::new()
+                } else {
+                    format!(" and {}", co_phone)
+                },
+            );
+            lily.variables
+                .insert(format!("{} Verb", parent_role), "are".to_string());
+            lily.variables
+                .insert(format!("{} Title", parent_role), co_title);
+        } else {
+            lily.variables.insert(
+                format!("{} Co-Agent And Name", parent_role),
+                String::new(),
+            );
+            lily.variables.insert(
+                format!("{} Co-Agent And Phone", parent_role),
+                String::new(),
+            );
+            lily.variables
+                .insert(format!("{} Verb", parent_role), "is".to_string());
+            lily.variables
+                .insert(format!("{} Title", parent_role), solo_title);
+        }
+    }
+
+    // Also generate default helpers for parent roles whose co-agent role
+    // does not exist in the bindings at all (no co-agent ever assigned).
+    for role in &roles {
+        if !parents_with_co.contains(role) {
+            // Check if this role COULD have a co-agent (i.e., it's an Agent
+            // or Personal Representative role, not itself a co-role).
+            let is_co_role = role.contains("Co-Agent") || role.contains("Co-Personal Representative");
+            if is_co_role {
+                continue;
+            }
+            let could_have_co = role.contains("Agent") || role.contains("Personal Representative");
+            if could_have_co {
+                let (solo_title, _) = if role.contains("HPOA") {
+                    ("Healthcare Representative.".to_string(), ())
+                } else if role.contains("FPOA") {
+                    ("agent.".to_string(), ())
+                } else if role.contains("Personal Representative") {
+                    ("Personal Representative.".to_string(), ())
+                } else {
+                    ("representative.".to_string(), ())
+                };
+                lily.variables
+                    .entry(format!("{} Co-Agent And Name", role))
+                    .or_insert_with(String::new);
+                lily.variables
+                    .entry(format!("{} Co-Agent And Phone", role))
+                    .or_insert_with(String::new);
+                lily.variables
+                    .entry(format!("{} Verb", role))
+                    .or_insert_with(|| "is".to_string());
+                lily.variables
+                    .entry(format!("{} Title", role))
+                    .or_insert_with(|| solo_title);
+            }
+        }
+    }
+
     write_lily_file(&working_dir, &lily)
 }
 
