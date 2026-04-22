@@ -6,6 +6,7 @@
       "name": "lily",
       "devDependencies": {
         "@biomejs/biome": "^2.0.0",
+        "@tauri-apps/cli": "^2.0.0",
       },
     },
     "apps/desktop/frontend": {
@@ -22,7 +23,6 @@
       },
       "devDependencies": {
         "@tailwindcss/cli": "^4.1.0",
-        "@tauri-apps/cli": "^2.0.0",
         "@types/bun": "latest",
         "@types/react": "^19.1.0",
         "@types/react-dom": "^19.1.0",
