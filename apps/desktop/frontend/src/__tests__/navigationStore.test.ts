@@ -1,6 +1,6 @@
-import { describe, expect, test, beforeEach } from "bun:test";
-import { useNavigationStore } from "@/stores/navigationStore";
+import { beforeEach, describe, expect, test } from "bun:test";
 import type { NavigationEntry } from "@/stores/navigationStore";
+import { useNavigationStore } from "@/stores/navigationStore";
 
 function entry(label: string): NavigationEntry {
 	return {

@@ -1,13 +1,10 @@
 import { useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
-import { RELATIONSHIP_OPTIONS } from "@/types";
 import type { Contact } from "@/types";
+import { RELATIONSHIP_OPTIONS } from "@/types";
 
 /** Basic format validation for contact fields. Returns an error message or null. */
-function validateContactField(
-	key: string,
-	value: string,
-): string | null {
+function validateContactField(key: string, value: string): string | null {
 	if (!value.trim()) return null; // empty is ok
 	if (key === "email" && !value.includes("@")) {
 		return "Email should contain @";
@@ -24,7 +21,14 @@ function validateContactField(
 /** The text fields that make up a contact, in display order.
  *  full_name is auto-constructed from first/middle/last and not directly editable.
  *  Relationship is handled separately as a dropdown. */
-const CONTACT_FIELDS: { key: keyof Omit<Contact, "id" | "is_minor" | "other_relationship" | "full_name">; label: string; third?: boolean }[] = [
+const CONTACT_FIELDS: {
+	key: keyof Omit<
+		Contact,
+		"id" | "is_minor" | "other_relationship" | "full_name"
+	>;
+	label: string;
+	third?: boolean;
+}[] = [
 	{ key: "first_name", label: "First Name", third: true },
 	{ key: "middle_name", label: "Middle Name", third: true },
 	{ key: "last_name", label: "Last Name", third: true },
@@ -52,11 +56,7 @@ const EMPTY_CONTACT: Omit<Contact, "id"> = {
 	is_minor: false,
 };
 
-export default function ContactManager({
-	onClose,
-}: {
-	onClose: () => void;
-}) {
+export default function ContactManager({ onClose }: { onClose: () => void }) {
 	const { lilyFile, addContact, updateContact, deleteContact } =
 		useWorkflowStore();
 
@@ -64,9 +64,7 @@ export default function ContactManager({
 
 	const [editingContact, setEditingContact] = useState<Contact | null>(null);
 	const [isNew, setIsNew] = useState(false);
-	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(
-		null,
-	);
+	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 	const dialogRef = useRef<HTMLDialogElement>(null);
 	const deleteDialogRef = useRef<HTMLDialogElement>(null);
 
@@ -116,7 +114,11 @@ export default function ContactManager({
 		if (!editingContact) return;
 		const updated = { ...editingContact, [key]: value };
 		// Auto-construct full_name from first/middle/last
-		const nameFields: (keyof Contact)[] = ["first_name", "middle_name", "last_name"];
+		const nameFields: (keyof Contact)[] = [
+			"first_name",
+			"middle_name",
+			"last_name",
+		];
 		if (nameFields.includes(key)) {
 			updated.full_name = [
 				updated.first_name,
@@ -185,7 +187,8 @@ export default function ContactManager({
 									</div>
 									<div className="text-xs text-base-content/50 truncate">
 										{[
-											contact.relationship === "Other" && contact.other_relationship
+											contact.relationship === "Other" &&
+											contact.other_relationship
 												? contact.other_relationship
 												: contact.relationship,
 											contact.phone,
@@ -205,9 +208,7 @@ export default function ContactManager({
 								<button
 									type="button"
 									className="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100"
-									onClick={() =>
-										handleDeleteClick(contact.id)
-									}
+									onClick={() => handleDeleteClick(contact.id)}
 								>
 									&times;
 								</button>
@@ -252,34 +253,43 @@ export default function ContactManager({
 									}
 								>
 									<label className="label pb-0.5">
-										<span className="label-text text-xs">
-											{label}
-										</span>
+										<span className="label-text text-xs">{label}</span>
 									</label>
 									<input
-										type={key === "email" ? "email" : key === "phone" ? "tel" : "text"}
-										className={`input input-bordered input-sm w-full ${validateContactField(key, String(editingContact[key as keyof Contact] ?? "")) ? "input-warning" : ""}`}
-										value={
-											String(editingContact[
-												key as keyof Contact
-											] ?? "")
+										type={
+											key === "email"
+												? "email"
+												: key === "phone"
+													? "tel"
+													: "text"
 										}
+										className={`input input-bordered input-sm w-full ${validateContactField(key, String(editingContact[key as keyof Contact] ?? "")) ? "input-warning" : ""}`}
+										value={String(editingContact[key as keyof Contact] ?? "")}
 										onChange={(e) =>
-											updateField(
-												key as keyof Contact,
-												e.target.value,
-											)
+											updateField(key as keyof Contact, e.target.value)
 										}
 									/>
-									{validateContactField(key, String(editingContact[key as keyof Contact] ?? "")) && (
+									{validateContactField(
+										key,
+										String(editingContact[key as keyof Contact] ?? ""),
+									) && (
 										<p className="text-xs text-warning mt-0.5">
-											{validateContactField(key, String(editingContact[key as keyof Contact] ?? ""))}
+											{validateContactField(
+												key,
+												String(editingContact[key as keyof Contact] ?? ""),
+											)}
 										</p>
 									)}
 								</div>
 							))}
 							{/* Relationship dropdown */}
-							<div className={editingContact.relationship === "Other" ? "col-span-3" : "col-span-6"}>
+							<div
+								className={
+									editingContact.relationship === "Other"
+										? "col-span-3"
+										: "col-span-6"
+								}
+							>
 								<label className="label pb-0.5">
 									<span className="label-text text-xs">Relationship</span>
 								</label>
@@ -298,21 +308,27 @@ export default function ContactManager({
 								>
 									<option value="">Select relationship...</option>
 									{RELATIONSHIP_OPTIONS.map((opt) => (
-										<option key={opt} value={opt}>{opt}</option>
+										<option key={opt} value={opt}>
+											{opt}
+										</option>
 									))}
 								</select>
 							</div>
 							{editingContact.relationship === "Other" && (
 								<div className="col-span-3">
 									<label className="label pb-0.5">
-										<span className="label-text text-xs">Other Relationship</span>
+										<span className="label-text text-xs">
+											Other Relationship
+										</span>
 									</label>
 									<input
 										type="text"
 										className="input input-bordered input-sm w-full"
 										placeholder="Specify relationship..."
 										value={editingContact.other_relationship ?? ""}
-										onChange={(e) => updateField("other_relationship", e.target.value)}
+										onChange={(e) =>
+											updateField("other_relationship", e.target.value)
+										}
 									/>
 								</div>
 							)}
@@ -323,7 +339,11 @@ export default function ContactManager({
 											type="checkbox"
 											className="checkbox checkbox-sm"
 											checked={editingContact.is_minor ?? false}
-											onChange={(e) => setEditingContact((prev) => prev ? { ...prev, is_minor: e.target.checked } : prev)}
+											onChange={(e) =>
+												setEditingContact((prev) =>
+													prev ? { ...prev, is_minor: e.target.checked } : prev,
+												)
+											}
 										/>
 										<span className="label-text text-xs">Is Minor</span>
 									</label>
@@ -345,7 +365,10 @@ export default function ContactManager({
 								type="button"
 								className="btn btn-primary btn-sm"
 								onClick={handleSave}
-								disabled={!editingContact.first_name.trim() && !editingContact.last_name.trim()}
+								disabled={
+									!editingContact.first_name.trim() &&
+									!editingContact.last_name.trim()
+								}
 							>
 								{isNew ? "Add" : "Save"}
 							</button>
@@ -361,26 +384,20 @@ export default function ContactManager({
 					ref={deleteDialogRef}
 					className="modal"
 					onClick={(e) => {
-						if (e.target === deleteDialogRef.current)
-							handleCancelDelete();
+						if (e.target === deleteDialogRef.current) handleCancelDelete();
 					}}
 				>
 					<div className="modal-box">
-						<h3 className="text-lg font-bold mb-2">
-							Delete contact?
-						</h3>
+						<h3 className="text-lg font-bold mb-2">Delete contact?</h3>
 						<p className="text-base-content/70 mb-4">
-							Are you sure you want to delete{" "}
-							<strong>{deleteName}</strong>? Any role bindings
-							referencing this contact will be cleared.
+							Are you sure you want to delete <strong>{deleteName}</strong>? Any
+							role bindings referencing this contact will be cleared.
 						</p>
 						{deleteRoles.length > 0 && (
 							<div className="alert alert-warning text-sm mb-4">
 								<span>
-									Variables filled by this contact for{" "}
-									{deleteRoles.join(", ")} will be left
-									with their current values but may now
-									be stale.
+									Variables filled by this contact for {deleteRoles.join(", ")}{" "}
+									will be left with their current values but may now be stale.
 								</span>
 							</div>
 						)}

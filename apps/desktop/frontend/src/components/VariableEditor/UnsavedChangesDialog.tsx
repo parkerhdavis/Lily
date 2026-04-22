@@ -19,38 +19,23 @@ export default function UnsavedChangesDialog({
 			ref={dialogRef}
 			className="modal"
 			onClick={(e) => {
-				if (e.target === dialogRef.current)
-					dialogRef.current?.close();
+				if (e.target === dialogRef.current) dialogRef.current?.close();
 			}}
 		>
 			<div className="modal-box">
-				<h3 className="font-bold text-lg">
-					Unsaved Changes
-				</h3>
+				<h3 className="font-bold text-lg">Unsaved Changes</h3>
 				<p className="py-4 text-base-content/70">
-					You have unsaved changes to this document.
-					Would you like to save before leaving?
+					You have unsaved changes to this document. Would you like to save
+					before leaving?
 				</p>
 				<div className="modal-action">
-					<button
-						type="button"
-						className="btn btn-ghost"
-						onClick={onDiscard}
-					>
+					<button type="button" className="btn btn-ghost" onClick={onDiscard}>
 						Discard
 					</button>
-					<button
-						type="button"
-						className="btn btn-ghost"
-						onClick={onCancel}
-					>
+					<button type="button" className="btn btn-ghost" onClick={onCancel}>
 						Cancel
 					</button>
-					<button
-						type="button"
-						className="btn btn-primary"
-						onClick={onSave}
-					>
+					<button type="button" className="btn btn-primary" onClick={onSave}>
 						Save & Leave
 					</button>
 				</div>

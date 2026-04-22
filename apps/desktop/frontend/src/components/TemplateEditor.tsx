@@ -1,23 +1,23 @@
+import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useWorkflowStore } from "@/stores/workflowStore";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
-import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
+import { useWorkflowStore } from "@/stores/workflowStore";
 import type {
+	ConditionalDef,
+	TextOccurrence,
 	VariableInfo,
-	VariableType,
 	VariableSchema,
 	VariableSchemaEntry,
-	TextOccurrence,
-	ConditionalDef,
+	VariableType,
 } from "@/types";
 import type {
+	QuestionDef,
 	QuestionnaireDefFile,
 	QuestionnaireIndex,
 	QuestionnaireIndexEntry,
-	QuestionDef,
 	QuestionnaireSectionDef,
 } from "@/types/questionnaire";
 import { extractFilename } from "@/utils/path";
@@ -59,13 +59,11 @@ function buildQuestionnaireMatchMap(
 					question: q,
 				});
 			} else if (q.kind === "contact-role") {
-				const availableProperties = Object.entries(
-					q.variableMappings,
-				).map(([varName, property]) => ({ varName, property }));
+				const availableProperties = Object.entries(q.variableMappings).map(
+					([varName, property]) => ({ varName, property }),
+				);
 
-				for (const [varName, property] of Object.entries(
-					q.variableMappings,
-				)) {
+				for (const [varName, property] of Object.entries(q.variableMappings)) {
 					map.set(varName, {
 						kind: "contact-member",
 						section,
@@ -162,11 +160,7 @@ function getCharOffsetInParagraph(
 	targetNode: Node,
 	targetOffset: number,
 ): number {
-	const walker = document.createTreeWalker(
-		paraEl,
-		NodeFilter.SHOW_TEXT,
-		null,
-	);
+	const walker = document.createTreeWalker(paraEl, NodeFilter.SHOW_TEXT, null);
 	let charCount = 0;
 	let node: Node | null;
 
@@ -175,7 +169,7 @@ function getCharOffsetInParagraph(
 		if (node === targetNode) {
 			return charCount + targetOffset;
 		}
-		charCount += (node.textContent?.length ?? 0);
+		charCount += node.textContent?.length ?? 0;
 	}
 
 	return charCount;
@@ -243,9 +237,9 @@ export default function TemplateEditor() {
 	>(null);
 
 	// Preview values state
-	const [previewValues, setPreviewValues] = useState<
-		Record<string, string>
-	>({});
+	const [previewValues, setPreviewValues] = useState<Record<string, string>>(
+		{},
+	);
 
 	// Confirmation dialog state
 	const confirmDialogRef = useRef<HTMLDialogElement>(null);
@@ -303,9 +297,7 @@ export default function TemplateEditor() {
 				// Default to app-wide active questionnaire, or first available
 				const defaultId =
 					index.active_questionnaire_id ??
-					(index.questionnaires.length > 0
-						? index.questionnaires[0].id
-						: null);
+					(index.questionnaires.length > 0 ? index.questionnaires[0].id : null);
 				setSelectedQuestionnaireId(defaultId);
 			})
 			.catch(() => {});
@@ -337,8 +329,7 @@ export default function TemplateEditor() {
 
 	// Build questionnaire → variable match map
 	const questionnaireMatchMap = useMemo(() => {
-		if (!selectedQuestionnaire)
-			return new Map<string, QuestionnaireMatch>();
+		if (!selectedQuestionnaire) return new Map<string, QuestionnaireMatch>();
 		return buildQuestionnaireMatchMap(selectedQuestionnaire);
 	}, [selectedQuestionnaire]);
 
@@ -384,10 +375,7 @@ export default function TemplateEditor() {
 						: [];
 			if (condList.length === 0) continue;
 			for (const cond of condList) {
-				for (const template of [
-					cond.true_template,
-					cond.false_template,
-				]) {
+				for (const template of [cond.true_template, cond.false_template]) {
 					for (const m of template.matchAll(/\{([^{}]+)\}/g)) {
 						const inner = m[1].trim();
 						const dotIdx = inner.lastIndexOf(".");
@@ -433,9 +421,7 @@ export default function TemplateEditor() {
 
 		const condDefs: Record<string, ConditionalDef[]> = {};
 		if (templateSchema) {
-			for (const [name, entry] of Object.entries(
-				templateSchema.variables,
-			)) {
+			for (const [name, entry] of Object.entries(templateSchema.variables)) {
 				if (entry.conditions && entry.conditions.length > 0) {
 					condDefs[name] = entry.conditions;
 				} else if (entry.condition) {
@@ -449,12 +435,7 @@ export default function TemplateEditor() {
 
 		html = html.replace(
 			SDT_SPAN_RE,
-			(
-				_match,
-				canonical: string,
-				originalCase: string,
-				_text: string,
-			) => {
+			(_match, canonical: string, originalCase: string, _text: string) => {
 				const displayName = canonicalToDisplay[canonical];
 				if (!displayName) return _match;
 
@@ -477,9 +458,7 @@ export default function TemplateEditor() {
 							const dotIdx = trimmed.lastIndexOf(".");
 							let lookupName = trimmed;
 							if (dotIdx > 0) {
-								const role = trimmed
-									.substring(0, dotIdx)
-									.trim();
+								const role = trimmed.substring(0, dotIdx).trim();
 								const prop = trimmed
 									.substring(dotIdx + 1)
 									.trim()
@@ -525,9 +504,7 @@ export default function TemplateEditor() {
 							const dotIdx = trimmed.lastIndexOf(".");
 							let lookupName = trimmed;
 							if (dotIdx > 0) {
-								const role = trimmed
-									.substring(0, dotIdx)
-									.trim();
+								const role = trimmed.substring(0, dotIdx).trim();
 								const prop = trimmed
 									.substring(dotIdx + 1)
 									.trim()
@@ -582,9 +559,7 @@ export default function TemplateEditor() {
 
 		// Scroll the document preview to the nth variable-highlight span
 		if (previewRef.current) {
-			const spans = previewRef.current.querySelectorAll(
-				".variable-highlight",
-			);
+			const spans = previewRef.current.querySelectorAll(".variable-highlight");
 			const span = spans[occurrenceIndex - 1]; // 0-based DOM index
 			if (span) {
 				span.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -713,45 +688,41 @@ export default function TemplateEditor() {
 	}, [templateEditorHtml, moveTemplateSdt]);
 
 	// Right-click context menu
-	const handleContextMenu = useCallback(
-		(e: React.MouseEvent) => {
-			e.preventDefault();
+	const handleContextMenu = useCallback((e: React.MouseEvent) => {
+		e.preventDefault();
 
-			const preview = previewRef.current;
-			if (!preview) return;
+		const preview = previewRef.current;
+		if (!preview) return;
 
-			// Check if right-clicked on an existing SDT badge
-			const target = (e.target as HTMLElement).closest?.(
-				".variable-highlight",
-			) as HTMLElement | null;
-			if (target) {
-				const varName =
-					target.getAttribute("data-original-case") ?? undefined;
-				setContextMenu({
-					x: e.clientX,
-					y: e.clientY,
-					paraIdx: -1,
-					charOffset: -1,
-					onSdt: true,
-					sdtVarName: varName,
-				});
-				return;
-			}
+		// Check if right-clicked on an existing SDT badge
+		const target = (e.target as HTMLElement).closest?.(
+			".variable-highlight",
+		) as HTMLElement | null;
+		if (target) {
+			const varName = target.getAttribute("data-original-case") ?? undefined;
+			setContextMenu({
+				x: e.clientX,
+				y: e.clientY,
+				paraIdx: -1,
+				charOffset: -1,
+				onSdt: true,
+				sdtVarName: varName,
+			});
+			return;
+		}
 
-			const pos = getDocumentPosition(e.clientX, e.clientY, preview);
-			if (pos) {
-				setContextMenu({
-					x: e.clientX,
-					y: e.clientY,
-					paraIdx: pos.paraIdx,
-					charOffset: pos.charOffset,
-					onSdt: false,
-				});
-				setContextVarName("");
-			}
-		},
-		[],
-	);
+		const pos = getDocumentPosition(e.clientX, e.clientY, preview);
+		if (pos) {
+			setContextMenu({
+				x: e.clientX,
+				y: e.clientY,
+				paraIdx: pos.paraIdx,
+				charOffset: pos.charOffset,
+				onSdt: false,
+			});
+			setContextVarName("");
+		}
+	}, []);
 
 	// Close context menu on click-outside or Escape
 	useEffect(() => {
@@ -842,13 +813,10 @@ export default function TemplateEditor() {
 		async (name: string, varType: VariableType, required: boolean) => {
 			if (!templatesDir || !templateEditorRelPath) return;
 			try {
-				const schema = await invoke<VariableSchema>(
-					"load_template_schema",
-					{
-						templatesDir,
-						templateRelPath: templateEditorRelPath,
-					},
-				);
+				const schema = await invoke<VariableSchema>("load_template_schema", {
+					templatesDir,
+					templateRelPath: templateEditorRelPath,
+				});
 				schema.variables[name] = {
 					var_type: varType,
 					required,
@@ -871,11 +839,7 @@ export default function TemplateEditor() {
 
 		try {
 			await insertTemplateVariable(selectedText, variableName.trim());
-			await saveToSchema(
-				variableName.trim(),
-				variableType,
-				variableRequired,
-			);
+			await saveToSchema(variableName.trim(), variableType, variableRequired);
 			setSelectedText(null);
 			setVariableName("");
 			setVariableType("text");
@@ -902,19 +866,13 @@ export default function TemplateEditor() {
 				undefined,
 				true,
 			);
-			await saveToSchema(
-				variableName.trim(),
-				variableType,
-				variableRequired,
-			);
+			await saveToSchema(variableName.trim(), variableType, variableRequired);
 			setSelectedText(null);
 			setVariableName("");
 			setVariableType("text");
 			setVariableRequired(false);
 		} catch (err) {
-			useToastStore
-				.getState()
-				.addToast("error", `Replace all failed: ${err}`);
+			useToastStore.getState().addToast("error", `Replace all failed: ${err}`);
 		}
 	};
 
@@ -940,13 +898,10 @@ export default function TemplateEditor() {
 			await insertTemplateVariable(selectedText, condName.trim());
 
 			if (templatesDir && templateEditorRelPath) {
-				const schema = await invoke<VariableSchema>(
-					"load_template_schema",
-					{
-						templatesDir,
-						templateRelPath: templateEditorRelPath,
-					},
-				);
+				const schema = await invoke<VariableSchema>("load_template_schema", {
+					templatesDir,
+					templateRelPath: templateEditorRelPath,
+				});
 				schema.variables[condName.trim()] = {
 					var_type: "conditional",
 					required: false,
@@ -973,17 +928,11 @@ export default function TemplateEditor() {
 
 			useToastStore
 				.getState()
-				.addToast(
-					"success",
-					`Conditional "${condName.trim()}" created`,
-				);
+				.addToast("success", `Conditional "${condName.trim()}" created`);
 		} catch (err) {
 			useToastStore
 				.getState()
-				.addToast(
-					"error",
-					`Failed to create conditional: ${err}`,
-				);
+				.addToast("error", `Failed to create conditional: ${err}`);
 		}
 	};
 
@@ -1042,24 +991,18 @@ export default function TemplateEditor() {
 				</span>
 				{templateEditorDirty && (
 					<>
-						<span className="badge badge-warning badge-sm">
-							Unsaved
-						</span>
+						<span className="badge badge-warning badge-sm">Unsaved</span>
 						<button
 							type="button"
 							className="btn btn-success btn-sm"
-							onClick={() =>
-								confirmDialogRef.current?.showModal()
-							}
+							onClick={() => confirmDialogRef.current?.showModal()}
 						>
 							Save
 						</button>
 						<button
 							type="button"
 							className="btn btn-error btn-sm btn-outline"
-							onClick={() =>
-								discardDialogRef.current?.showModal()
-							}
+							onClick={() => discardDialogRef.current?.showModal()}
 						>
 							Discard
 						</button>
@@ -1099,9 +1042,7 @@ export default function TemplateEditor() {
 										Selected text:
 									</div>
 									<div className="badge badge-lg badge-outline font-mono text-xs max-w-full">
-										<span className="truncate">
-											{selectedText}
-										</span>
+										<span className="truncate">{selectedText}</span>
 									</div>
 								</div>
 								<div className="relative">
@@ -1115,85 +1056,58 @@ export default function TemplateEditor() {
 											setVariableName(e.target.value);
 											setShowAutocomplete(true);
 										}}
-										onFocus={() =>
-											setShowAutocomplete(true)
-										}
+										onFocus={() => setShowAutocomplete(true)}
 										onBlur={() =>
-											setTimeout(
-												() =>
-													setShowAutocomplete(false),
-												150,
-											)
+											setTimeout(() => setShowAutocomplete(false), 150)
 										}
 										onKeyDown={(e) => {
-											if (e.key === "Enter")
-												handleInsert();
+											if (e.key === "Enter") handleInsert();
 											if (e.key === "Escape") {
 												setSelectedText(null);
 												setVariableName("");
 											}
 										}}
 									/>
-									{showAutocomplete &&
-										autocompleteOptions.length > 0 && (
-											<ul className="absolute z-20 top-full left-0 right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 p-1 max-h-40 overflow-y-auto">
-												{autocompleteOptions.map(
-													(name) => (
-														<li key={name}>
-															<button
-																type="button"
-																className="text-sm"
-																onMouseDown={(
-																	e,
-																) => {
-																	e.preventDefault();
-																	setVariableName(
-																		name,
-																	);
-																	setShowAutocomplete(
-																		false,
-																	);
-																}}
-															>
-																{name}
-															</button>
-														</li>
-													),
-												)}
-											</ul>
-										)}
+									{showAutocomplete && autocompleteOptions.length > 0 && (
+										<ul className="absolute z-20 top-full left-0 right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 p-1 max-h-40 overflow-y-auto">
+											{autocompleteOptions.map((name) => (
+												<li key={name}>
+													<button
+														type="button"
+														className="text-sm"
+														onMouseDown={(e) => {
+															e.preventDefault();
+															setVariableName(name);
+															setShowAutocomplete(false);
+														}}
+													>
+														{name}
+													</button>
+												</li>
+											))}
+										</ul>
+									)}
 								</div>
 								<div className="flex gap-2">
 									<select
 										className="select select-bordered select-sm flex-1"
 										value={variableType}
 										onChange={(e) =>
-											setVariableType(
-												e.target
-													.value as VariableType,
-											)
+											setVariableType(e.target.value as VariableType)
 										}
 									>
 										<option value="text">Text</option>
 										<option value="date">Date</option>
-										<option value="currency">
-											Currency
-										</option>
+										<option value="currency">Currency</option>
 									</select>
 									<label className="label cursor-pointer gap-1.5">
 										<input
 											type="checkbox"
 											className="checkbox checkbox-xs"
 											checked={variableRequired}
-											onChange={(e) =>
-												setVariableRequired(
-													e.target.checked,
-												)
-											}
+											onChange={(e) => setVariableRequired(e.target.checked)}
 										/>
-										<span className="label-text text-xs">
-											Required
-										</span>
+										<span className="label-text text-xs">Required</span>
 									</label>
 								</div>
 								<div className="flex gap-2">
@@ -1226,11 +1140,7 @@ export default function TemplateEditor() {
 										setCondBranch("true");
 										setCondOtherBranchText("");
 										setShowConditionalDialog(true);
-										setTimeout(
-											() =>
-												condDialogRef.current?.showModal(),
-											0,
-										);
+										setTimeout(() => condDialogRef.current?.showModal(), 0);
 									}}
 								>
 									Make Conditional
@@ -1257,41 +1167,25 @@ export default function TemplateEditor() {
 								<>
 									<select
 										className="select select-bordered select-sm w-full"
-										value={
-											selectedQuestionnaireId ?? ""
-										}
+										value={selectedQuestionnaireId ?? ""}
 										onChange={(e) =>
-											setSelectedQuestionnaireId(
-												e.target.value || null,
-											)
+											setSelectedQuestionnaireId(e.target.value || null)
 										}
 									>
-										<option value="">
-											None
-										</option>
-										{questionnaireEntries.map(
-											(entry) => (
-												<option
-													key={entry.id}
-													value={entry.id}
-												>
-													{entry.name}
-												</option>
-											),
-										)}
+										<option value="">None</option>
+										{questionnaireEntries.map((entry) => (
+											<option key={entry.id} value={entry.id}>
+												{entry.name}
+											</option>
+										))}
 									</select>
 									{selectedQuestionnaire && (
 										<div className="text-xs text-base-content/50">
 											{(() => {
-												const linked =
-													orderedOccurrences.filter(
-														(occ) =>
-															questionnaireMatchMap.has(
-																occ.displayName,
-															),
-													).length;
-												const total =
-													orderedOccurrences.length;
+												const linked = orderedOccurrences.filter((occ) =>
+													questionnaireMatchMap.has(occ.displayName),
+												).length;
+												const total = orderedOccurrences.length;
 												return `${linked}/${total} variables linked`;
 											})()}
 										</div>
@@ -1306,75 +1200,44 @@ export default function TemplateEditor() {
 
 						{/* Variable list */}
 						<div>
-							<SectionHeading className="mb-3">
-								Variables
-							</SectionHeading>
+							<SectionHeading className="mb-3">Variables</SectionHeading>
 							{orderedOccurrences.length === 0 ? (
 								<p className="text-sm text-base-content/50">
-									No variables in this template yet. Select
-									text in the preview to insert a variable.
+									No variables in this template yet. Select text in the preview
+									to insert a variable.
 								</p>
 							) : (
 								<div className="flex flex-col gap-2">
 									{orderedOccurrences.map((occ) => {
-										const varInfo =
-											templateEditorVars.find(
-												(v) =>
-													v.display_name.toLowerCase() ===
-													occ.canonical,
-											);
+										const varInfo = templateEditorVars.find(
+											(v) => v.display_name.toLowerCase() === occ.canonical,
+										);
 										return (
 											<VariableCard
 												key={`${occ.index}-${occ.canonical}`}
 												variable={
 													varInfo ?? {
-														display_name:
-															occ.displayName,
-														variants: [
-															occ.displayName,
-														],
-														is_conditional:
-															occ.isConditional,
+														display_name: occ.displayName,
+														variants: [occ.displayName],
+														is_conditional: occ.isConditional,
 													}
 												}
 												workingNumber={occ.index}
-												schemaEntry={
-													templateSchema
-														?.variables[
-														occ.displayName
-													]
-												}
+												schemaEntry={templateSchema?.variables[occ.displayName]}
 												questionnaireMatch={questionnaireMatchMap.get(
 													occ.displayName,
 												)}
-												isHighlighted={
-													highlightedOccurrence ===
-													occ.index
-												}
-												onScrollTo={() =>
-													selectOccurrence(
-														occ.index,
-													)
-												}
+												isHighlighted={highlightedOccurrence === occ.index}
+												onScrollTo={() => selectOccurrence(occ.index)}
 												onRemove={() => {
-													setRemovingVar(
-														occ.displayName,
-													);
+													setRemovingVar(occ.displayName);
 													setRemovalText("");
 												}}
 												schema={templateSchema}
-												allVars={
-													templateEditorVars
-												}
-												questionnaireMatchMap={
-													questionnaireMatchMap
-												}
-												questionnaire={
-													selectedQuestionnaire
-												}
-												onRename={
-													renameTemplateVariable
-												}
+												allVars={templateEditorVars}
+												questionnaireMatchMap={questionnaireMatchMap}
+												questionnaire={selectedQuestionnaire}
+												onRename={renameTemplateVariable}
 											/>
 										);
 									})}
@@ -1439,9 +1302,7 @@ export default function TemplateEditor() {
 
 				{/* Right sidebar: Preview Values */}
 				<div className="w-[32rem] shrink-0 overflow-y-auto border-l border-base-300 bg-base-100 p-4">
-					<SectionHeading className="mb-3">
-						Preview Values
-					</SectionHeading>
+					<SectionHeading className="mb-3">Preview Values</SectionHeading>
 					{allPreviewVars.length === 0 ? (
 						<p className="text-xs text-base-content/40">
 							No variables to preview yet.
@@ -1449,8 +1310,8 @@ export default function TemplateEditor() {
 					) : (
 						<div className="space-y-2">
 							<p className="text-xs text-base-content/40 mb-2">
-								Enter sample values to see how the document will
-								look when filled.
+								Enter sample values to see how the document will look when
+								filled.
 							</p>
 							{allPreviewVars.map((v) => (
 								<div key={v.name}>
@@ -1459,20 +1320,12 @@ export default function TemplateEditor() {
 											<input
 												type="checkbox"
 												className="toggle toggle-sm toggle-primary"
-												checked={
-													previewValues[v.name] ===
-													"true"
-												}
+												checked={previewValues[v.name] === "true"}
 												onChange={(e) =>
-													setPreviewValues(
-														(prev) => ({
-															...prev,
-															[v.name]: e.target
-																.checked
-																? "true"
-																: "false",
-														}),
-													)
+													setPreviewValues((prev) => ({
+														...prev,
+														[v.name]: e.target.checked ? "true" : "false",
+													}))
 												}
 											/>
 											<span className="text-xs text-base-content/70">
@@ -1488,17 +1341,12 @@ export default function TemplateEditor() {
 												type="text"
 												className="input input-bordered input-xs w-full"
 												placeholder={v.name}
-												value={
-													previewValues[v.name] ?? ""
-												}
+												value={previewValues[v.name] ?? ""}
 												onChange={(e) =>
-													setPreviewValues(
-														(prev) => ({
-															...prev,
-															[v.name]:
-																e.target.value,
-														}),
-													)
+													setPreviewValues((prev) => ({
+														...prev,
+														[v.name]: e.target.value,
+													}))
 												}
 											/>
 										</div>
@@ -1561,14 +1409,10 @@ export default function TemplateEditor() {
 									className="input input-bordered input-xs w-full"
 									placeholder="Variable name..."
 									value={contextVarName}
-									onChange={(e) =>
-										setContextVarName(e.target.value)
-									}
+									onChange={(e) => setContextVarName(e.target.value)}
 									onKeyDown={(e) => {
-										if (e.key === "Enter")
-											handleContextInsert();
-										if (e.key === "Escape")
-											setContextMenu(null);
+										if (e.key === "Enter") handleContextInsert();
+										if (e.key === "Escape") setContextMenu(null);
 									}}
 									// biome-ignore lint/a11y/noAutofocus: context menu auto-focus
 									autoFocus
@@ -1593,18 +1437,15 @@ export default function TemplateEditor() {
 				ref={disambigRef}
 				className="modal"
 				onClick={(e) => {
-					if (e.target === disambigRef.current)
-						disambigRef.current?.close();
+					if (e.target === disambigRef.current) disambigRef.current?.close();
 				}}
 			>
 				<div className="modal-box max-w-lg">
-					<h3 className="font-bold text-lg mb-2">
-						Multiple Occurrences Found
-					</h3>
+					<h3 className="font-bold text-lg mb-2">Multiple Occurrences Found</h3>
 					<p className="text-base-content/70 text-sm mb-4">
 						&ldquo;{disambigSearchText}&rdquo; appears{" "}
-						{disambigOccurrences.length} times. Choose which
-						occurrence to replace:
+						{disambigOccurrences.length} times. Choose which occurrence to
+						replace:
 					</p>
 					<div className="space-y-2 max-h-60 overflow-y-auto">
 						{disambigOccurrences.map((occ) => (
@@ -1641,19 +1482,14 @@ export default function TemplateEditor() {
 				<dialog
 					className="modal modal-open"
 					onClick={(e) => {
-						if (e.target === e.currentTarget)
-							setRemovingVar(null);
+						if (e.target === e.currentTarget) setRemovingVar(null);
 					}}
 				>
 					<div className="modal-box">
-						<h3 className="font-bold text-lg mb-2">
-							Remove Variable
-						</h3>
+						<h3 className="font-bold text-lg mb-2">Remove Variable</h3>
 						<p className="text-base-content/70 text-sm mb-4">
 							Replace variable{" "}
-							<code className="bg-base-200 px-1 rounded">
-								{removingVar}
-							</code>{" "}
+							<code className="bg-base-200 px-1 rounded">{removingVar}</code>{" "}
 							with:
 						</p>
 						<input
@@ -1702,12 +1538,10 @@ export default function TemplateEditor() {
 					}}
 				>
 					<div className="modal-box max-w-lg">
-						<h3 className="font-bold text-lg mb-1">
-							Make Conditional
-						</h3>
+						<h3 className="font-bold text-lg mb-1">Make Conditional</h3>
 						<p className="text-sm text-base-content/60 mb-4">
-							The selected text will be shown or hidden based on a
-							controlling variable&apos;s value.
+							The selected text will be shown or hidden based on a controlling
+							variable&apos;s value.
 						</p>
 
 						<div className="space-y-3">
@@ -1716,46 +1550,35 @@ export default function TemplateEditor() {
 									Selected text:
 								</div>
 								<div className="badge badge-lg badge-outline font-mono text-xs max-w-full">
-									<span className="truncate">
-										{selectedText}
-									</span>
+									<span className="truncate">{selectedText}</span>
 								</div>
 							</div>
 
 							<div>
 								<label className="label pb-0.5">
-									<span className="label-text text-xs">
-										Conditional name
-									</span>
+									<span className="label-text text-xs">Conditional name</span>
 								</label>
 								<input
 									type="text"
 									className="input input-bordered input-sm w-full"
 									placeholder='e.g., "Has Spouse"'
 									value={condName}
-									onChange={(e) =>
-										setCondName(e.target.value)
-									}
+									onChange={(e) => setCondName(e.target.value)}
 								/>
 							</div>
 
 							<div>
 								<label className="label pb-0.5">
 									<span className="label-text text-xs">
-										Controlling variable (leave blank to use
-										conditional name)
+										Controlling variable (leave blank to use conditional name)
 									</span>
 								</label>
 								<input
 									type="text"
 									className="input input-bordered input-sm w-full"
-									placeholder={
-										condName || "Same as conditional name"
-									}
+									placeholder={condName || "Same as conditional name"}
 									value={condControllingVar}
-									onChange={(e) =>
-										setCondControllingVar(e.target.value)
-									}
+									onChange={(e) => setCondControllingVar(e.target.value)}
 								/>
 							</div>
 
@@ -1771,26 +1594,18 @@ export default function TemplateEditor() {
 											type="radio"
 											className="radio radio-sm radio-primary"
 											checked={condBranch === "true"}
-											onChange={() =>
-												setCondBranch("true")
-											}
+											onChange={() => setCondBranch("true")}
 										/>
-										<span className="label-text text-xs">
-											True branch
-										</span>
+										<span className="label-text text-xs">True branch</span>
 									</label>
 									<label className="label cursor-pointer gap-1.5">
 										<input
 											type="radio"
 											className="radio radio-sm radio-primary"
 											checked={condBranch === "false"}
-											onChange={() =>
-												setCondBranch("false")
-											}
+											onChange={() => setCondBranch("false")}
 										/>
-										<span className="label-text text-xs">
-											False branch
-										</span>
+										<span className="label-text text-xs">False branch</span>
 									</label>
 								</div>
 							</div>
@@ -1808,9 +1623,7 @@ export default function TemplateEditor() {
 									rows={2}
 									placeholder="Other branch text..."
 									value={condOtherBranchText}
-									onChange={(e) =>
-										setCondOtherBranchText(e.target.value)
-									}
+									onChange={(e) => setCondOtherBranchText(e.target.value)}
 								/>
 							</div>
 						</div>
@@ -1852,8 +1665,8 @@ export default function TemplateEditor() {
 				<div className="modal-box">
 					<h3 className="font-bold text-lg mb-2">Save Changes</h3>
 					<p className="text-base-content/70 text-sm">
-						Save all changes to the template? This will overwrite the
-						original file.
+						Save all changes to the template? This will overwrite the original
+						file.
 					</p>
 					<div className="modal-action">
 						<button
@@ -1890,8 +1703,7 @@ export default function TemplateEditor() {
 				<div className="modal-box">
 					<h3 className="font-bold text-lg mb-2">Discard Changes</h3>
 					<p className="text-base-content/70 text-sm">
-						Discard all changes to the template? This cannot be
-						undone.
+						Discard all changes to the template? This cannot be undone.
 					</p>
 					<div className="modal-action">
 						<button
@@ -1928,8 +1740,8 @@ export default function TemplateEditor() {
 				<div className="modal-box">
 					<h3 className="font-bold text-lg mb-2">Unsaved Changes</h3>
 					<p className="text-base-content/70 text-sm">
-						You have unsaved changes to this template. What would you
-						like to do?
+						You have unsaved changes to this template. What would you like to
+						do?
 					</p>
 					<div className="modal-action gap-2">
 						<button
@@ -2038,9 +1850,7 @@ function VariableCard({
 		<div
 			ref={cardRef}
 			className={`rounded-lg border bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] transition-all ${
-				isHighlighted
-					? "ring-2 ring-warning border-warning"
-					: "border-base-300"
+				isHighlighted ? "ring-2 ring-warning border-warning" : "border-base-300"
 			}`}
 		>
 			{/* Header row */}
@@ -2051,9 +1861,7 @@ function VariableCard({
 					onClick={onScrollTo}
 					title={`Scroll to #${workingNumber} in preview`}
 				>
-					<span className="text-base-content/40 mr-1.5">
-						#{workingNumber}
-					</span>
+					<span className="text-base-content/40 mr-1.5">#{workingNumber}</span>
 					{variable.display_name}
 				</button>
 				{schemaEntry?.required && (
@@ -2090,17 +1898,14 @@ function VariableCard({
 							Questionnaire
 						</span>
 					) : (
-						<span className="badge badge-xs badge-ghost">
-							Local
-						</span>
+						<span className="badge badge-xs badge-ghost">Local</span>
 					)}
-					{(schemaEntry?.var_type ?? (variable.is_conditional ? "conditional" : null)) && (
+					{(schemaEntry?.var_type ??
+						(variable.is_conditional ? "conditional" : null)) && (
 						<span className="badge badge-xs badge-info badge-outline">
 							{TYPE_LABELS[
 								schemaEntry?.var_type ??
-									(variable.is_conditional
-										? "conditional"
-										: "text")
+									(variable.is_conditional ? "conditional" : "text")
 							] ?? schemaEntry?.var_type}
 						</span>
 					)}
@@ -2128,9 +1933,7 @@ function VariableCard({
 				{questionnaireMatch?.kind === "derived" &&
 					questionnaireMatch.sources && (
 						<div className="rounded border border-base-300 bg-base-200/50 p-2 space-y-1 text-xs">
-							<div className="text-base-content/40">
-								Derived from:
-							</div>
+							<div className="text-base-content/40">Derived from:</div>
 							{questionnaireMatch.sources.map((src) => (
 								<div key={src} className="pl-2 font-medium">
 									{src}
@@ -2143,44 +1946,25 @@ function VariableCard({
 				{isContactMember && questionnaireMatch.role && (
 					<div className="rounded border border-base-300 bg-base-200/50 p-2 space-y-1.5">
 						<div className="text-xs">
-							<span className="text-base-content/40">
-								Role:{" "}
-							</span>
-							<span className="font-medium">
-								{questionnaireMatch.role}
-							</span>
+							<span className="text-base-content/40">Role: </span>
+							<span className="font-medium">{questionnaireMatch.role}</span>
 						</div>
 						<div className="text-xs">
-							<span className="text-base-content/40">
-								Property:{" "}
-							</span>
+							<span className="text-base-content/40">Property: </span>
 							<span className="font-medium">
-								{PROPERTY_LABELS[
-									questionnaireMatch.property ?? ""
-								] ?? questionnaireMatch.property}
+								{PROPERTY_LABELS[questionnaireMatch.property ?? ""] ??
+									questionnaireMatch.property}
 							</span>
 						</div>
 						{/* Other available properties from the same role */}
 						{questionnaireMatch.availableProperties &&
-							questionnaireMatch.availableProperties.length >
-								1 && (
+							questionnaireMatch.availableProperties.length > 1 && (
 								<div className="text-xs pt-1 border-t border-base-300">
-									<span className="text-base-content/40">
-										Other members:{" "}
-									</span>
+									<span className="text-base-content/40">Other members: </span>
 									<span className="text-base-content/60">
 										{questionnaireMatch.availableProperties
-											.filter(
-												(p) =>
-													p.property !==
-													questionnaireMatch.property,
-											)
-											.map(
-												(p) =>
-													PROPERTY_LABELS[
-														p.property
-													] ?? p.property,
-											)
+											.filter((p) => p.property !== questionnaireMatch.property)
+											.map((p) => PROPERTY_LABELS[p.property] ?? p.property)
 											.join(", ")}
 									</span>
 								</div>
@@ -2212,17 +1996,13 @@ function VariableCard({
 					<>
 						{schemaEntry.required && (
 							<div className="flex gap-2 text-xs">
-								<span className="text-base-content/40">
-									Required:
-								</span>
+								<span className="text-base-content/40">Required:</span>
 								<span className="text-error">Yes</span>
 							</div>
 						)}
 						{schemaEntry.default && (
 							<div className="flex gap-2 text-xs">
-								<span className="text-base-content/40">
-									Default:
-								</span>
+								<span className="text-base-content/40">Default:</span>
 								<code className="bg-base-200 px-1 rounded">
 									{schemaEntry.default}
 								</code>
@@ -2230,9 +2010,7 @@ function VariableCard({
 						)}
 						{schemaEntry.help && (
 							<div className="flex gap-2 text-xs">
-								<span className="text-base-content/40">
-									Help:
-								</span>
+								<span className="text-base-content/40">Help:</span>
 								<span className="text-base-content/60 italic">
 									{schemaEntry.help}
 								</span>
@@ -2240,9 +2018,7 @@ function VariableCard({
 						)}
 						{schemaEntry.date_format && (
 							<div className="flex gap-2 text-xs">
-								<span className="text-base-content/40">
-									Format:
-								</span>
+								<span className="text-base-content/40">Format:</span>
 								<code className="bg-base-200 px-1 rounded">
 									{schemaEntry.date_format}
 								</code>
@@ -2312,7 +2088,10 @@ function extractNestedVarNames(template: string): string[] {
 		let displayName = inner;
 		if (dotIdx > 0) {
 			const role = inner.substring(0, dotIdx).trim();
-			const prop = inner.substring(dotIdx + 1).trim().toLowerCase();
+			const prop = inner
+				.substring(dotIdx + 1)
+				.trim()
+				.toLowerCase();
 			displayName = `${role} ${NESTED_PROP_LABELS[prop] ?? prop}`;
 		}
 		if (!names.includes(displayName)) {
@@ -2356,9 +2135,7 @@ function ConditionalDetails({
 
 	return (
 		<div className="space-y-2">
-			<div className="text-xs text-base-content/40">
-				Conditional branches
-			</div>
+			<div className="text-xs text-base-content/40">Conditional branches</div>
 			{defs.map((def, i) => (
 				<div
 					// biome-ignore lint/suspicious/noArrayIndexKey: stable order
@@ -2366,12 +2143,8 @@ function ConditionalDetails({
 					className="text-xs bg-base-200 rounded p-2 space-y-1"
 				>
 					<div>
-						<span className="text-base-content/40">
-							Controls:{" "}
-						</span>
-						<span className="font-medium">
-							{def.controlling_variable}
-						</span>
+						<span className="text-base-content/40">Controls: </span>
+						<span className="font-medium">{def.controlling_variable}</span>
 					</div>
 					{def.true_template && (
 						<div>
@@ -2399,13 +2172,9 @@ function ConditionalDetails({
 			{/* Nested variable cards */}
 			{nestedNames.size > 0 && (
 				<div className="space-y-1.5 pt-1">
-					<div className="text-xs text-base-content/40">
-						Nested variables
-					</div>
+					<div className="text-xs text-base-content/40">Nested variables</div>
 					{Array.from(nestedNames).map((name) => {
-						const varInfo = allVars?.find(
-							(v) => v.display_name === name,
-						);
+						const varInfo = allVars?.find((v) => v.display_name === name);
 						const entry = schema?.variables[name];
 						return (
 							<NestedVariableCard
@@ -2453,9 +2222,7 @@ function NestedVariableCard({
 			<div className="flex items-center gap-2 px-2.5 py-1.5">
 				<span className="flex-1 font-medium truncate">{name}</span>
 				{isLinked ? (
-					<span className="badge badge-xs badge-success badge-outline">
-						Q
-					</span>
+					<span className="badge badge-xs badge-success badge-outline">Q</span>
 				) : (
 					<span className="badge badge-xs badge-ghost">Local</span>
 				)}
@@ -2472,21 +2239,14 @@ function NestedVariableCard({
 				{isContactMember && questionnaireMatch.role && (
 					<div className="rounded border border-base-300 bg-base-200/50 p-1.5 space-y-1">
 						<div>
-							<span className="text-base-content/40">
-								Role:{" "}
-							</span>
-							<span className="font-medium">
-								{questionnaireMatch.role}
-							</span>
+							<span className="text-base-content/40">Role: </span>
+							<span className="font-medium">{questionnaireMatch.role}</span>
 						</div>
 						<div>
-							<span className="text-base-content/40">
-								Property:{" "}
-							</span>
+							<span className="text-base-content/40">Property: </span>
 							<span className="font-medium">
-								{PROPERTY_LABELS[
-									questionnaireMatch.property ?? ""
-								] ?? questionnaireMatch.property}
+								{PROPERTY_LABELS[questionnaireMatch.property ?? ""] ??
+									questionnaireMatch.property}
 							</span>
 						</div>
 					</div>
@@ -2495,9 +2255,7 @@ function NestedVariableCard({
 				{/* Case variants */}
 				{varInfo && varInfo.variants.length > 1 && (
 					<div>
-						<div className="text-base-content/40 mb-0.5">
-							Case variants
-						</div>
+						<div className="text-base-content/40 mb-0.5">Case variants</div>
 						<div className="flex flex-wrap gap-1">
 							{varInfo.variants.map((v) => (
 								<code
@@ -2515,9 +2273,7 @@ function NestedVariableCard({
 					<>
 						{schemaEntry.default && (
 							<div className="flex gap-2">
-								<span className="text-base-content/40">
-									Default:
-								</span>
+								<span className="text-base-content/40">Default:</span>
 								<code className="bg-base-200 px-1 rounded">
 									{schemaEntry.default}
 								</code>
@@ -2525,9 +2281,7 @@ function NestedVariableCard({
 						)}
 						{schemaEntry.help && (
 							<div className="flex gap-2">
-								<span className="text-base-content/40">
-									Help:
-								</span>
+								<span className="text-base-content/40">Help:</span>
 								<span className="text-base-content/60 italic">
 									{schemaEntry.help}
 								</span>
@@ -2640,9 +2394,7 @@ function VariableEditModal({
 							path: `${tab.label} > ${section.title}`,
 						});
 					} else if (q.kind === "contact-role") {
-						for (const [varName, prop] of Object.entries(
-							q.variableMappings,
-						)) {
+						for (const [varName, prop] of Object.entries(q.variableMappings)) {
 							items.push({
 								varName,
 								label: `${q.role} > ${PROPERTY_LABELS[prop] ?? prop}`,
@@ -2663,7 +2415,8 @@ function VariableEditModal({
 		const terms = search.toLowerCase().split(/\s+/).filter(Boolean);
 		if (terms.length === 0) return [];
 		return allItems.filter((item) => {
-			const haystack = `${item.varName} ${item.label} ${item.path}`.toLowerCase();
+			const haystack =
+				`${item.varName} ${item.label} ${item.path}`.toLowerCase();
 			return terms.every((term) => haystack.includes(term));
 		});
 	}, [search, allItems]);
@@ -2743,9 +2496,7 @@ function VariableEditModal({
 								])
 							}
 						>
-							<span className="flex-1 font-medium">
-								Link to Questionnaire
-							</span>
+							<span className="flex-1 font-medium">Link to Questionnaire</span>
 							<span className="text-xs text-base-content/40">
 								{questionnaire.name}
 							</span>
@@ -2765,9 +2516,7 @@ function VariableEditModal({
 							])
 						}
 					>
-						<span className="flex-1 font-medium">
-							Set as Local Variable
-						</span>
+						<span className="flex-1 font-medium">Set as Local Variable</span>
 						<DrillArrow />
 					</button>
 
@@ -2791,9 +2540,7 @@ function VariableEditModal({
 		if (path[0]?.key === "__local__") {
 			return (
 				<div className="space-y-0.5">
-					{(
-						["text", "date", "currency"] as const
-					).map((varType) => (
+					{(["text", "date", "currency"] as const).map((varType) => (
 						<button
 							key={varType}
 							type="button"
@@ -2816,9 +2563,7 @@ function VariableEditModal({
 			return (
 				<div className="space-y-0.5">
 					{tabs.map((tab) => {
-						const sections = (
-							sectionsByTab.get(tab.id) ?? []
-						).filter(
+						const sections = (sectionsByTab.get(tab.id) ?? []).filter(
 							(s) => s.questions.length > 0,
 						);
 						if (sections.length === 0) return null;
@@ -2837,9 +2582,7 @@ function VariableEditModal({
 									])
 								}
 							>
-								<span className="flex-1 font-medium">
-									{tab.label}
-								</span>
+								<span className="flex-1 font-medium">{tab.label}</span>
 								<span className="text-xs text-base-content/40">
 									{sections.length} section
 									{sections.length !== 1 ? "s" : ""}
@@ -2864,15 +2607,10 @@ function VariableEditModal({
 					type="button"
 					className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded flex items-center gap-3 text-sm"
 					onClick={() =>
-						navigate([
-							...path,
-							{ label: section.title, key: section.title },
-						])
+						navigate([...path, { label: section.title, key: section.title }])
 					}
 				>
-					<span className="flex-1 font-medium">
-						{section.title}
-					</span>
+					<span className="flex-1 font-medium">{section.title}</span>
 					{section.description && (
 						<span className="text-xs text-base-content/40 truncate max-w-48">
 							{section.description}
@@ -2908,9 +2646,7 @@ function VariableEditModal({
 							}`}
 							onClick={() => onSelect(q.variable)}
 						>
-							<span
-								className={`flex-1 ${isCurrent ? "font-medium" : ""}`}
-							>
+							<span className={`flex-1 ${isCurrent ? "font-medium" : ""}`}>
 								{q.variable}
 							</span>
 							{q.kind !== "text" && (
@@ -2922,24 +2658,17 @@ function VariableEditModal({
 					);
 				}
 				if (q.kind === "contact-role") {
-					const memberCount = Object.keys(
-						q.variableMappings,
-					).length;
+					const memberCount = Object.keys(q.variableMappings).length;
 					return (
 						<button
 							key={q.role}
 							type="button"
 							className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg flex items-center gap-3 text-sm"
 							onClick={() =>
-								navigate([
-									...path,
-									{ label: q.role, key: q.role },
-								])
+								navigate([...path, { label: q.role, key: q.role }])
 							}
 						>
-							<span className="flex-1 font-medium">
-								{q.role}
-							</span>
+							<span className="flex-1 font-medium">{q.role}</span>
 							<span className="badge badge-xs badge-secondary badge-outline">
 								contact
 							</span>
@@ -2968,30 +2697,24 @@ function VariableEditModal({
 			);
 			if (!roleQ || roleQ.kind !== "contact-role") return null;
 
-			return Object.entries(roleQ.variableMappings).map(
-				([varName, prop]) => {
-					const isCurrent = varName === currentVarName;
-					return (
-						<button
-							key={varName}
-							type="button"
-							className={`w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg flex items-center gap-3 text-sm ${
-								isCurrent ? "text-primary bg-primary/5" : ""
-							}`}
-							onClick={() => onSelect(varName)}
-						>
-							<span
-								className={`flex-1 ${isCurrent ? "font-medium" : ""}`}
-							>
-								{PROPERTY_LABELS[prop] ?? prop}
-							</span>
-							<span className="text-xs text-base-content/40">
-								{varName}
-							</span>
-						</button>
-					);
-				},
-			);
+			return Object.entries(roleQ.variableMappings).map(([varName, prop]) => {
+				const isCurrent = varName === currentVarName;
+				return (
+					<button
+						key={varName}
+						type="button"
+						className={`w-full text-left px-3 py-2.5 hover:bg-base-200 rounded-lg flex items-center gap-3 text-sm ${
+							isCurrent ? "text-primary bg-primary/5" : ""
+						}`}
+						onClick={() => onSelect(varName)}
+					>
+						<span className={`flex-1 ${isCurrent ? "font-medium" : ""}`}>
+							{PROPERTY_LABELS[prop] ?? prop}
+						</span>
+						<span className="text-xs text-base-content/40">{varName}</span>
+					</button>
+				);
+			});
 		}
 
 		return null;
@@ -3042,8 +2765,17 @@ function VariableEditModal({
 							disabled={historyIdx <= 0}
 							title="Back"
 						>
-							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-3.5">
-								<path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 16 16"
+								fill="currentColor"
+								className="size-3.5"
+							>
+								<path
+									fillRule="evenodd"
+									d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z"
+									clipRule="evenodd"
+								/>
 							</svg>
 						</button>
 						<button
@@ -3053,8 +2785,17 @@ function VariableEditModal({
 							disabled={historyIdx >= pathHistory.length - 1}
 							title="Forward"
 						>
-							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-3.5">
-								<path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 16 16"
+								fill="currentColor"
+								className="size-3.5"
+							>
+								<path
+									fillRule="evenodd"
+									d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"
+									clipRule="evenodd"
+								/>
 							</svg>
 						</button>
 						<div className="flex items-center gap-1 text-base-content/50 ml-1 overflow-hidden text-xs">
@@ -3073,7 +2814,10 @@ function VariableEditModal({
 											? "Local Variable"
 											: crumb.label;
 								return (
-									<span key={crumb.key} className="flex items-center gap-1 shrink-0">
+									<span
+										key={crumb.key}
+										className="flex items-center gap-1 shrink-0"
+									>
 										<span className="text-base-content/20">/</span>
 										<button
 											type="button"

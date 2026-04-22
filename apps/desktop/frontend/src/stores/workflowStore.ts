@@ -1,11 +1,11 @@
 import { create } from "zustand";
-import type { WorkflowState } from "./workflowStore/types";
-import { createNavigationSlice } from "./workflowStore/navigationSlice";
-import { createDocumentSlice } from "./workflowStore/documentSlice";
-import { createVariableSlice } from "./workflowStore/variableSlice";
 import { createContactSlice } from "./workflowStore/contactSlice";
+import { createDocumentSlice } from "./workflowStore/documentSlice";
+import { createNavigationSlice } from "./workflowStore/navigationSlice";
 import { createProjectSlice } from "./workflowStore/projectSlice";
 import { createTemplateEditorSlice } from "./workflowStore/templateEditorSlice";
+import type { WorkflowState } from "./workflowStore/types";
+import { createVariableSlice } from "./workflowStore/variableSlice";
 
 export type { WorkflowState } from "./workflowStore/types";
 

@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useWorkflowStore } from "@/stores/workflowStore";
-import { useSettingsStore } from "@/stores/settingsStore";
-import type { TemplateTreeNode, LilyFile } from "@/types";
+import { useMemo, useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useWorkflowStore } from "@/stores/workflowStore";
+import type { LilyFile, TemplateTreeNode } from "@/types";
 
 // ─── Tree building ──────────────────────────────────────────────────────────
 
@@ -182,11 +182,7 @@ function TemplateFolder({
 				<div className="ml-4 border-l border-base-300 pl-1">
 					{node.children.map((child) => (
 						<TemplateTreeItem
-							key={
-								child.kind === "file"
-									? child.relPath
-									: child.name
-							}
+							key={child.kind === "file" ? child.relPath : child.name}
 							node={child}
 							lilyFile={lilyFile}
 							selectedTemplates={selectedTemplates}
@@ -343,12 +339,10 @@ export default function TemplatePicker() {
 	if (!settings.templates_dir) {
 		return (
 			<div className="flex flex-col items-center justify-center h-full gap-6 p-8">
-				<h2 className="text-2xl font-bold">
-					Set Template Library Path
-				</h2>
+				<h2 className="text-2xl font-bold">Set Template Library Path</h2>
 				<p className="text-base-content/70 text-center max-w-md">
-					Before selecting a template, you need to choose the
-					folder where your template documents are stored.
+					Before selecting a template, you need to choose the folder where your
+					template documents are stored.
 				</p>
 				<button
 					type="button"
@@ -380,9 +374,7 @@ export default function TemplatePicker() {
 
 			{/* Template library */}
 			<div className="flex-1 overflow-y-auto p-5">
-				<SectionHeading className="mb-3">
-					Template Library
-				</SectionHeading>
+				<SectionHeading className="mb-3">Template Library</SectionHeading>
 				{tree.length > 0 && (
 					<input
 						type="text"
@@ -404,11 +396,7 @@ export default function TemplatePicker() {
 					<div className="flex flex-col gap-0.5">
 						{filteredTree.map((node) => (
 							<TemplateTreeItem
-								key={
-									node.kind === "file"
-										? node.relPath
-										: node.name
-								}
+								key={node.kind === "file" ? node.relPath : node.name}
 								node={node}
 								lilyFile={lilyFile}
 								selectedTemplates={selectedTemplates}
@@ -430,9 +418,7 @@ export default function TemplatePicker() {
 						<button
 							type="button"
 							className="btn btn-ghost btn-sm"
-							onClick={() =>
-								setSelectedTemplates(new Set())
-							}
+							onClick={() => setSelectedTemplates(new Set())}
 						>
 							Clear
 						</button>

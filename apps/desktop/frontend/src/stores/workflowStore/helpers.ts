@@ -1,9 +1,3 @@
-import type {
-	WorkflowStep,
-	PersistedNavEntry,
-	VariableInfo,
-	LilyFile,
-} from "@/types";
 import {
 	CONTACT_PROPERTIES,
 	PROPERTY_LABELS,
@@ -11,6 +5,12 @@ import {
 import { useNavigationStore } from "@/stores/navigationStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
+import type {
+	LilyFile,
+	PersistedNavEntry,
+	VariableInfo,
+	WorkflowStep,
+} from "@/types";
 import { extractFilename, extractFolderName } from "@/utils/path";
 import type { WorkflowState } from "./types";
 
@@ -76,11 +76,7 @@ export function pushNav(state: WorkflowState) {
 		workingDir: state.workingDir,
 		documentPath: state.documentPath,
 		templateRelPath,
-		label: navLabel(
-			state.step,
-			state.workingDir,
-			state.templateEditorRelPath,
-		),
+		label: navLabel(state.step, state.workingDir, state.templateEditorRelPath),
 	};
 	useNavigationStore.getState().push(entry);
 	debouncedPersistNavEntry(entry);
@@ -114,9 +110,7 @@ function persistNavEntry(entry: {
 	const key = (e: PersistedNavEntry) =>
 		`${e.step}|${e.working_dir ?? ""}|${e.document_path ?? ""}`;
 	const newKey = key(newEntry);
-	const filtered = settings.navigation_history.filter(
-		(e) => key(e) !== newKey,
-	);
+	const filtered = settings.navigation_history.filter((e) => key(e) !== newKey);
 
 	const updated = [newEntry, ...filtered].slice(0, MAX_PERSISTED_HISTORY);
 	useSettingsStore.getState().save({ navigation_history: updated });
@@ -124,7 +118,9 @@ function persistNavEntry(entry: {
 
 /** Debounced version of persistNavEntry (500ms trailing edge). */
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
-function debouncedPersistNavEntry(entry: Parameters<typeof persistNavEntry>[0]) {
+function debouncedPersistNavEntry(
+	entry: Parameters<typeof persistNavEntry>[0],
+) {
 	if (persistTimer) clearTimeout(persistTimer);
 	persistTimer = setTimeout(() => {
 		persistTimer = null;
@@ -147,15 +143,11 @@ export function buildDocumentFilename(
 	let baseName = extMatch ? raw.slice(0, -extMatch[0].length) : raw;
 	baseName = baseName.replace(/ Template$/i, "");
 
-	const firstName =
-		lilyFile?.variables["Client First Name"]?.trim() ?? "";
-	const lastName =
-		lilyFile?.variables["Client Last Name"]?.trim() ?? "";
+	const firstName = lilyFile?.variables["Client First Name"]?.trim() ?? "";
+	const lastName = lilyFile?.variables["Client Last Name"]?.trim() ?? "";
 	const clientName = [firstName, lastName].filter(Boolean).join(" ");
 
-	return clientName
-		? `${baseName} - ${clientName}.docx`
-		: `${baseName}.docx`;
+	return clientName ? `${baseName} - ${clientName}.docx` : `${baseName}.docx`;
 }
 
 /**
@@ -177,8 +169,7 @@ export function mergeStoredVariables(
 	filename: string,
 	lilyFile: LilyFile | null,
 ): VariableInfo[] {
-	const storedNames =
-		lilyFile?.documents[filename]?.variable_names ?? [];
+	const storedNames = lilyFile?.documents[filename]?.variable_names ?? [];
 	if (storedNames.length === 0) return extracted;
 
 	// Build reverse lookup: display_name → dot-notation variant from contact bindings
@@ -214,8 +205,7 @@ export function mergeStoredVariables(
 			merged.push(existing);
 		} else {
 			// Reconstruct dot-notation variant from bindings or conditional defs
-			const dotVariant =
-				bindingLookup[name] ?? nestedDotLookup[name];
+			const dotVariant = bindingLookup[name] ?? nestedDotLookup[name];
 			const variants = dotVariant ? [dotVariant] : [name];
 			merged.push({
 				display_name: name,

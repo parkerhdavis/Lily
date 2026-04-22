@@ -1,6 +1,6 @@
-import { describe, expect, test, beforeEach } from "bun:test";
-import { useUndoStore } from "@/stores/undoStore";
+import { beforeEach, describe, expect, test } from "bun:test";
 import type { UndoableAction } from "@/stores/undoStore";
+import { useUndoStore } from "@/stores/undoStore";
 
 let value = "";
 
@@ -53,9 +53,7 @@ describe("undoStore", () => {
 	test("coalesces rapid changes with same description", () => {
 		const now = Date.now();
 		useUndoStore.getState().push(makeAction("Change X", "J", "", now));
-		useUndoStore
-			.getState()
-			.push(makeAction("Change X", "Jo", "J", now + 100));
+		useUndoStore.getState().push(makeAction("Change X", "Jo", "J", now + 100));
 		useUndoStore
 			.getState()
 			.push(makeAction("Change X", "Joh", "Jo", now + 200));
@@ -71,9 +69,7 @@ describe("undoStore", () => {
 		const now = Date.now();
 		value = "";
 		useUndoStore.getState().push(makeAction("Change X", "J", "", now));
-		useUndoStore
-			.getState()
-			.push(makeAction("Change X", "Jo", "J", now + 100));
+		useUndoStore.getState().push(makeAction("Change X", "Jo", "J", now + 100));
 		useUndoStore
 			.getState()
 			.push(makeAction("Change X", "John", "Jo", now + 200));
@@ -101,9 +97,7 @@ describe("undoStore", () => {
 	test("does not coalesce different descriptions", () => {
 		const now = Date.now();
 		useUndoStore.getState().push(makeAction("Change X", "a", "", now));
-		useUndoStore
-			.getState()
-			.push(makeAction("Change Y", "b", "", now + 100));
+		useUndoStore.getState().push(makeAction("Change Y", "b", "", now + 100));
 
 		expect(useUndoStore.getState().undoStack).toHaveLength(2);
 	});
@@ -111,9 +105,7 @@ describe("undoStore", () => {
 	test("does not coalesce after time gap", () => {
 		const now = Date.now();
 		useUndoStore.getState().push(makeAction("Change X", "a", "", now));
-		useUndoStore
-			.getState()
-			.push(makeAction("Change X", "ab", "a", now + 1000));
+		useUndoStore.getState().push(makeAction("Change X", "ab", "a", now + 1000));
 
 		expect(useUndoStore.getState().undoStack).toHaveLength(2);
 	});

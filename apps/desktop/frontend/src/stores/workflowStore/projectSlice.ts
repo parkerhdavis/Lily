@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { LilyFile, VariableInfo } from "@/types";
-import { useUndoStore } from "@/stores/undoStore";
 import { useToastStore } from "@/stores/toastStore";
+import { useUndoStore } from "@/stores/undoStore";
+import type { LilyFile, VariableInfo } from "@/types";
 import { extractFilename } from "@/utils/path";
 import { mergeStoredVariables, pushNav } from "./helpers";
 import type { WorkflowSlice } from "./types";
@@ -21,9 +21,7 @@ export const createProjectSlice: WorkflowSlice = (set, get) => ({
 					useToastStore.getState().addToast("warning", w);
 				}
 			})
-			.catch((err) =>
-				console.error("Failed to load .lily file:", err),
-			);
+			.catch((err) => console.error("Failed to load .lily file:", err));
 	},
 
 	reloadLilyFile: async () => {
@@ -128,10 +126,7 @@ export const createProjectSlice: WorkflowSlice = (set, get) => ({
 				await import("@/stores/settingsStore")
 			).useSettingsStore.getState().settings.templates_dir;
 			if (templatesDir) {
-				await get().openTemplateEditor(
-					entry.templateRelPath,
-					templatesDir,
-				);
+				await get().openTemplateEditor(entry.templateRelPath, templatesDir);
 				return;
 			}
 		}
@@ -162,14 +157,12 @@ export const createProjectSlice: WorkflowSlice = (set, get) => ({
 
 		if (needsDocReload && entry.step === "edit-variables") {
 			try {
-				const documentHtml = await invoke<string>(
-					"get_document_html",
-					{ docxPath: entry.documentPath },
-				);
-				let variables = await invoke<VariableInfo[]>(
-					"extract_variables",
-					{ docxPath: entry.documentPath },
-				);
+				const documentHtml = await invoke<string>("get_document_html", {
+					docxPath: entry.documentPath,
+				});
+				let variables = await invoke<VariableInfo[]>("extract_variables", {
+					docxPath: entry.documentPath,
+				});
 				const { lilyFile } = get();
 
 				// Merge with stored names to restore nested variables inside
@@ -179,9 +172,7 @@ export const createProjectSlice: WorkflowSlice = (set, get) => ({
 					: "";
 				variables = mergeStoredVariables(variables, filename, lilyFile);
 
-				const conditionalSet = new Set(
-					lilyFile?.conditional_variables ?? [],
-				);
+				const conditionalSet = new Set(lilyFile?.conditional_variables ?? []);
 				if (conditionalSet.size > 0) {
 					variables = variables.map((v) =>
 						conditionalSet.has(v.display_name)
@@ -201,9 +192,7 @@ export const createProjectSlice: WorkflowSlice = (set, get) => ({
 				const docMeta = lilyFile?.documents[filename];
 				if (docMeta?.role_overrides) {
 					for (const ro of Object.values(docMeta.role_overrides)) {
-						for (const [varName, value] of Object.entries(
-							ro.values,
-						)) {
+						for (const [varName, value] of Object.entries(ro.values)) {
 							variableValues[varName] = value;
 						}
 					}

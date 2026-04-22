@@ -56,9 +56,7 @@ function SingleContactPicker({
 		[contacts, boundContactId],
 	);
 
-	const [manualValues, setManualValues] = useState<Record<string, string>>(
-		{},
-	);
+	const [manualValues, setManualValues] = useState<Record<string, string>>({});
 
 	const [prevIsOther, setPrevIsOther] = useState(isOther);
 	if (isOther && !prevIsOther) {
@@ -95,7 +93,13 @@ function SingleContactPicker({
 				});
 			}
 		},
-		[role, variableMappings, setContactBinding, clearContactBinding, onAddContact],
+		[
+			role,
+			variableMappings,
+			setContactBinding,
+			clearContactBinding,
+			onAddContact,
+		],
 	);
 
 	const handleManualBlur = useCallback(
@@ -118,9 +122,7 @@ function SingleContactPicker({
 	return (
 		<div className="form-control w-full">
 			<label className="label pb-1">
-				<span className="label-text text-sm font-medium">
-					{label}
-				</span>
+				<span className="label-text text-sm font-medium">{label}</span>
 			</label>
 
 			{/* Contact dropdown */}
@@ -140,9 +142,7 @@ function SingleContactPicker({
 					</option>
 				))}
 				<option value="__other__">Other (manual entry)</option>
-				{onAddContact && (
-					<option value="__add__">+ New Contact...</option>
-				)}
+				{onAddContact && <option value="__add__">+ New Contact...</option>}
 			</select>
 
 			{/* None selected */}
@@ -155,72 +155,51 @@ function SingleContactPicker({
 			{/* Show resolved values when a contact is selected */}
 			{selectedContact && (
 				<div className="mt-2 pl-3 border-l-2 border-primary/30 space-y-1">
-					{Object.entries(variableMappings).map(
-						([varName, propKey]) => {
-							const value = getProperty(
-								selectedContact,
-								propKey,
-							);
-							return (
-								<div
-									key={varName}
-									className="flex items-center gap-2 text-xs"
+					{Object.entries(variableMappings).map(([varName, propKey]) => {
+						const value = getProperty(selectedContact, propKey);
+						return (
+							<div key={varName} className="flex items-center gap-2 text-xs">
+								<span className="text-base-content/50 min-w-24">
+									{PROPERTY_LABELS[propKey] ?? propKey}:
+								</span>
+								<span
+									className={
+										value ? "text-base-content" : "text-base-content/30 italic"
+									}
 								>
-									<span className="text-base-content/50 min-w-24">
-										{PROPERTY_LABELS[propKey] ?? propKey}:
-									</span>
-									<span
-										className={
-											value
-												? "text-base-content"
-												: "text-base-content/30 italic"
-										}
-									>
-										{value || "empty"}
-									</span>
-								</div>
-							);
-						},
-					)}
+									{value || "empty"}
+								</span>
+							</div>
+						);
+					})}
 				</div>
 			)}
 
 			{/* Manual entry fields when "Other" is selected */}
 			{isOther && (
 				<div className="mt-2 pl-3 border-l-2 border-warning/30 space-y-2">
-					{Object.entries(variableMappings).map(
-						([varName, propKey]) => (
-							<div key={varName}>
-								<label className="label pb-0.5">
-									<span className="label-text text-xs text-base-content/60">
-										{PROPERTY_LABELS[propKey] ?? propKey}
-									</span>
-								</label>
-								<input
-									type="text"
-									className="input input-bordered input-xs w-full"
-									placeholder={`Enter ${PROPERTY_LABELS[propKey] ?? propKey}`}
-									value={
-										manualValues[varName] ??
-										variables[varName] ??
-										""
-									}
-									onChange={(e) =>
-										setManualValues((prev) => ({
-											...prev,
-											[varName]: e.target.value,
-										}))
-									}
-									onBlur={(e) =>
-										handleManualBlur(
-											varName,
-											e.target.value,
-										)
-									}
-								/>
-							</div>
-						),
-					)}
+					{Object.entries(variableMappings).map(([varName, propKey]) => (
+						<div key={varName}>
+							<label className="label pb-0.5">
+								<span className="label-text text-xs text-base-content/60">
+									{PROPERTY_LABELS[propKey] ?? propKey}
+								</span>
+							</label>
+							<input
+								type="text"
+								className="input input-bordered input-xs w-full"
+								placeholder={`Enter ${PROPERTY_LABELS[propKey] ?? propKey}`}
+								value={manualValues[varName] ?? variables[varName] ?? ""}
+								onChange={(e) =>
+									setManualValues((prev) => ({
+										...prev,
+										[varName]: e.target.value,
+									}))
+								}
+								onBlur={(e) => handleManualBlur(varName, e.target.value)}
+							/>
+						</div>
+					))}
 				</div>
 			)}
 		</div>
@@ -240,8 +219,11 @@ export default function ContactPicker({
 	const variables = lilyFile?.variables ?? {};
 	const bindings = lilyFile?.contact_bindings ?? {};
 
-	const hasCoAgent = Boolean(question.coAgentRole && question.coAgentVariableMappings);
-	const bindingExists = hasCoAgent && bindings[question.coAgentRole!] !== undefined;
+	const hasCoAgent = Boolean(
+		question.coAgentRole && question.coAgentVariableMappings,
+	);
+	const bindingExists =
+		hasCoAgent && bindings[question.coAgentRole!] !== undefined;
 
 	// Local toggle state — initialised from the binding so it stays in
 	// sync on mount / reload, but lets the user open the picker before

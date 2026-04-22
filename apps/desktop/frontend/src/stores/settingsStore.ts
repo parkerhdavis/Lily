@@ -1,5 +1,5 @@
-import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { create } from "zustand";
 import type { AppSettings } from "@/types";
 
 const MAX_RECENT_DIRECTORIES = 10;

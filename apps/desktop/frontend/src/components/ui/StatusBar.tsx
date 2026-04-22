@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useToastStore } from "@/stores/toastStore";
-import { useSettingsStore } from "@/stores/settingsStore";
-import { useWorkflowStore } from "@/stores/workflowStore";
 import { useNavigationStore } from "@/stores/navigationStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useToastStore } from "@/stores/toastStore";
+import { useWorkflowStore } from "@/stores/workflowStore";
 import { extractFolderName } from "@/utils/path";
 
 /**
@@ -143,7 +143,11 @@ export default function StatusBar({
 							className={iconSize}
 						>
 							<title>Keyboard shortcuts</title>
-							<path fillRule="evenodd" d="M2 4.25A2.25 2.25 0 0 1 4.25 2h7.5A2.25 2.25 0 0 1 14 4.25v5.5A2.25 2.25 0 0 1 11.75 12h-7.5A2.25 2.25 0 0 1 2 9.75v-5.5Zm2 .25a.75.75 0 0 1 .75-.75h.5a.75.75 0 0 1 0 1.5h-.5A.75.75 0 0 1 4 4.5Zm3.75-.75a.75.75 0 0 0 0 1.5h.5a.75.75 0 0 0 0-1.5h-.5ZM10 4.5a.75.75 0 0 1 .75-.75h.5a.75.75 0 0 1 0 1.5h-.5A.75.75 0 0 1 10 4.5ZM4.75 6.75a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5ZM4 9.5a.75.75 0 0 1 .75-.75h6.5a.75.75 0 0 1 0 1.5h-6.5A.75.75 0 0 1 4 9.5Z" clipRule="evenodd" />
+							<path
+								fillRule="evenodd"
+								d="M2 4.25A2.25 2.25 0 0 1 4.25 2h7.5A2.25 2.25 0 0 1 14 4.25v5.5A2.25 2.25 0 0 1 11.75 12h-7.5A2.25 2.25 0 0 1 2 9.75v-5.5Zm2 .25a.75.75 0 0 1 .75-.75h.5a.75.75 0 0 1 0 1.5h-.5A.75.75 0 0 1 4 4.5Zm3.75-.75a.75.75 0 0 0 0 1.5h.5a.75.75 0 0 0 0-1.5h-.5ZM10 4.5a.75.75 0 0 1 .75-.75h.5a.75.75 0 0 1 0 1.5h-.5A.75.75 0 0 1 10 4.5ZM4.75 6.75a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5ZM4 9.5a.75.75 0 0 1 .75-.75h6.5a.75.75 0 0 1 0 1.5h-6.5A.75.75 0 0 1 4 9.5Z"
+								clipRule="evenodd"
+							/>
 						</svg>
 					</button>
 				)}
@@ -207,9 +211,7 @@ export default function StatusBar({
 					type="button"
 					className={btnClass}
 					onClick={toggleTheme}
-					title={
-						isDark ? "Switch to light mode" : "Switch to dark mode"
-					}
+					title={isDark ? "Switch to light mode" : "Switch to dark mode"}
 				>
 					{isDark ? (
 						<svg
@@ -261,10 +263,7 @@ export default function StatusBar({
 }
 
 /** Human-readable label for the current workflow step. */
-function getStepLabel(
-	step: string,
-	workingDir: string | null,
-): string {
+function getStepLabel(step: string, workingDir: string | null): string {
 	const folderName = workingDir ? extractFolderName(workingDir) : "";
 
 	switch (step) {

@@ -1,9 +1,9 @@
 import {
-	VARIABLE_SPAN_RE,
-	CONDITIONAL_SPAN_RE,
 	applyCasing,
+	CONDITIONAL_SPAN_RE,
 	parseConditionalDef,
 	resolveNestedVariables,
+	VARIABLE_SPAN_RE,
 } from "./variableHelpers";
 
 /**
@@ -67,11 +67,7 @@ export function renderLivePreview(
 
 	const withSdtConditionals = withConditionals.replace(
 		COMBINED_SDT_BM_RE,
-		(
-			match,
-			canonicalKey: string,
-			originalCase: string,
-		) => {
+		(match, canonicalKey: string, originalCase: string) => {
 			const displayName = canonicalToDisplay[canonicalKey];
 			if (!displayName) return match;
 

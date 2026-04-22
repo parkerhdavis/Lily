@@ -70,9 +70,7 @@ export default function LinkedVariableField({
 	scrollToOccurrence: (name: string, direction: "prev" | "next") => void;
 }) {
 	const isFilled = isConditional || Boolean(value);
-	const linkLabel = linkedToRole
-		? `Linked to ${linkedToRole}`
-		: "Linked";
+	const linkLabel = linkedToRole ? `Linked to ${linkedToRole}` : "Linked";
 
 	return (
 		<div
@@ -292,10 +290,7 @@ function VariableInput({
 						placeholder="0.00"
 						value={value}
 						onChange={(e) => {
-							const v = e.target.value.replace(
-								/[^0-9.,]/g,
-								"",
-							);
+							const v = e.target.value.replace(/[^0-9.,]/g, "");
 							onChange(v);
 						}}
 						onFocus={onSelect}
@@ -335,9 +330,7 @@ function VariableInput({
 				)}
 			</div>
 			{schemaEntry?.help && (
-				<p className="text-xs text-base-content/40 mt-1">
-					{schemaEntry.help}
-				</p>
+				<p className="text-xs text-base-content/40 mt-1">{schemaEntry.help}</p>
 			)}
 		</div>
 	);

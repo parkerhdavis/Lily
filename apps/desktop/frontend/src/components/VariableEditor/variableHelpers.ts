@@ -1,4 +1,4 @@
-import type { VariableInfo, Contact } from "@/types";
+import type { Contact, VariableInfo } from "@/types";
 import { extractFilename } from "@/utils/path";
 
 /**
@@ -176,7 +176,10 @@ export function parseContactRoleVariant(
 	const dotIdx = variant.lastIndexOf(".");
 	if (dotIdx < 0) return null;
 	const role = variant.substring(0, dotIdx).trim();
-	const property = variant.substring(dotIdx + 1).trim().toLowerCase();
+	const property = variant
+		.substring(dotIdx + 1)
+		.trim()
+		.toLowerCase();
 	if (!role || !CONTACT_PROPERTIES.has(property)) return null;
 	return { role, property };
 }

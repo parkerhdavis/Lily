@@ -106,12 +106,9 @@ export default function MigrationDialog({
 		return claimed;
 	}, [selections]);
 
-	const handleSelect = useCallback(
-		(orphanName: string, target: string) => {
-			setSelections((prev) => ({ ...prev, [orphanName]: target }));
-		},
-		[],
-	);
+	const handleSelect = useCallback((orphanName: string, target: string) => {
+		setSelections((prev) => ({ ...prev, [orphanName]: target }));
+	}, []);
 
 	const handleToggleRemove = useCallback(
 		(orphanName: string, checked: boolean) => {
@@ -138,18 +135,18 @@ export default function MigrationDialog({
 
 	return (
 		// biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close
-		<dialog className="modal modal-open" onClick={(e) => {
-			if (e.target === e.currentTarget) onSkip();
-		}}>
+		<dialog
+			className="modal modal-open"
+			onClick={(e) => {
+				if (e.target === e.currentTarget) onSkip();
+			}}
+		>
 			<div className="modal-box max-w-2xl">
-				<h3 className="text-lg font-bold mb-1">
-					Questionnaire Updated
-				</h3>
+				<h3 className="text-lg font-bold mb-1">Questionnaire Updated</h3>
 				<p className="text-sm text-base-content/60 mb-4">
-					The questionnaire definition has changed since this
-					client's data was last synced. The following variables
-					have values but no longer appear in the current
-					questionnaire. You can map them to new variable names,
+					The questionnaire definition has changed since this client's data was
+					last synced. The following variables have values but no longer appear
+					in the current questionnaire. You can map them to new variable names,
 					or remove them.
 				</p>
 
@@ -165,14 +162,10 @@ export default function MigrationDialog({
 							>
 								<div className="flex items-start justify-between gap-3 mb-2">
 									<div className="min-w-0">
-										<div className="font-medium text-sm truncate">
-											{o.name}
-										</div>
+										<div className="font-medium text-sm truncate">{o.name}</div>
 										<div className="text-xs text-base-content/50 truncate mt-0.5">
 											Current value:{" "}
-											<span className="text-base-content/70">
-												"{o.value}"
-											</span>
+											<span className="text-base-content/70">"{o.value}"</span>
 										</div>
 									</div>
 								</div>
@@ -184,28 +177,17 @@ export default function MigrationDialog({
 									<select
 										className="select select-bordered select-sm flex-1"
 										value={selected}
-										onChange={(e) =>
-											handleSelect(
-												o.name,
-												e.target.value,
-											)
-										}
+										onChange={(e) => handleSelect(o.name, e.target.value)}
 									>
-										<option value="">
-											(don't map)
-										</option>
+										<option value="">(don't map)</option>
 										{report.unfilled.map((u) => (
 											<option
 												key={u}
 												value={u}
-												disabled={
-													claimedTargets.has(u) &&
-													selected !== u
-												}
+												disabled={claimedTargets.has(u) && selected !== u}
 											>
 												{u}
-												{claimedTargets.has(u) &&
-												selected !== u
+												{claimedTargets.has(u) && selected !== u
 													? " (already mapped)"
 													: ""}
 											</option>
@@ -220,15 +202,11 @@ export default function MigrationDialog({
 											className="checkbox checkbox-sm"
 											checked={isRemove}
 											onChange={(e) =>
-												handleToggleRemove(
-													o.name,
-													e.target.checked,
-												)
+												handleToggleRemove(o.name, e.target.checked)
 											}
 										/>
 										<span className="text-xs text-base-content/50">
-											Remove this variable from client
-											data
+											Remove this variable from client data
 										</span>
 									</label>
 								)}
