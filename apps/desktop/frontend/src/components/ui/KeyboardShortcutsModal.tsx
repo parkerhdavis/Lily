@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 const shortcuts = [
 	{ section: "Document Editing" },
@@ -68,9 +68,7 @@ export default function KeyboardShortcutsModal({
 								<span className="text-sm text-base-content/80">
 									{item.action}
 								</span>
-								<kbd className="kbd kbd-sm">
-									{item.keys}
-								</kbd>
+								<kbd className="kbd kbd-sm">{item.keys}</kbd>
 							</div>
 						),
 					)}

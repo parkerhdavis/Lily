@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { VariableInfo, TextOccurrence } from "@/types";
+import type { TextOccurrence, VariableInfo } from "@/types";
 import { pushNav, toastError, toastSuccess } from "./helpers";
 import type { WorkflowSlice } from "./types";
 
@@ -57,16 +57,13 @@ export const createTemplateEditorSlice: WorkflowSlice = (set, get) => ({
 		if (!templateEditorPath) return;
 
 		try {
-			const vars = await invoke<VariableInfo[]>(
-				"insert_template_variable",
-				{
-					templatePath: templateEditorPath,
-					searchText,
-					variableName,
-					occurrenceIndex: occurrenceIndex ?? null,
-					replaceAll: replaceAll ?? null,
-				},
-			);
+			const vars = await invoke<VariableInfo[]>("insert_template_variable", {
+				templatePath: templateEditorPath,
+				searchText,
+				variableName,
+				occurrenceIndex: occurrenceIndex ?? null,
+				replaceAll: replaceAll ?? null,
+			});
 
 			// Refresh preview
 			const html = await invoke<string>("get_document_html", {
@@ -94,15 +91,12 @@ export const createTemplateEditorSlice: WorkflowSlice = (set, get) => ({
 		if (!templateEditorPath) return;
 
 		try {
-			const vars = await invoke<VariableInfo[]>(
-				"remove_template_variable",
-				{
-					templatePath: templateEditorPath,
-					variableName,
-					replacementText,
-					occurrenceIndex: occurrenceIndex ?? null,
-				},
-			);
+			const vars = await invoke<VariableInfo[]>("remove_template_variable", {
+				templatePath: templateEditorPath,
+				variableName,
+				replacementText,
+				occurrenceIndex: occurrenceIndex ?? null,
+			});
 
 			const html = await invoke<string>("get_document_html", {
 				docxPath: templateEditorPath,
@@ -133,9 +127,9 @@ export const createTemplateEditorSlice: WorkflowSlice = (set, get) => ({
 		const { templateEditorPath, templateEditorRelPath } = get();
 		if (!templateEditorPath || !templateEditorRelPath) return;
 
-		const templatesDir =
-			(await import("@/stores/settingsStore")).useSettingsStore.getState()
-				.settings.templates_dir;
+		const templatesDir = (
+			await import("@/stores/settingsStore")
+		).useSettingsStore.getState().settings.templates_dir;
 		if (!templatesDir) return;
 
 		try {
@@ -155,9 +149,9 @@ export const createTemplateEditorSlice: WorkflowSlice = (set, get) => ({
 		const { templateEditorPath, templateEditorRelPath } = get();
 		if (!templateEditorPath || !templateEditorRelPath) return;
 
-		const templatesDir =
-			(await import("@/stores/settingsStore")).useSettingsStore.getState()
-				.settings.templates_dir;
+		const templatesDir = (
+			await import("@/stores/settingsStore")
+		).useSettingsStore.getState().settings.templates_dir;
 		if (!templatesDir) return;
 
 		try {
@@ -220,15 +214,12 @@ export const createTemplateEditorSlice: WorkflowSlice = (set, get) => ({
 		if (!templateEditorPath) return;
 
 		try {
-			const vars = await invoke<VariableInfo[]>(
-				"insert_sdt_at_position",
-				{
-					templatePath: templateEditorPath,
-					variableName,
-					paragraphIndex: paraIdx,
-					charOffset,
-				},
-			);
+			const vars = await invoke<VariableInfo[]>("insert_sdt_at_position", {
+				templatePath: templateEditorPath,
+				variableName,
+				paragraphIndex: paraIdx,
+				charOffset,
+			});
 
 			const html = await invoke<string>("get_document_html", {
 				docxPath: templateEditorPath,
@@ -250,14 +241,11 @@ export const createTemplateEditorSlice: WorkflowSlice = (set, get) => ({
 		if (!templateEditorPath) return;
 
 		try {
-			const vars = await invoke<VariableInfo[]>(
-				"rename_template_variable",
-				{
-					templatePath: templateEditorPath,
-					oldName,
-					newName,
-				},
-			);
+			const vars = await invoke<VariableInfo[]>("rename_template_variable", {
+				templatePath: templateEditorPath,
+				oldName,
+				newName,
+			});
 
 			const html = await invoke<string>("get_document_html", {
 				docxPath: templateEditorPath,

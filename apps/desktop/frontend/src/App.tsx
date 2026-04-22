@@ -1,23 +1,22 @@
 import { useEffect, useState } from "react";
-import { useSettingsStore } from "@/stores/settingsStore";
-import { useWorkflowStore } from "@/stores/workflowStore";
-import { useNavigationStore } from "@/stores/navigationStore";
-import { useUndoStore } from "@/stores/undoStore";
-import LilyHub from "@/components/LilyHub";
-
-import TemplatePicker from "@/components/TemplatePicker";
-import VariableEditor from "@/components/VariableEditor";
-import Questionnaire from "@/components/Questionnaire";
 import AppSettings from "@/components/AppSettings";
 import ClientsHub from "@/components/ClientsHub";
+import LilyHub from "@/components/LilyHub";
 import PipelineHub from "@/components/PipelineHub";
+import Questionnaire from "@/components/Questionnaire";
 import QuestionnaireEditor from "@/components/QuestionnaireEditor";
 import TemplateEditor from "@/components/TemplateEditor";
+import TemplatePicker from "@/components/TemplatePicker";
+import ErrorBoundary from "@/components/ui/ErrorBoundary";
+import KeyboardShortcutsModal from "@/components/ui/KeyboardShortcutsModal";
 import StatusBar from "@/components/ui/StatusBar";
 import ToastContainer from "@/components/ui/ToastContainer";
-import KeyboardShortcutsModal from "@/components/ui/KeyboardShortcutsModal";
-import ErrorBoundary from "@/components/ui/ErrorBoundary";
+import VariableEditor from "@/components/VariableEditor";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
+import { useNavigationStore } from "@/stores/navigationStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useUndoStore } from "@/stores/undoStore";
+import { useWorkflowStore } from "@/stores/workflowStore";
 
 export default function App() {
 	const { loaded, load, zoomIn, zoomOut, zoomReset } = useSettingsStore();
@@ -72,13 +71,11 @@ export default function App() {
 			if (e.key === "ArrowLeft") {
 				e.preventDefault();
 				const entry = useNavigationStore.getState().goBack();
-				if (entry)
-					useWorkflowStore.getState().restoreNavigationEntry(entry);
+				if (entry) useWorkflowStore.getState().restoreNavigationEntry(entry);
 			} else if (e.key === "ArrowRight") {
 				e.preventDefault();
 				const entry = useNavigationStore.getState().goForward();
-				if (entry)
-					useWorkflowStore.getState().restoreNavigationEntry(entry);
+				if (entry) useWorkflowStore.getState().restoreNavigationEntry(entry);
 			}
 		};
 		window.addEventListener("keydown", handleNav);

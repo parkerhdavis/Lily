@@ -31,13 +31,22 @@ else
     DETECTED_OS := windows
 endif
 
+# ==================================================================
+# PATHS
+# ==================================================================
+# Apps live under apps/<name>/ per the portfolio structure. Lily is a
+# single-deployment Tauri desktop app, so one app dir: apps/desktop/.
+BACKEND := apps/desktop/backend
+FRONTEND := apps/desktop/frontend
+
 # Windows-specific: use PowerShell 7 (pwsh) for complex commands
 ifeq ($(DETECTED_OS),windows)
     SHELL := pwsh.exe
     .SHELLFLAGS := -NoProfile -Command
     BUN := bun
     # Run the tauri CLI JS entry point directly with bun to avoid needing node on PATH.
-    # Path is relative to backend/ since Tauri commands must run from there.
+    # Path is relative to $(BACKEND) — backend and frontend are siblings under
+    # apps/desktop/, so ..\frontend\node_modules\... resolves correctly.
     TAURI := bun ..\frontend\node_modules\@tauri-apps\cli\tauri.js
     MKDIR := New-Item -ItemType Directory -Force -Path
     RM := Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
@@ -46,7 +55,8 @@ else
     BUN := bun
     # Run the tauri CLI JS entry point directly with bun to avoid the #!/usr/bin/env node shim,
     # since node may not be on PATH (bun replaces it as our JS runtime).
-    # Path is relative to backend/ since Tauri commands must run from there.
+    # Path is relative to $(BACKEND) — backend and frontend are siblings under
+    # apps/desktop/, so ../frontend/node_modules/... resolves correctly.
     TAURI := bun ../frontend/node_modules/@tauri-apps/cli/tauri.js
     MKDIR := mkdir -p
     RM := rm -rf
@@ -108,11 +118,11 @@ help:
 ifeq ($(DETECTED_OS),windows)
 dev:
 	@echo "Starting Tauri development server (frontend + Rust)..."
-	cd backend; $(TAURI) dev
+	cd $(BACKEND); $(TAURI) dev
 
 dev-frontend:
 	@echo "Starting Bun dev server only (rapid UI iteration)..."
-	cd frontend; $(BUN) run dev
+	cd $(FRONTEND); $(BUN) run dev
 
 down:
 	@echo "Stopping dev server..."
@@ -128,7 +138,7 @@ dev:
 		sleep 1; \
 	fi
 	@echo "  -> Starting Tauri (frontend dev server started by Tauri via beforeDevCommand)..."
-	@cd backend && $(TAURI) dev
+	@cd $(BACKEND) && $(TAURI) dev
 
 down:
 	@echo "Stopping Lily dev server..."
@@ -143,7 +153,7 @@ down:
 
 dev-frontend:
 	@echo "Starting Bun dev server only (rapid UI iteration)..."
-	@cd frontend && $(BUN) run dev
+	@cd $(FRONTEND) && $(BUN) run dev
 endif
 
 # ==================================================================
@@ -158,7 +168,7 @@ ifeq ($(DETECTED_OS),windows)
 setup:
 	@echo "Installing all dependencies (Rust + Bun)..."
 	@echo "Please ensure Rust and Bun are installed."
-	cd frontend; $(BUN) install
+	$(BUN) install
 	@echo "Setup complete"
 
 install: setup
@@ -166,7 +176,7 @@ install: setup
 else
 setup:
 	@echo "Installing all dependencies (Rust + Bun)..."
-	@cd frontend && $(BUN) install
+	@$(BUN) install
 	@echo "Setup complete"
 
 install: setup
@@ -177,9 +187,9 @@ ifeq ($(DETECTED_OS),windows)
 build:
 	@echo "Building Windows installers (.msi, .exe)..."
 	@echo "  -> Building frontend..."
-	cd frontend; $(BUN) run build
+	cd $(FRONTEND); $(BUN) run build
 	@echo "  -> Building Tauri app for Windows..."
-	$$env:PATH = "$$env:USERPROFILE\.cargo\bin;$$env:PATH"; cd backend; $(TAURI) build
+	$$env:PATH = "$$env:USERPROFILE\.cargo\bin;$$env:PATH"; cd $(BACKEND); $(TAURI) build
 	@echo ""
 	@echo "Windows build complete!"
 	@echo ""
@@ -203,9 +213,9 @@ build-linux:
 build-windows:
 	@echo "Building Windows installers (.msi, .exe)..."
 	@echo "  -> Building frontend..."
-	cd frontend; $(BUN) run build
+	cd $(FRONTEND); $(BUN) run build
 	@echo "  -> Building Tauri app for Windows..."
-	$$env:PATH = "$$env:USERPROFILE\.cargo\bin;$$env:PATH"; cd backend; $(TAURI) build
+	$$env:PATH = "$$env:USERPROFILE\.cargo\bin;$$env:PATH"; cd $(BACKEND); $(TAURI) build
 	@echo ""
 	@echo "Windows build complete!"
 	@echo ""
@@ -224,9 +234,9 @@ else
 build-linux:
 	@echo "Building Linux installers (.deb, .rpm, AppImage)..."
 	@echo "  -> Building frontend..."
-	@cd frontend && $(BUN) run build
+	@cd $(FRONTEND) && $(BUN) run build
 	@echo "  -> Building Tauri app for Linux..."
-	@cd backend && $(TAURI) build
+	@cd $(BACKEND) && $(TAURI) build
 	@echo ""
 	@echo "Linux build complete!"
 	@echo ""
@@ -248,13 +258,13 @@ build-macos:
 		echo "     Copy .env.example to .env and fill in your Apple credentials"; \
 	fi
 	@echo "  -> Building frontend..."
-	@cd frontend && $(BUN) run build
+	@cd $(FRONTEND) && $(BUN) run build
 	@echo "  -> Building Tauri app for macOS..."
 	@if [ -f .env ]; then \
 		. ./.env && \
-		( unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID && cd backend && $(TAURI) build ); \
+		( unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID && cd $(BACKEND) && $(TAURI) build ); \
 	else \
-		cd backend && $(TAURI) build; \
+		cd $(BACKEND) && $(TAURI) build; \
 	fi
 	@if [ -f .env ]; then \
 		. ./.env && \
@@ -262,17 +272,17 @@ build-macos:
 		echo "Re-signing with hardened runtime and secure timestamp..." && \
 		echo "  (Tauri's bundler omits --timestamp; re-signing to fix)" && \
 		codesign --force --options runtime --timestamp \
-			--entitlements backend/entitlements.plist \
+			--entitlements $(BACKEND)/entitlements.plist \
 			--sign "$$APPLE_SIGNING_IDENTITY" \
 			./target/release/bundle/macos/Lily.app/Contents/MacOS/lily && \
 		codesign --force --options runtime --timestamp \
-			--entitlements backend/entitlements.plist \
+			--entitlements $(BACKEND)/entitlements.plist \
 			--sign "$$APPLE_SIGNING_IDENTITY" \
 			./target/release/bundle/macos/Lily.app && \
 		echo "  -> Re-signed .app bundle" && \
 		echo "" && \
 		echo "Rebuilding DMG from re-signed .app..." && \
-		VERSION=$$(grep '^version = ' backend/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/') && \
+		VERSION=$$(grep '^version = ' $(BACKEND)/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/') && \
 		ARCH=$$(uname -m | sed 's/arm64/aarch64/') && \
 		DMG_NAME="Lily_$${VERSION}_$${ARCH}.dmg" && \
 		DMG_PATH="./target/release/bundle/dmg/$${DMG_NAME}" && \
@@ -308,7 +318,7 @@ notarize:
 		exit 1; \
 	fi
 	@. ./.env && \
-	VERSION=$$(grep '^version = ' backend/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/') && \
+	VERSION=$$(grep '^version = ' $(BACKEND)/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/') && \
 	ARCH=$$(uname -m | sed 's/arm64/aarch64/') && \
 	DMG_NAME="Lily_$${VERSION}_$${ARCH}.dmg" && \
 	DMG_PATH="./target/release/bundle/dmg/$${DMG_NAME}" && \
@@ -336,12 +346,12 @@ endif
 ifeq ($(DETECTED_OS),windows)
 check:
 	@echo "Running Rust compiler checks..."
-	cd backend; cargo check
+	cd $(BACKEND); cargo check
 	@echo "Rust checks passed"
 else
 check:
 	@echo "Running Rust compiler checks..."
-	@cd backend && cargo check
+	@cd $(BACKEND) && cargo check
 	@echo "Rust checks passed"
 endif
 
@@ -352,64 +362,64 @@ endif
 ifeq ($(DETECTED_OS),windows)
 lint:
 	@echo "Linting frontend code..."
-	cd frontend; $(BUN)x biome check .
+	$(BUN)x biome check .
 	@echo "Linting Rust code..."
-	cd backend; cargo clippy -- -D warnings
+	cd $(BACKEND); cargo clippy -- -D warnings
 	@echo "Lint complete"
 
 lint-fix:
 	@echo "Fixing frontend lint issues..."
-	cd frontend; $(BUN)x biome check --write .
+	$(BUN)x biome check --write .
 	@echo "Lint fix complete"
 
 format:
 	@echo "Formatting frontend code..."
-	cd frontend; $(BUN)x biome format --write .
+	$(BUN)x biome format --write .
 	@echo "Formatting Rust code..."
-	cd backend; cargo fmt
+	cd $(BACKEND); cargo fmt
 	@echo "Format complete"
 
 typecheck:
 	@echo "Running TypeScript type checking..."
-	cd frontend; $(BUN) run typecheck
+	cd $(FRONTEND); $(BUN) run typecheck
 	@echo "Type check passed"
 
 test:
 	@echo "Running frontend tests..."
-	cd frontend; $(BUN) test
+	cd $(FRONTEND); $(BUN) test
 	@echo "Running Rust tests..."
-	cd backend; cargo test
+	cd $(BACKEND); cargo test
 	@echo "Tests complete"
 else
 lint:
 	@echo "Linting frontend code..."
-	@cd frontend && $(BUN)x biome check .
+	@$(BUN)x biome check .
 	@echo "Linting Rust code..."
-	@cd backend && cargo clippy -- -D warnings
+	@cd $(BACKEND) && cargo clippy -- -D warnings
 	@echo "Lint complete"
 
 lint-fix:
 	@echo "Fixing frontend lint issues..."
-	@cd frontend && $(BUN)x biome check --write .
+	@$(BUN)x biome check --write .
 	@echo "Lint fix complete"
 
 format:
 	@echo "Formatting frontend code..."
-	@cd frontend && $(BUN)x biome format --write .
+	@$(BUN)x biome format --write .
 	@echo "Formatting Rust code..."
-	@cd backend && cargo fmt
+	@cd $(BACKEND) && cargo fmt
 	@echo "Format complete"
 
 typecheck:
 	@echo "Running TypeScript type checking..."
-	@cd frontend && $(BUN) run typecheck
+	@cd $(FRONTEND) && $(BUN) run typecheck
 	@echo "Type check passed"
 
 test:
 	@echo "Running frontend tests..."
-	@cd frontend && $(BUN) test
+	@cd $(FRONTEND) && $(BUN) test
 	@echo "Running Rust tests..."
-	@cd backend && cargo test
+	@cd $(BACKEND) && cargo test
 	@echo "Tests complete"
 endif
 
@@ -421,30 +431,34 @@ ifeq ($(DETECTED_OS),windows)
 version:
 ifndef V
 	@echo "Current version:"
-	@cd backend; (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches.Groups[1].Value
+	@cd $(BACKEND); (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches.Groups[1].Value
 else
 	@echo "Updating version to $(V)..."
-	@(Get-Content backend\Cargo.toml -Raw) -replace '(?m)^version = ".*"', 'version = "$(V)"' | Set-Content backend\Cargo.toml -NoNewline
-	@(Get-Content backend\tauri.conf.json -Raw) -replace '"version": ".*"', '"version": "$(V)"' | Set-Content backend\tauri.conf.json -NoNewline
-	@(Get-Content frontend\package.json -Raw) -replace '"version": ".*"', '"version": "$(V)"' | Set-Content frontend\package.json -NoNewline
-	@echo "  -> backend/Cargo.toml"
-	@echo "  -> backend/tauri.conf.json"
-	@echo "  -> frontend/package.json"
+	@(Get-Content $(BACKEND)\Cargo.toml -Raw) -replace '(?m)^version = ".*"', 'version = "$(V)"' | Set-Content $(BACKEND)\Cargo.toml -NoNewline
+	@(Get-Content $(BACKEND)\tauri.conf.json -Raw) -replace '"version": ".*"', '"version": "$(V)"' | Set-Content $(BACKEND)\tauri.conf.json -NoNewline
+	@(Get-Content $(FRONTEND)\package.json -Raw) -replace '"version": ".*"', '"version": "$(V)"' | Set-Content $(FRONTEND)\package.json -NoNewline
+	@(Get-Content package.json -Raw) -replace '"version": ".*"', '"version": "$(V)"' | Set-Content package.json -NoNewline
+	@echo "  -> $(BACKEND)/Cargo.toml"
+	@echo "  -> $(BACKEND)/tauri.conf.json"
+	@echo "  -> $(FRONTEND)/package.json"
+	@echo "  -> package.json"
 	@echo ""
 	@echo "Version updated to $(V)"
 endif
 else
 version:
 ifndef V
-	@echo "Current version: $$(grep '^version = ' backend/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')"
+	@echo "Current version: $$(grep '^version = ' $(BACKEND)/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')"
 else
 	@echo "Updating version to $(V)..."
-	@$(SED_INPLACE) 's/^version = ".*"/version = "$(V)"/' backend/Cargo.toml
-	@$(SED_INPLACE) 's/"version": ".*"/"version": "$(V)"/' backend/tauri.conf.json
-	@$(SED_INPLACE) 's/"version": ".*"/"version": "$(V)"/' frontend/package.json
-	@echo "  -> backend/Cargo.toml"
-	@echo "  -> backend/tauri.conf.json"
-	@echo "  -> frontend/package.json"
+	@$(SED_INPLACE) 's/^version = ".*"/version = "$(V)"/' $(BACKEND)/Cargo.toml
+	@$(SED_INPLACE) 's/"version": ".*"/"version": "$(V)"/' $(BACKEND)/tauri.conf.json
+	@$(SED_INPLACE) 's/"version": ".*"/"version": "$(V)"/' $(FRONTEND)/package.json
+	@$(SED_INPLACE) 's/"version": ".*"/"version": "$(V)"/' package.json
+	@echo "  -> $(BACKEND)/Cargo.toml"
+	@echo "  -> $(BACKEND)/tauri.conf.json"
+	@echo "  -> $(FRONTEND)/package.json"
+	@echo "  -> package.json"
 	@echo ""
 	@echo "Version updated to $(V)"
 endif
@@ -457,15 +471,15 @@ endif
 ifeq ($(DETECTED_OS),windows)
 clean:
 	@echo "Cleaning build artifacts..."
-	if (Test-Path frontend\node_modules) { Remove-Item -Recurse -Force frontend\node_modules }
-	if (Test-Path frontend\dist) { Remove-Item -Recurse -Force frontend\dist }
+	if (Test-Path node_modules) { Remove-Item -Recurse -Force node_modules }
+	if (Test-Path $(FRONTEND)\dist) { Remove-Item -Recurse -Force $(FRONTEND)\dist }
 	if (Test-Path target) { Remove-Item -Recurse -Force target }
 	@echo "Cleanup complete"
 else
 clean:
 	@echo "Cleaning build artifacts..."
-	@$(RM) frontend/node_modules
-	@$(RM) frontend/dist
+	@$(RM) node_modules
+	@$(RM) $(FRONTEND)/dist
 	@$(RM) target
 	@echo "Cleanup complete"
 endif

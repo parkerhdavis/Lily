@@ -51,15 +51,11 @@ export default function PageHeader({
 			<div className="flex-1 min-w-0">
 				<h2 className="text-lg font-semibold truncate">{title}</h2>
 				{subtitle && (
-					<p className="text-xs text-base-content/40 truncate">
-						{subtitle}
-					</p>
+					<p className="text-xs text-base-content/40 truncate">{subtitle}</p>
 				)}
 			</div>
 			{children && (
-				<div className="flex items-center gap-2 shrink-0">
-					{children}
-				</div>
+				<div className="flex items-center gap-2 shrink-0">{children}</div>
 			)}
 			{showAppSwitcher && <AppSwitcher />}
 		</header>

@@ -1,7 +1,8 @@
-# Cargo configuration for Lily backend
-# This configures the build output directory
+# Cargo configuration for Lily backend.
+# Redirects Cargo output to the repo-root target/ (portfolio convention: all
+# build artifacts live under /target, not per-app). Path is relative to this
+# file, so apps/desktop/backend/.cargo/config.toml + "../../../target" lands
+# at the repo root.
 
 [build]
-# IMPORTANT: Use top-level target directory (../target) instead of backend/target
-# This keeps all build artifacts in one place at the project root
-target-dir = "../target"
+target-dir = "../../../target"

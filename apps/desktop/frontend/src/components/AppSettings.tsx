@@ -1,11 +1,11 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { useSettingsStore } from "@/stores/settingsStore";
-import { useWorkflowStore } from "@/stores/workflowStore";
-import { useQuestionnaireStore } from "@/stores/questionnaireStore";
-import { useToastStore } from "@/stores/toastStore";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
+import { useQuestionnaireStore } from "@/stores/questionnaireStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useToastStore } from "@/stores/toastStore";
+import { useWorkflowStore } from "@/stores/workflowStore";
 
 export default function AppSettings() {
 	const { settings, save, zoomIn, zoomOut, zoomReset } = useSettingsStore();
@@ -46,9 +46,7 @@ export default function AppSettings() {
 	};
 
 	const removeClientLibraryDir = (dir: string) => {
-		const dirs = (settings.client_library_dirs ?? []).filter(
-			(d) => d !== dir,
-		);
+		const dirs = (settings.client_library_dirs ?? []).filter((d) => d !== dir);
 		save({ client_library_dirs: dirs });
 	};
 
@@ -62,10 +60,9 @@ export default function AppSettings() {
 			await save({ questionnaires_dir: selected });
 			// Migrate any existing questionnaires from old config-dir storage
 			try {
-				const count =
-					await useQuestionnaireStore
-						.getState()
-						.migrateQuestionnaires();
+				const count = await useQuestionnaireStore
+					.getState()
+					.migrateQuestionnaires();
 				if (count > 0) {
 					useToastStore
 						.getState()
@@ -88,9 +85,7 @@ export default function AppSettings() {
 				<div className="max-w-lg mx-auto space-y-8">
 					{/* Appearance */}
 					<section>
-						<SectionHeading className="mb-4">
-							Appearance
-						</SectionHeading>
+						<SectionHeading className="mb-4">Appearance</SectionHeading>
 						<div className="flex items-center justify-between p-4 rounded-xl border border-base-300 bg-base-100">
 							<span className="text-sm font-medium">Theme</span>
 							<div className="flex rounded-lg overflow-hidden border border-base-300">
@@ -122,14 +117,10 @@ export default function AppSettings() {
 
 					{/* Zoom */}
 					<section>
-						<SectionHeading className="mb-4">
-							Zoom
-						</SectionHeading>
+						<SectionHeading className="mb-4">Zoom</SectionHeading>
 						<div className="flex items-center justify-between p-4 rounded-xl border border-base-300 bg-base-100">
 							<div>
-								<p className="text-sm font-medium">
-									Interface Scale
-								</p>
+								<p className="text-sm font-medium">Interface Scale</p>
 								<p className="text-xs text-base-content/40 mt-0.5">
 									Ctrl+= / Ctrl+- / Ctrl+0
 								</p>
@@ -165,9 +156,7 @@ export default function AppSettings() {
 					{/* Footer size */}
 					<section>
 						<div className="flex items-center justify-between p-4 rounded-xl border border-base-300 bg-base-100">
-							<p className="text-sm font-medium">
-								Status Bar Size
-							</p>
+							<p className="text-sm font-medium">Status Bar Size</p>
 							<div className="flex rounded-lg overflow-hidden border border-base-300">
 								{(
 									[
@@ -204,12 +193,9 @@ export default function AppSettings() {
 					<section>
 						<div className="flex items-center justify-between p-4 rounded-xl border border-base-300 bg-base-100">
 							<div>
-								<p className="text-sm font-medium">
-									Autosave
-								</p>
+								<p className="text-sm font-medium">Autosave</p>
 								<p className="text-xs text-base-content/40 mt-0.5">
-									Automatically save changes as you
-									edit
+									Automatically save changes as you edit
 								</p>
 							</div>
 							<input
@@ -227,51 +213,36 @@ export default function AppSettings() {
 
 					{/* Workspace */}
 					<section>
-						<SectionHeading className="mb-4">
-							Workspace
-						</SectionHeading>
+						<SectionHeading className="mb-4">Workspace</SectionHeading>
 						<div className="p-4 rounded-xl border border-base-300 bg-base-100 space-y-3">
 							<div>
-								<p className="text-sm font-medium mb-1">
-									Client Libraries
-								</p>
-								{(settings.client_library_dirs ?? [])
-									.length > 0 ? (
+								<p className="text-sm font-medium mb-1">Client Libraries</p>
+								{(settings.client_library_dirs ?? []).length > 0 ? (
 									<div className="space-y-1.5 mb-2">
-										{settings.client_library_dirs.map(
-											(dir) => (
-												<div
-													key={dir}
-													className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-base-200/50 text-xs font-mono"
+										{settings.client_library_dirs.map((dir) => (
+											<div
+												key={dir}
+												className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-base-200/50 text-xs font-mono"
+											>
+												<span className="truncate">{dir}</span>
+												<button
+													type="button"
+													className="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
+													onClick={() => removeClientLibraryDir(dir)}
+													title="Remove"
 												>
-													<span className="truncate">
-														{dir}
-													</span>
-													<button
-														type="button"
-														className="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
-														onClick={() =>
-															removeClientLibraryDir(
-																dir,
-															)
-														}
-														title="Remove"
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														viewBox="0 0 20 20"
+														fill="currentColor"
+														className="size-3.5"
 													>
-														<svg
-															xmlns="http://www.w3.org/2000/svg"
-															viewBox="0 0 20 20"
-															fill="currentColor"
-															className="size-3.5"
-														>
-															<title>
-																Remove
-															</title>
-															<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
-														</svg>
-													</button>
-												</div>
-											),
-										)}
+														<title>Remove</title>
+														<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+													</svg>
+												</button>
+											</div>
+										))}
 									</div>
 								) : (
 									<p className="text-xs text-base-content/30 mb-2">
@@ -288,9 +259,7 @@ export default function AppSettings() {
 							</div>
 							<div className="border-t border-base-300 my-3" />
 							<div>
-								<p className="text-sm font-medium mb-1">
-									Template Libraries
-								</p>
+								<p className="text-sm font-medium mb-1">Template Libraries</p>
 								<p className="text-xs text-base-content/40 font-mono break-all">
 									{settings.templates_dir ?? "Not configured"}
 								</p>
@@ -308,8 +277,7 @@ export default function AppSettings() {
 									Questionnaire Libraries
 								</p>
 								<p className="text-xs text-base-content/40 font-mono break-all">
-									{settings.questionnaires_dir ??
-										"Not configured"}
+									{settings.questionnaires_dir ?? "Not configured"}
 								</p>
 							</div>
 							<button
@@ -327,19 +295,11 @@ export default function AppSettings() {
 						<SectionHeading className="mb-4">About</SectionHeading>
 						<div className="p-4 rounded-xl border border-base-300 bg-base-100">
 							<div className="flex items-center gap-3">
-								<img
-									src={lilyIcon}
-									alt=""
-									className="size-8 opacity-60"
-								/>
+								<img src={lilyIcon} alt="" className="size-8 opacity-60" />
 								<div>
-									<p className="text-sm font-semibold">
-										Lily
-									</p>
+									<p className="text-sm font-semibold">Lily</p>
 									<p className="text-xs text-base-content/40">
-										Legal Drafting and Client
-										Management — Developed
-										by{" "}
+										Legal Drafting and Client Management — Developed by{" "}
 										<a
 											href="https://github.com/parkerhdavis"
 											target="_blank"

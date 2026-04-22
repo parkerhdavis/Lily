@@ -1,14 +1,14 @@
+import type { NavigationEntry } from "@/stores/navigationStore";
 import type {
-	WorkflowStep,
-	LilyFile,
-	VariableInfo,
-	VariableSchema,
 	Contact,
 	ContactBinding,
+	LilyFile,
 	RoleOverride,
 	TextOccurrence,
+	VariableInfo,
+	VariableSchema,
+	WorkflowStep,
 } from "@/types";
-import type { NavigationEntry } from "@/stores/navigationStore";
 
 export interface WorkflowState {
 	step: WorkflowStep;
@@ -66,10 +66,7 @@ export interface WorkflowState {
 	addContact: (contact: Omit<Contact, "id">) => Promise<Contact>;
 	updateContact: (contact: Contact) => Promise<void>;
 	deleteContact: (contactId: string) => Promise<void>;
-	setContactBinding: (
-		role: string,
-		binding: ContactBinding,
-	) => Promise<void>;
+	setContactBinding: (role: string, binding: ContactBinding) => Promise<void>;
 	clearContactBinding: (role: string) => Promise<void>;
 	resolveContactBindings: () => Promise<void>;
 	setRoleOverride: (
@@ -95,10 +92,7 @@ export interface WorkflowState {
 	templateEditorDirty: boolean;
 
 	// Template editor actions
-	openTemplateEditor: (
-		relPath: string,
-		templatesDir: string,
-	) => Promise<void>;
+	openTemplateEditor: (relPath: string, templatesDir: string) => Promise<void>;
 	insertTemplateVariable: (
 		searchText: string,
 		variableName: string,
@@ -123,10 +117,7 @@ export interface WorkflowState {
 		paraIdx: number,
 		charOffset: number,
 	) => Promise<void>;
-	renameTemplateVariable: (
-		oldName: string,
-		newName: string,
-	) => Promise<void>;
+	renameTemplateVariable: (oldName: string, newName: string) => Promise<void>;
 	returnFromTemplateEditor: () => void;
 }
 

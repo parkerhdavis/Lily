@@ -256,8 +256,7 @@ export const questionnaireDef: QuestionnaireDef = [
 	{
 		title: "Personal Representatives",
 		tab: "assignments",
-		description:
-			"Designate personal representatives for the client's will.",
+		description: "Designate personal representatives for the client's will.",
 		questions: [
 			{
 				kind: "contact-role",
@@ -380,8 +379,7 @@ export const questionnaireDef: QuestionnaireDef = [
 	{
 		title: "Property Distribution",
 		tab: "assignments",
-		description:
-			"Specify recipients for tangible personal property.",
+		description: "Specify recipients for tangible personal property.",
 		questions: [
 			{
 				kind: "text",

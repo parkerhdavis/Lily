@@ -1,7 +1,7 @@
 """
 Shared utilities for Lily DOCX template tooling.
 
-Provides parity with the Rust backend (backend/src/docx_ops.rs) for:
+Provides parity with the Rust backend (apps/desktop/backend/src/docx_ops.rs) for:
 - ZIP-based DOCX reading/writing
 - XML escaping and entity handling
 - SDT/bookmark extraction and ID management

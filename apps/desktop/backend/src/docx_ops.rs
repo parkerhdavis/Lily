@@ -5303,7 +5303,7 @@ mod tests {
         // Test against the actual HPOA Template.docx file which contains
         // smart/curly quotes (Word's "AutoFormat as you type" converts
         // straight " to \u{201C}/\u{201D}).
-        let path = std::path::Path::new("../resources/templates/test/HPOA Template.docx");
+        let path = std::path::Path::new("../../../resources/templates/test/HPOA Template.docx");
         if !path.exists() {
             eprintln!("HPOA Template.docx not found at {:?}, skipping", path);
             return;

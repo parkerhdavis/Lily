@@ -9,24 +9,24 @@
 	color-scheme: light;
 	--color-base-100: oklch(0.993 0.002 90);
 	--color-base-200: oklch(0.945 0.006 85);
-	--color-base-300: oklch(0.850 0.015 85);
-	--color-base-content: oklch(0.240 0.015 260);
-	--color-primary: oklch(0.760 0.155 85);
+	--color-base-300: oklch(0.85 0.015 85);
+	--color-base-content: oklch(0.24 0.015 260);
+	--color-primary: oklch(0.76 0.155 85);
 	--color-primary-content: oklch(0.993 0.002 90);
-	--color-secondary: oklch(0.550 0.040 260);
-	--color-secondary-content: oklch(0.980 0 0);
-	--color-accent: oklch(0.720 0.130 55);
-	--color-accent-content: oklch(0.220 0.035 55);
-	--color-neutral: oklch(0.240 0.020 260);
-	--color-neutral-content: oklch(0.930 0.005 90);
-	--color-info: oklch(0.680 0.120 240);
-	--color-info-content: oklch(0.980 0 0);
-	--color-success: oklch(0.700 0.160 155);
-	--color-success-content: oklch(0.980 0 0);
-	--color-warning: oklch(0.820 0.160 80);
-	--color-warning-content: oklch(0.260 0.045 65);
-	--color-error: oklch(0.630 0.190 25);
-	--color-error-content: oklch(0.980 0 0);
+	--color-secondary: oklch(0.55 0.04 260);
+	--color-secondary-content: oklch(0.98 0 0);
+	--color-accent: oklch(0.72 0.13 55);
+	--color-accent-content: oklch(0.22 0.035 55);
+	--color-neutral: oklch(0.24 0.02 260);
+	--color-neutral-content: oklch(0.93 0.005 90);
+	--color-info: oklch(0.68 0.12 240);
+	--color-info-content: oklch(0.98 0 0);
+	--color-success: oklch(0.7 0.16 155);
+	--color-success-content: oklch(0.98 0 0);
+	--color-warning: oklch(0.82 0.16 80);
+	--color-warning-content: oklch(0.26 0.045 65);
+	--color-error: oklch(0.63 0.19 25);
+	--color-error-content: oklch(0.98 0 0);
 	--radius-selector: 0.5rem;
 	--radius-field: 0.375rem;
 	--radius-box: 0.75rem;
@@ -40,26 +40,26 @@
 @plugin "daisyui/theme" {
 	name: "dark";
 	color-scheme: dark;
-	--color-base-100: oklch(0.230 0.012 260);
+	--color-base-100: oklch(0.23 0.012 260);
 	--color-base-200: oklch(0.175 0.012 260);
 	--color-base-300: oklch(0.295 0.012 260);
-	--color-base-content: oklch(0.880 0.005 90);
-	--color-primary: oklch(0.830 0.150 88);
-	--color-primary-content: oklch(0.220 0.040 65);
-	--color-secondary: oklch(0.520 0.035 260);
-	--color-secondary-content: oklch(0.950 0 0);
-	--color-accent: oklch(0.670 0.110 55);
-	--color-accent-content: oklch(0.950 0 0);
-	--color-neutral: oklch(0.160 0.015 260);
-	--color-neutral-content: oklch(0.850 0.005 90);
-	--color-info: oklch(0.650 0.110 240);
-	--color-info-content: oklch(0.950 0 0);
-	--color-success: oklch(0.670 0.140 155);
-	--color-success-content: oklch(0.950 0 0);
-	--color-warning: oklch(0.780 0.140 80);
-	--color-warning-content: oklch(0.220 0.040 65);
-	--color-error: oklch(0.600 0.170 25);
-	--color-error-content: oklch(0.950 0 0);
+	--color-base-content: oklch(0.88 0.005 90);
+	--color-primary: oklch(0.83 0.15 88);
+	--color-primary-content: oklch(0.22 0.04 65);
+	--color-secondary: oklch(0.52 0.035 260);
+	--color-secondary-content: oklch(0.95 0 0);
+	--color-accent: oklch(0.67 0.11 55);
+	--color-accent-content: oklch(0.95 0 0);
+	--color-neutral: oklch(0.16 0.015 260);
+	--color-neutral-content: oklch(0.85 0.005 90);
+	--color-info: oklch(0.65 0.11 240);
+	--color-info-content: oklch(0.95 0 0);
+	--color-success: oklch(0.67 0.14 155);
+	--color-success-content: oklch(0.95 0 0);
+	--color-warning: oklch(0.78 0.14 80);
+	--color-warning-content: oklch(0.22 0.04 65);
+	--color-error: oklch(0.6 0.17 25);
+	--color-error-content: oklch(0.95 0 0);
 	--radius-selector: 0.5rem;
 	--radius-field: 0.375rem;
 	--radius-box: 0.75rem;
@@ -73,9 +73,18 @@
 /* ─── Loading splash animation ───────────────────────────────────────── */
 
 @keyframes lily-spin {
-	0% { transform: rotate(0deg) scale(0.95); opacity: 0.5; }
-	50% { transform: rotate(180deg) scale(1); opacity: 1; }
-	100% { transform: rotate(360deg) scale(0.95); opacity: 0.5; }
+	0% {
+		transform: rotate(0deg) scale(0.95);
+		opacity: 0.5;
+	}
+	50% {
+		transform: rotate(180deg) scale(1);
+		opacity: 1;
+	}
+	100% {
+		transform: rotate(360deg) scale(0.95);
+		opacity: 0.5;
+	}
 }
 
 .animate-lily-spin {
@@ -85,8 +94,14 @@
 /* ─── Splash screen text animation ───────────────────────────────────── */
 
 @keyframes fade-in-up {
-	0% { opacity: 0; transform: translateY(8px); }
-	100% { opacity: 1; transform: translateY(0); }
+	0% {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	100% {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }
 
 .animate-fade-in-up {
@@ -96,7 +111,7 @@
 /* ─── Variable highlights in document preview ────────────────────────── */
 
 .variable-highlight {
-	background-color: oklch(0.82 0.12 25);   /* soft red — unfilled */
+	background-color: oklch(0.82 0.12 25); /* soft red — unfilled */
 	border-radius: 3px;
 	padding: 0 2px;
 	font-weight: 600;
@@ -104,24 +119,24 @@
 }
 
 .variable-highlight.selected {
-	background-color: oklch(0.88 0.17 88);   /* brand yellow — selected */
+	background-color: oklch(0.88 0.17 88); /* brand yellow — selected */
 }
 
 .variable-highlight.filled {
-	background-color: oklch(0.88 0.12 145);  /* soft green — filled */
+	background-color: oklch(0.88 0.12 145); /* soft green — filled */
 }
 
 /* Dark-mode: deeper highlights so light text stays readable */
 [data-theme="dark"] .variable-highlight {
-	background-color: oklch(0.35 0.12 25);   /* deep red — unfilled */
+	background-color: oklch(0.35 0.12 25); /* deep red — unfilled */
 }
 
 [data-theme="dark"] .variable-highlight.selected {
-	background-color: oklch(0.40 0.14 88);   /* deep brand yellow — selected */
+	background-color: oklch(0.4 0.14 88); /* deep brand yellow — selected */
 }
 
 [data-theme="dark"] .variable-highlight.filled {
-	background-color: oklch(0.35 0.10 145);  /* deep green — filled */
+	background-color: oklch(0.35 0.1 145); /* deep green — filled */
 }
 
 /* Zero-width bookmark anchor for empty conditional variables */
@@ -147,7 +162,7 @@
 
 .template-editor-preview .variable-highlight.filled {
 	background-color: oklch(0.92 0.08 145);
-	border-color: oklch(0.70 0.12 145);
+	border-color: oklch(0.7 0.12 145);
 }
 
 .template-editor-preview .variable-highlight.selected {
@@ -171,18 +186,18 @@
 
 /* Dark-mode badge variants */
 [data-theme="dark"] .template-editor-preview .variable-highlight {
-	border-color: oklch(0.50 0.12 25);
+	border-color: oklch(0.5 0.12 25);
 	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 [data-theme="dark"] .template-editor-preview .variable-highlight.filled {
-	background-color: oklch(0.35 0.10 145);
-	border-color: oklch(0.50 0.10 145);
+	background-color: oklch(0.35 0.1 145);
+	border-color: oklch(0.5 0.1 145);
 }
 
 [data-theme="dark"] .template-editor-preview .variable-highlight.selected {
-	background-color: oklch(0.40 0.14 88);
-	border-color: oklch(0.50 0.14 88);
+	background-color: oklch(0.4 0.14 88);
+	border-color: oklch(0.5 0.14 88);
 }
 
 /* Drop indicator caret */
@@ -190,15 +205,20 @@
 	display: inline;
 	width: 2px;
 	height: 1.2em;
-	background-color: oklch(0.55 0.20 260);
+	background-color: oklch(0.55 0.2 260);
 	vertical-align: text-bottom;
 	animation: caret-blink 0.8s ease-in-out infinite;
 	pointer-events: none;
 }
 
 @keyframes caret-blink {
-	0%, 100% { opacity: 1; }
-	50% { opacity: 0.2; }
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.2;
+	}
 }
 
 /* Working number inside SDT badges */
@@ -225,7 +245,7 @@
 /* Tab stops — approximate a tab as a fixed-width space */
 .preview-tab {
 	display: inline-block;
-	width: 36pt;  /* ~0.5 inch */
+	width: 36pt; /* ~0.5 inch */
 }
 
 /* Page break indicator */

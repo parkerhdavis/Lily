@@ -1,23 +1,23 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useWorkflowStore } from "@/stores/workflowStore";
-import { useQuestionnaireStore } from "@/stores/questionnaireStore";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ContactPicker from "@/components/ContactPicker";
+import PageHeader from "@/components/ui/PageHeader";
+import StatusDot from "@/components/ui/StatusDot";
 import {
 	questionnaireDef as fallbackDef,
 	questionnaireTabs as fallbackTabs,
 } from "@/data/questionnaireDef";
-import ContactPicker from "@/components/ContactPicker";
-import PageHeader from "@/components/ui/PageHeader";
-import StatusDot from "@/components/ui/StatusDot";
-import type { QuestionDef, QuestionnaireSectionDef } from "@/types/questionnaire";
+import { useQuestionnaireStore } from "@/stores/questionnaireStore";
+import { useWorkflowStore } from "@/stores/workflowStore";
 import { RELATIONSHIP_OPTIONS } from "@/types";
+import type {
+	QuestionDef,
+	QuestionnaireSectionDef,
+} from "@/types/questionnaire";
 import { extractFolderName } from "@/utils/path";
 
 /** Highlight search matches within text. */
-function HighlightText({
-	text,
-	query,
-}: { text: string; query: string }) {
+function HighlightText({ text, query }: { text: string; query: string }) {
 	const q = query.trim().toLowerCase();
 	if (!q) return <>{text}</>;
 
@@ -95,10 +95,7 @@ export default function Questionnaire() {
 							questionnaireId: def.id,
 							questionnaireVersion: def.version,
 						}).catch((err: unknown) =>
-							console.error(
-								"Failed to stamp questionnaire version:",
-								err,
-							),
+							console.error("Failed to stamp questionnaire version:", err),
 						);
 					}
 				}
@@ -112,9 +109,9 @@ export default function Questionnaire() {
 	const [activeTab, setActiveTab] = useState<string>("client-info");
 
 	// Save-state indicator
-	const [saveStatus, setSaveStatus] = useState<
-		"idle" | "saving" | "saved"
-	>("idle");
+	const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
+		"idle",
+	);
 	const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	const showSaved = useCallback(() => {
@@ -184,11 +181,7 @@ export default function Questionnaire() {
 	);
 
 	const handleSaveNote = useCallback(
-		async (
-			section: string,
-			noteKind: "client" | "internal",
-			value: string,
-		) => {
+		async (section: string, noteKind: "client" | "internal", value: string) => {
 			setSaveStatus("saving");
 			await saveQuestionnaireNote(section, noteKind, value);
 			showSaved();
@@ -295,9 +288,7 @@ export default function Questionnaire() {
 		const tokens = q.split(/\s+/);
 		return tabSections.filter((section) => {
 			// Match section title
-			if (
-				tokens.every((t) => section.title.toLowerCase().includes(t))
-			)
+			if (tokens.every((t) => section.title.toLowerCase().includes(t)))
 				return true;
 			// Match question labels or variable names
 			return section.questions.some((question) => {
@@ -307,9 +298,7 @@ export default function Questionnaire() {
 						: question.kind === "text"
 							? `${question.label} ${question.variable}`
 							: question.label;
-				return tokens.every((t) =>
-					label.toLowerCase().includes(t),
-				);
+				return tokens.every((t) => label.toLowerCase().includes(t));
 			});
 		});
 	}, [tabSections, search]);
@@ -347,7 +336,10 @@ export default function Questionnaire() {
 
 	// Per-section stats
 	const sectionStats = useMemo(() => {
-		const map: Record<string, { total: number; filled: number; label: string | null }> = {};
+		const map: Record<
+			string,
+			{ total: number; filled: number; label: string | null }
+		> = {};
 		for (const section of questionnaireDef) {
 			if (section.kind === "contacts") {
 				map[section.title] = {
@@ -372,9 +364,7 @@ export default function Questionnaire() {
 
 	const folderName = workingDir ? extractFolderName(workingDir) : "Client";
 
-	const allExpanded = tabSections.every(
-		(s) => !collapsedSections[s.title],
-	);
+	const allExpanded = tabSections.every((s) => !collapsedSections[s.title]);
 
 	return (
 		<div className="flex flex-col h-full">
@@ -390,9 +380,7 @@ export default function Questionnaire() {
 						</span>
 					)}
 					{saveStatus === "saved" && (
-						<span className="text-success text-xs">
-							All changes saved
-						</span>
+						<span className="text-success text-xs">All changes saved</span>
 					)}
 					{stats.filled} / {stats.total} fields filled
 				</span>
@@ -447,8 +435,7 @@ export default function Questionnaire() {
 					)}
 
 					{filteredSections.map((section) => {
-						const collapsed =
-							collapsedSections[section.title] ?? true;
+						const collapsed = collapsedSections[section.title] ?? true;
 						const ss = sectionStats[section.title];
 						const isContacts = section.kind === "contacts";
 
@@ -461,9 +448,7 @@ export default function Questionnaire() {
 								<button
 									type="button"
 									className="flex items-center gap-3 p-4 w-full text-left hover:bg-base-200/50 transition-colors rounded-t-2xl"
-									onClick={() =>
-										toggleSection(section.title)
-									}
+									onClick={() => toggleSection(section.title)}
 								>
 									<span
 										className={`transition-transform text-base-content/40 ${collapsed ? "" : "rotate-90"}`}
@@ -471,9 +456,7 @@ export default function Questionnaire() {
 										&#9654;
 									</span>
 									<div className="flex-1 min-w-0">
-										<h3 className="text-lg font-semibold">
-											{section.title}
-										</h3>
+										<h3 className="text-lg font-semibold">{section.title}</h3>
 										{section.description && (
 											<p className="text-sm text-base-content/50 mt-0.5">
 												{section.description}
@@ -483,9 +466,7 @@ export default function Questionnaire() {
 									{ss && (
 										<span className="text-xs text-base-content/40 shrink-0">
 											{ss.label ??
-												(ss.total > 0
-													? `${ss.filled} / ${ss.total}`
-													: "")}
+												(ss.total > 0 ? `${ss.filled} / ${ss.total}` : "")}
 										</span>
 									)}
 								</button>
@@ -502,68 +483,41 @@ export default function Questionnaire() {
 											/>
 										) : (
 											<div className="grid grid-cols-6 gap-x-3 gap-y-4">
-												{section.questions.map(
-													(q) => {
-														const span =
-															q.kind ===
-																"text" &&
-															q.third
-																? "col-span-2"
-																: q.kind ===
-																		"text" &&
-																	q.half
-																	? "col-span-3"
-																	: "col-span-6";
-														return (
-															<div
-																key={
-																	q.kind ===
-																	"contact-role"
-																		? q.role
-																		: q.variable
+												{section.questions.map((q) => {
+													const span =
+														q.kind === "text" && q.third
+															? "col-span-2"
+															: q.kind === "text" && q.half
+																? "col-span-3"
+																: "col-span-6";
+													return (
+														<div
+															key={
+																q.kind === "contact-role" ? q.role : q.variable
+															}
+															className={span}
+														>
+															<QuestionField
+																question={q}
+																value={
+																	q.kind === "contact-role"
+																		? ""
+																		: (variables[q.variable] ?? "")
 																}
-																className={
-																	span
-																}
-															>
-																<QuestionField
-																	question={
-																		q
-																	}
-																	value={
-																		q.kind ===
-																		"contact-role"
-																			? ""
-																			: (variables[
-																					q.variable
-																				] ??
-																				"")
-																	}
-																	onSave={
-																		handleSaveVariable
-																	}
-																	searchQuery={
-																		search
-																	}
-																/>
-															</div>
-														);
-													},
-												)}
+																onSave={handleSaveVariable}
+																searchQuery={search}
+															/>
+														</div>
+													);
+												})}
 											</div>
 										)}
 
 										{/* Notes (collapsible) */}
 										<SectionNotesFields
 											sectionTitle={section.title}
-											clientNotes={
-												notes[section.title]
-													?.client ?? ""
-											}
-											internalNotes={
-												notes[section.title]
-													?.internal ?? ""
-											}
+											clientNotes={notes[section.title]?.client ?? ""}
+											internalNotes={notes[section.title]?.internal ?? ""}
 											onSave={handleSaveNote}
 										/>
 									</div>
@@ -624,9 +578,7 @@ function InlineContactList({
 	return (
 		<div className="space-y-3">
 			{contacts.length === 0 && editingId === null && (
-				<p className="text-sm text-base-content/50">
-					No contacts added yet.
-				</p>
+				<p className="text-sm text-base-content/50">No contacts added yet.</p>
 			)}
 
 			{contacts.map((c) =>
@@ -700,7 +652,7 @@ function ContactEditForm({
 }) {
 	const lilyFile = useWorkflowStore((s) => s.lilyFile);
 	const existing = contactId
-		? lilyFile?.contacts?.find((c) => c.id === contactId) ?? null
+		? (lilyFile?.contacts?.find((c) => c.id === contactId) ?? null)
 		: null;
 
 	const [form, setForm] = useState({
@@ -726,7 +678,11 @@ function ContactEditForm({
 		setForm((prev) => {
 			const next = { ...prev, [key]: value };
 			// Auto-construct full_name from first/middle/last
-			if (key === "first_name" || key === "middle_name" || key === "last_name") {
+			if (
+				key === "first_name" ||
+				key === "middle_name" ||
+				key === "last_name"
+			) {
 				next.full_name = [next.first_name, next.middle_name, next.last_name]
 					.map((s) => (typeof s === "string" ? s.trim() : ""))
 					.filter(Boolean)
@@ -740,8 +696,7 @@ function ContactEditForm({
 		const saved = savedRef.current;
 		const changed = Object.keys(current).some(
 			(k) =>
-				current[k as keyof typeof current] !==
-				saved[k as keyof typeof saved],
+				current[k as keyof typeof current] !== saved[k as keyof typeof saved],
 		);
 		if (changed) {
 			savedRef.current = { ...current };
@@ -768,13 +723,13 @@ function ContactEditForm({
 	return (
 		<div className="p-3 rounded-lg border border-primary/30 bg-primary/5 space-y-3">
 			{form.full_name && (
-				<p className="text-sm text-base-content/60">
-					{form.full_name}
-				</p>
+				<p className="text-sm text-base-content/60">{form.full_name}</p>
 			)}
 			<div className="grid grid-cols-6 gap-2">
 				{/* Relationship dropdown row */}
-				<div className={`col-span-${form.relationship === "Other" ? "3" : "6"}`}>
+				<div
+					className={`col-span-${form.relationship === "Other" ? "3" : "6"}`}
+				>
 					<label className="label pb-0.5">
 						<span className="label-text text-xs flex items-center gap-1">
 							<StatusDot filled={Boolean(form.relationship)} />
@@ -797,7 +752,9 @@ function ContactEditForm({
 					>
 						<option value="">Select relationship...</option>
 						{RELATIONSHIP_OPTIONS.map((opt) => (
-							<option key={opt} value={opt}>{opt}</option>
+							<option key={opt} value={opt}>
+								{opt}
+							</option>
 						))}
 					</select>
 				</div>
@@ -852,7 +809,11 @@ function ContactEditForm({
 					>
 						<label className="label pb-0.5">
 							<span className="label-text text-xs flex items-center gap-1">
-								<StatusDot filled={Boolean((form[key as keyof typeof form] as string).trim())} />
+								<StatusDot
+									filled={Boolean(
+										(form[key as keyof typeof form] as string).trim(),
+									)}
+								/>
 								{label}
 							</span>
 						</label>
@@ -921,9 +882,7 @@ function SectionNotesFields({
 				className="text-xs text-base-content/40 hover:text-base-content/60 transition-colors flex items-center gap-1"
 				onClick={() => setOpen(!open)}
 			>
-				<span
-					className={`transition-transform ${open ? "rotate-90" : ""}`}
-				>
+				<span className={`transition-transform ${open ? "rotate-90" : ""}`}>
 					&#9654;
 				</span>
 				Notes
@@ -946,11 +905,7 @@ function SectionNotesFields({
 							onChange={(e) => setLocalClient(e.target.value)}
 							onBlur={() => {
 								if (localClient !== clientNotes) {
-									onSave(
-										sectionTitle,
-										"client",
-										localClient,
-									);
+									onSave(sectionTitle, "client", localClient);
 								}
 							}}
 						/>
@@ -965,16 +920,10 @@ function SectionNotesFields({
 							className="textarea textarea-bordered textarea-sm w-full min-h-16 text-sm"
 							placeholder="Internal notes for the legal team..."
 							value={localInternal}
-							onChange={(e) =>
-								setLocalInternal(e.target.value)
-							}
+							onChange={(e) => setLocalInternal(e.target.value)}
 							onBlur={() => {
 								if (localInternal !== internalNotes) {
-									onSave(
-										sectionTitle,
-										"internal",
-										localInternal,
-									);
+									onSave(sectionTitle, "internal", localInternal);
 								}
 							}}
 						/>

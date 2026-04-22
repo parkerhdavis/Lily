@@ -1,5 +1,5 @@
-import type { Contact, ContactBinding } from "@/types";
 import StatusDot from "@/components/ui/StatusDot";
+import type { Contact, ContactBinding } from "@/types";
 import {
 	type ContactRoleGroup,
 	getContactProperty,
@@ -78,7 +78,8 @@ export default function ContactRoleField({
 
 	// When overridden, figure out what the override looks like
 	// (could be a different contact or custom values)
-	const overrideHasContact = isOverridden && variableValues[group.properties[0]?.displayName];
+	const overrideHasContact =
+		isOverridden && variableValues[group.properties[0]?.displayName];
 
 	return (
 		<div
@@ -96,10 +97,7 @@ export default function ContactRoleField({
 						type="button"
 						className="join-item btn btn-ghost btn-xs px-1"
 						onClick={() =>
-							scrollToOccurrence(
-								group.properties[0]?.displayName,
-								"prev",
-							)
+							scrollToOccurrence(group.properties[0]?.displayName, "prev")
 						}
 						title="Previous occurrence"
 					>
@@ -109,10 +107,7 @@ export default function ContactRoleField({
 						type="button"
 						className="join-item btn btn-ghost btn-xs px-1"
 						onClick={() =>
-							scrollToOccurrence(
-								group.properties[0]?.displayName,
-								"next",
-							)
+							scrollToOccurrence(group.properties[0]?.displayName, "next")
 						}
 						title="Next occurrence"
 					>
@@ -161,7 +156,13 @@ export default function ContactRoleField({
 				<div className="p-3">
 					<select
 						className="select select-bordered select-sm w-full opacity-50 pointer-events-none"
-						value={qContactId === "__none__" ? "__none__" : qContact ? qContact.id : ""}
+						value={
+							qContactId === "__none__"
+								? "__none__"
+								: qContact
+									? qContact.id
+									: ""
+						}
 						disabled
 						tabIndex={-1}
 					>
@@ -184,36 +185,28 @@ export default function ContactRoleField({
 					{qContact && (
 						<div className="mt-2 pl-3 border-l-2 border-primary/30 opacity-75">
 							<div className="space-y-1">
-								{group.properties.map(
-									({ displayName, property }) => {
-										const value = getContactProperty(
-											qContact,
-											property,
-										);
-										return (
-											<div
-												key={displayName}
-												className="flex items-center gap-2 text-xs"
+								{group.properties.map(({ displayName, property }) => {
+									const value = getContactProperty(qContact, property);
+									return (
+										<div
+											key={displayName}
+											className="flex items-center gap-2 text-xs"
+										>
+											<span className="text-base-content/50 min-w-20">
+												{PROPERTY_LABELS[property] ?? property}:
+											</span>
+											<span
+												className={
+													value
+														? "text-base-content"
+														: "text-base-content/30 italic"
+												}
 											>
-												<span className="text-base-content/50 min-w-20">
-													{PROPERTY_LABELS[
-														property
-													] ?? property}
-													:
-												</span>
-												<span
-													className={
-														value
-															? "text-base-content"
-															: "text-base-content/30 italic"
-													}
-												>
-													{value || "empty"}
-												</span>
-											</div>
-										);
-									},
-								)}
+												{value || "empty"}
+											</span>
+										</div>
+									);
+								})}
 							</div>
 						</div>
 					)}
@@ -235,11 +228,8 @@ export default function ContactRoleField({
 								),
 							)?.id ??
 							// If any values are filled, show custom; otherwise "not assigned"
-							(group.properties.some(
-								(p) =>
-									(
-										variableValues[p.displayName] ?? ""
-									).trim(),
+							(group.properties.some((p) =>
+								(variableValues[p.displayName] ?? "").trim(),
 							)
 								? "__manual__"
 								: "")
@@ -252,9 +242,7 @@ export default function ContactRoleField({
 								onSelectContact(val);
 							}
 						}}
-						onFocus={() =>
-							onSelect(group.properties[0]?.displayName)
-						}
+						onFocus={() => onSelect(group.properties[0]?.displayName)}
 					>
 						<option value="">Not assigned</option>
 						{contacts.map((c) => (
@@ -270,33 +258,23 @@ export default function ContactRoleField({
 
 					{/* Editable fields for the override */}
 					<div className="mt-2 pl-3 border-l-2 border-warning/30 space-y-2">
-						{group.properties.map(
-							({ displayName, property }) => (
-								<div key={displayName}>
-									<label className="label pb-0.5">
-										<span className="label-text text-xs text-base-content/60">
-											{PROPERTY_LABELS[property] ??
-												property}
-										</span>
-									</label>
-									<input
-										type="text"
-										className="input input-bordered input-xs w-full"
-										placeholder={`Enter ${PROPERTY_LABELS[property] ?? property}`}
-										value={
-											variableValues[displayName] ?? ""
-										}
-										onChange={(e) =>
-											onManualChange(
-												displayName,
-												e.target.value,
-											)
-										}
-										onFocus={() => onSelect(displayName)}
-									/>
-								</div>
-							),
-						)}
+						{group.properties.map(({ displayName, property }) => (
+							<div key={displayName}>
+								<label className="label pb-0.5">
+									<span className="label-text text-xs text-base-content/60">
+										{PROPERTY_LABELS[property] ?? property}
+									</span>
+								</label>
+								<input
+									type="text"
+									className="input input-bordered input-xs w-full"
+									placeholder={`Enter ${PROPERTY_LABELS[property] ?? property}`}
+									value={variableValues[displayName] ?? ""}
+									onChange={(e) => onManualChange(displayName, e.target.value)}
+									onFocus={() => onSelect(displayName)}
+								/>
+							</div>
+						))}
 					</div>
 				</div>
 			)}

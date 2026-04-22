@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useEffect, useMemo, useState } from "react";
+import AppSwitcher from "@/components/ui/AppSwitcher";
+import SectionHeading from "@/components/ui/SectionHeading";
+import { useLilyIcon } from "@/hooks/useLilyIcon";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import type { ClientSummary, PersistedNavEntry } from "@/types";
-import SectionHeading from "@/components/ui/SectionHeading";
-import AppSwitcher from "@/components/ui/AppSwitcher";
-import { useLilyIcon } from "@/hooks/useLilyIcon";
 import { extractFolderName } from "@/utils/path";
 
 /** Steps that operate on an individual client (require a working dir). */
@@ -75,8 +75,7 @@ export default function LilyHub() {
 	);
 	useEffect(() => {
 		const { last_step, last_working_dir } = settings;
-		if (!last_step || !last_working_dir || !CLIENT_STEPS.has(last_step))
-			return;
+		if (!last_step || !last_working_dir || !CLIENT_STEPS.has(last_step)) return;
 		invoke<ClientSummary[]>("load_client_summaries", {
 			directories: [last_working_dir],
 		})
@@ -105,8 +104,7 @@ export default function LilyHub() {
 	};
 
 	const resumeLastSession = async () => {
-		const { last_step, last_working_dir, last_template_rel_path } =
-			settings;
+		const { last_step, last_working_dir, last_template_rel_path } = settings;
 		if (!last_step) return;
 
 		if (last_step === "clients") {
@@ -122,10 +120,7 @@ export default function LilyHub() {
 			last_template_rel_path &&
 			settings.templates_dir
 		) {
-			await openTemplateEditor(
-				last_template_rel_path,
-				settings.templates_dir,
-			);
+			await openTemplateEditor(last_template_rel_path, settings.templates_dir);
 		} else if (
 			last_step === "questionnaire-editor" ||
 			last_step === "template-editor"
@@ -148,10 +143,7 @@ export default function LilyHub() {
 			entry.template_rel_path &&
 			settings.templates_dir
 		) {
-			await openTemplateEditor(
-				entry.template_rel_path,
-				settings.templates_dir,
-			);
+			await openTemplateEditor(entry.template_rel_path, settings.templates_dir);
 		} else if (
 			entry.step === "questionnaire-editor" ||
 			entry.step === "template-editor"
@@ -178,16 +170,18 @@ export default function LilyHub() {
 				return true;
 			})
 			.slice(0, 5);
-	}, [settings.navigation_history, settings.last_step, settings.last_working_dir]);
+	}, [
+		settings.navigation_history,
+		settings.last_step,
+		settings.last_working_dir,
+	]);
 
 	const dirName = (path: string) => extractFolderName(path);
 
 	const resumeLabel = settings.last_step
 		? describeLastStep(
 				settings.last_step,
-				settings.last_working_dir
-					? dirName(settings.last_working_dir)
-					: null,
+				settings.last_working_dir ? dirName(settings.last_working_dir) : null,
 				settings.last_template_rel_path ?? null,
 			)
 		: "";
@@ -196,18 +190,11 @@ export default function LilyHub() {
 		<div className="flex flex-col h-full">
 			{/* Header bar */}
 			<header className="flex items-center gap-4 px-6 py-4 border-b border-base-300 bg-base-100">
-				<img
-					src={lilyIcon}
-					alt="Lily"
-					className="size-9 drop-shadow-sm"
-				/>
+				<img src={lilyIcon} alt="Lily" className="size-9 drop-shadow-sm" />
 				<div className="flex-1 min-w-0">
-					<h1 className="text-xl font-bold tracking-tight">
-						Lily
-					</h1>
+					<h1 className="text-xl font-bold tracking-tight">Lily</h1>
 					<p className="text-xs text-base-content/40">
-						Legal Drafting and Client Management
-						— Developed by{" "}
+						Legal Drafting and Client Management — Developed by{" "}
 						<a
 							href="https://github.com/parkerhdavis"
 							target="_blank"
@@ -246,14 +233,8 @@ export default function LilyHub() {
 				<div className="max-w-4xl w-full px-6 py-8 space-y-6">
 					{/* Branding */}
 					<div className="flex flex-col items-center gap-2 pb-6">
-						<img
-							src={lilyIcon}
-							alt="Lily"
-							className="size-14 drop-shadow-sm"
-						/>
-						<span className="text-2xl font-bold tracking-tight">
-							Lily
-						</span>
+						<img src={lilyIcon} alt="Lily" className="size-14 drop-shadow-sm" />
+						<span className="text-2xl font-bold tracking-tight">Lily</span>
 					</div>
 
 					{/* Module panels */}
@@ -275,13 +256,10 @@ export default function LilyHub() {
 										<title>Clients</title>
 										<path d="M7 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM14.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM1.615 16.428a1.224 1.224 0 0 1-.569-1.175 6.002 6.002 0 0 1 11.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 0 1 7 18a9.953 9.953 0 0 1-5.385-1.572ZM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 0 0-1.588-3.755 4.502 4.502 0 0 1 5.874 2.636.818.818 0 0 1-.36.98A7.465 7.465 0 0 1 14.5 16Z" />
 									</svg>
-									<span className="font-semibold text-lg">
-										Clients
-									</span>
+									<span className="font-semibold text-lg">Clients</span>
 								</div>
 								<p className="text-sm text-base-content/50">
-									Manage client details and docs and
-									track progress
+									Manage client details and docs and track progress
 								</p>
 							</div>
 						</button>
@@ -303,9 +281,7 @@ export default function LilyHub() {
 										<title>Pipeline</title>
 										<path d="M3.75 3A1.75 1.75 0 0 0 2 4.75v3.26a3.235 3.235 0 0 1 1.75-.51h12.5c.644 0 1.245.188 1.75.51V6.75A1.75 1.75 0 0 0 16.25 5h-4.836a.25.25 0 0 1-.177-.073L9.823 3.513A1.75 1.75 0 0 0 8.586 3H3.75ZM3.75 9A1.75 1.75 0 0 0 2 10.75v4.5c0 .966.784 1.75 1.75 1.75h12.5A1.75 1.75 0 0 0 18 15.25v-4.5A1.75 1.75 0 0 0 16.25 9H3.75Z" />
 									</svg>
-									<span className="font-semibold text-lg">
-										Pipeline
-									</span>
+									<span className="font-semibold text-lg">Pipeline</span>
 								</div>
 								<p className="text-sm text-base-content/50">
 									Configure templates, processes, and team settings
@@ -334,13 +310,10 @@ export default function LilyHub() {
 											clipRule="evenodd"
 										/>
 									</svg>
-									<span className="font-semibold text-lg">
-										Settings
-									</span>
+									<span className="font-semibold text-lg">Settings</span>
 								</div>
 								<p className="text-sm text-base-content/50">
-									Adjust your app settings for themes,
-									file paths, and more
+									Adjust your app settings for themes, file paths, and more
 								</p>
 							</div>
 						</button>
@@ -375,56 +348,35 @@ export default function LilyHub() {
 
 								{/* Preview card */}
 								<div className="rounded-lg bg-base-100/60 border border-primary/10 px-4 py-3">
-									<div className="font-medium text-sm">
-										{resumeLabel}
-									</div>
+									<div className="font-medium text-sm">{resumeLabel}</div>
 									{resumePreview && (
 										<div className="text-xs text-base-content/50 mt-1">
-											{resumePreview.total_documents}{" "}
-											document
-											{resumePreview.total_documents !==
-											1
-												? "s"
-												: ""}
-											{resumePreview.contacts_count >
-												0 &&
+											{resumePreview.total_documents} document
+											{resumePreview.total_documents !== 1 ? "s" : ""}
+											{resumePreview.contacts_count > 0 &&
 												` \u00B7 ${resumePreview.contacts_count} contact${resumePreview.contacts_count !== 1 ? "s" : ""}`}
-											{resumePreview
-												.required_documents
-												.length > 0 && (
+											{resumePreview.required_documents.length > 0 && (
 												<>
 													{" \u00B7 "}
 													{
 														resumePreview.required_documents.filter(
 															(r) =>
-																r.status ===
-																	"complete" ||
-																r.status ===
-																	"executed",
+																r.status === "complete" ||
+																r.status === "executed",
 														).length
 													}
-													/
-													{
-														resumePreview
-															.required_documents
-															.length
-													}{" "}
-													complete
+													/{resumePreview.required_documents.length} complete
 												</>
 											)}
 										</div>
 									)}
 									{!resumePreview &&
 										settings.last_step &&
-										!CLIENT_STEPS.has(
-											settings.last_step,
-										) && (
+										!CLIENT_STEPS.has(settings.last_step) && (
 											<p className="text-xs text-base-content/40 mt-0.5">
-												{settings.last_step ===
-												"pipeline"
+												{settings.last_step === "pipeline"
 													? "Templates, processes, and workspace configuration"
-													: settings.last_step ===
-														  "app-settings"
+													: settings.last_step === "app-settings"
 														? "Theme, templates folder, and preferences"
 														: ""}
 											</p>
@@ -437,26 +389,20 @@ export default function LilyHub() {
 					{/* Recent pages */}
 					{recentPages.length > 0 && (
 						<div>
-							<SectionHeading className="mb-3">
-								Recent
-							</SectionHeading>
+							<SectionHeading className="mb-3">Recent</SectionHeading>
 							<div className="rounded-xl border border-base-300 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] divide-y divide-base-200 overflow-hidden">
 								{recentPages.map((entry, i) => (
 									<button
 										key={`${entry.step}-${entry.working_dir}-${i}`}
 										type="button"
 										className="w-full text-left px-5 py-3 hover:bg-base-200/60 transition-colors flex items-center justify-between gap-3"
-										onClick={() =>
-											navigateToEntry(entry)
-										}
+										onClick={() => navigateToEntry(entry)}
 									>
 										<span className="text-sm font-medium truncate">
 											{entry.label}
 										</span>
 										<span className="text-xs text-base-content/30 shrink-0">
-											{relativeTime(
-												entry.visited_at,
-											)}
+											{relativeTime(entry.visited_at)}
 										</span>
 									</button>
 								))}

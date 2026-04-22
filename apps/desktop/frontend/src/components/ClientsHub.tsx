@@ -1,25 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { useSettingsStore } from "@/stores/settingsStore";
-import { useWorkflowStore } from "@/stores/workflowStore";
-import { useToastStore } from "@/stores/toastStore";
-import { useQuestionnaireStore } from "@/stores/questionnaireStore";
-import { questionnaireDef as fallbackDef } from "@/data/questionnaireDef";
-import type {
-	ClientSummary,
-	ClientTreeNode,
-	DocumentStatus,
-} from "@/types";
-import type { QuestionnaireDefFile, QuestionnaireSectionDef } from "@/types/questionnaire";
-import PageHeader from "@/components/ui/PageHeader";
-import SectionHeading from "@/components/ui/SectionHeading";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MigrationDialog, {
 	type FieldMapping,
 	type MigrationReport,
 	type OrphanedVariable,
 } from "@/components/MigrationDialog";
+import PageHeader from "@/components/ui/PageHeader";
+import SectionHeading from "@/components/ui/SectionHeading";
+import { questionnaireDef as fallbackDef } from "@/data/questionnaireDef";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
+import { useQuestionnaireStore } from "@/stores/questionnaireStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useToastStore } from "@/stores/toastStore";
+import { useWorkflowStore } from "@/stores/workflowStore";
+import type { ClientSummary, ClientTreeNode, DocumentStatus } from "@/types";
+import type {
+	QuestionnaireDefFile,
+	QuestionnaireSectionDef,
+} from "@/types/questionnaire";
 import { extractFilename, extractFolderName } from "@/utils/path";
 
 // ─── Status helpers ──────────────────────────────────────────────────────
@@ -208,20 +207,16 @@ export default function ClientsHub() {
 			const results: LibraryTree[] = [];
 			for (const dir of libraryDirs) {
 				try {
-					const nodes = await invoke<ClientTreeNode[]>(
-						"list_library_tree",
-						{ libraryDir: dir },
-					);
+					const nodes = await invoke<ClientTreeNode[]>("list_library_tree", {
+						libraryDir: dir,
+					});
 					results.push({
 						dir,
 						name: extractFolderName(dir),
 						nodes,
 					});
 				} catch (err) {
-					console.error(
-						`Failed to load tree for ${dir}:`,
-						err,
-					);
+					console.error(`Failed to load tree for ${dir}:`, err);
 				}
 			}
 			setTrees(results);
@@ -388,16 +383,17 @@ function ClientsTreeTab({
 	onOpenTemplateFile: (templateRelPath: string) => Promise<void>;
 	onReloadLilyFile: () => Promise<void>;
 	onLoadTemplates: (templatesDir: string) => Promise<void>;
-	loadActiveQuestionnaire: () => Promise<import("@/types/questionnaire").QuestionnaireDefFile | null>;
+	loadActiveQuestionnaire: () => Promise<
+		import("@/types/questionnaire").QuestionnaireDefFile | null
+	>;
 	onReloadTrees: () => Promise<void>;
 }) {
-	const [pendingNewClientDir, setPendingNewClientDir] = useState<string | null>(null);
+	const [pendingNewClientDir, setPendingNewClientDir] = useState<string | null>(
+		null,
+	);
 	const [creatingClient, setCreatingClient] = useState(false);
 
-	const allTreeNodes = useMemo(
-		() => trees.flatMap((t) => t.nodes),
-		[trees],
-	);
+	const allTreeNodes = useMemo(() => trees.flatMap((t) => t.nodes), [trees]);
 
 	// Wrapper: if the selected folder isn't a client, show creation prompt
 	const handleSelectDir = useCallback(
@@ -423,7 +419,9 @@ function ClientsTreeTab({
 			onSelectClient(pendingNewClientDir);
 		} catch (err) {
 			console.error("Failed to create .lily file:", err);
-			useToastStore.getState().addToast("error", `Failed to create client: ${err}`);
+			useToastStore
+				.getState()
+				.addToast("error", `Failed to create client: ${err}`);
 		} finally {
 			setCreatingClient(false);
 		}
@@ -434,12 +432,12 @@ function ClientsTreeTab({
 			<div className="flex flex-col items-center justify-center h-full gap-4 p-8">
 				<img src={lilyIcon} alt="" className="size-16 opacity-20" />
 				<p className="text-base-content/50 text-center max-w-sm">
-					Configure a client library folder in Settings to browse
-					and manage your clients.
+					Configure a client library folder in Settings to browse and manage
+					your clients.
 				</p>
 				<p className="text-xs text-base-content/30 text-center max-w-sm">
-					A client library is a folder containing client subfolders,
-					each with a .lily project file.
+					A client library is a folder containing client subfolders, each with a
+					.lily project file.
 				</p>
 				<button
 					type="button"
@@ -466,12 +464,8 @@ function ClientsTreeTab({
 			<div className="w-72 shrink-0 border-r border-base-300 overflow-y-auto p-4">
 				{trees.map((lib, i) => (
 					<div key={lib.dir}>
-						{i > 0 && (
-							<div className="border-b border-base-300 mb-4" />
-						)}
-						<SectionHeading className="mb-3">
-							{lib.name}
-						</SectionHeading>
+						{i > 0 && <div className="border-b border-base-300 mb-4" />}
+						<SectionHeading className="mb-3">{lib.name}</SectionHeading>
 						{lib.nodes.length === 0 ? (
 							<p className="text-sm text-base-content/50 px-3">
 								No folders found.
@@ -500,8 +494,8 @@ function ClientsTreeTab({
 						{extractFolderName(pendingNewClientDir)}
 					</h3>
 					<p className="text-sm text-base-content/60 text-center max-w-sm">
-						This folder doesn't have a client project file yet.
-						Would you like to create one?
+						This folder doesn't have a client project file yet. Would you like
+						to create one?
 					</p>
 					<div className="flex gap-2">
 						<button
@@ -578,7 +572,9 @@ function ClientContentPane({
 	onOpenTemplateFile: (templateRelPath: string) => Promise<void>;
 	onReloadLilyFile: () => Promise<void>;
 	onLoadTemplates: (templatesDir: string) => Promise<void>;
-	loadActiveQuestionnaire: () => Promise<import("@/types/questionnaire").QuestionnaireDefFile | null>;
+	loadActiveQuestionnaire: () => Promise<
+		import("@/types/questionnaire").QuestionnaireDefFile | null
+	>;
 }) {
 	const [docSearch, setDocSearch] = useState("");
 
@@ -610,10 +606,9 @@ function ClientContentPane({
 				let def: QuestionnaireDefFile | null = null;
 				if (lilyFile.questionnaire_id) {
 					try {
-						def = await invoke<QuestionnaireDefFile>(
-							"load_questionnaire",
-							{ id: lilyFile.questionnaire_id },
-						);
+						def = await invoke<QuestionnaireDefFile>("load_questionnaire", {
+							id: lilyFile.questionnaire_id,
+						});
 					} catch {
 						// Fall through
 					}
@@ -684,9 +679,7 @@ function ClientContentPane({
 					.getState()
 					.addToast("success", "Migration applied successfully");
 			} catch (err) {
-				useToastStore
-					.getState()
-					.addToast("error", `Migration failed: ${err}`);
+				useToastStore.getState().addToast("error", `Migration failed: ${err}`);
 			}
 		},
 		[workingDir, migrationReport],
@@ -716,13 +709,9 @@ function ClientContentPane({
 					workingDir,
 					exportPath: path,
 				});
-				useToastStore
-					.getState()
-					.addToast("success", "Client data exported");
+				useToastStore.getState().addToast("success", "Client data exported");
 			} catch (err) {
-				useToastStore
-					.getState()
-					.addToast("error", `Export failed: ${err}`);
+				useToastStore.getState().addToast("error", `Export failed: ${err}`);
 			}
 		}
 	};
@@ -730,9 +719,7 @@ function ClientContentPane({
 	const handleImport = async () => {
 		const path = await open({
 			title: "Import Client Data",
-			filters: [
-				{ name: "JSON / Lily", extensions: ["json", "lily"] },
-			],
+			filters: [{ name: "JSON / Lily", extensions: ["json", "lily"] }],
 		});
 		if (path) {
 			try {
@@ -741,13 +728,9 @@ function ClientContentPane({
 					{ workingDir, importPath: path },
 				);
 				useWorkflowStore.setState({ lilyFile: updated });
-				useToastStore
-					.getState()
-					.addToast("success", "Client data imported");
+				useToastStore.getState().addToast("success", "Client data imported");
 			} catch (err) {
-				useToastStore
-					.getState()
-					.addToast("error", `Import failed: ${err}`);
+				useToastStore.getState().addToast("error", `Import failed: ${err}`);
 			}
 		}
 	};
@@ -766,206 +749,195 @@ function ClientContentPane({
 
 	return (
 		<>
-		{migrationReport && (
-			<MigrationDialog
-				report={migrationReport}
-				onApply={handleApplyMigration}
-				onSkip={handleSkipMigration}
-			/>
-		)}
-		<div className="flex-1 flex flex-col min-w-0">
-			{/* Pinned header */}
-			<div className="shrink-0 border-b border-base-300 px-6 py-4">
-				<div className="flex items-start justify-between gap-4">
-					<div className="min-w-0">
-						<h2 className="text-xl font-semibold truncate">
-							{folderName}
-						</h2>
-						<p className="text-xs text-base-content/40 font-mono truncate mt-0.5">
-							{workingDir}
-						</p>
-						<p className="text-sm text-base-content/50 mt-1">
-							{docCount} document{docCount !== 1 ? "s" : ""}
-							{contactCount > 0 &&
-								` \u00B7 ${contactCount} contact${contactCount !== 1 ? "s" : ""}`}
-						</p>
-					</div>
-					<div className="flex gap-2 shrink-0">
-						<button
-							type="button"
-							className="btn btn-ghost btn-sm"
-							onClick={handleOpenFolder}
-							title="Open in file manager"
-						>
-							Open Folder
-						</button>
-						<button
-							type="button"
-							className="btn btn-primary btn-sm"
-							onClick={handleAddDocument}
-						>
-							+ Add Document
-						</button>
-						<div className="dropdown dropdown-end">
+			{migrationReport && (
+				<MigrationDialog
+					report={migrationReport}
+					onApply={handleApplyMigration}
+					onSkip={handleSkipMigration}
+				/>
+			)}
+			<div className="flex-1 flex flex-col min-w-0">
+				{/* Pinned header */}
+				<div className="shrink-0 border-b border-base-300 px-6 py-4">
+					<div className="flex items-start justify-between gap-4">
+						<div className="min-w-0">
+							<h2 className="text-xl font-semibold truncate">{folderName}</h2>
+							<p className="text-xs text-base-content/40 font-mono truncate mt-0.5">
+								{workingDir}
+							</p>
+							<p className="text-sm text-base-content/50 mt-1">
+								{docCount} document{docCount !== 1 ? "s" : ""}
+								{contactCount > 0 &&
+									` \u00B7 ${contactCount} contact${contactCount !== 1 ? "s" : ""}`}
+							</p>
+						</div>
+						<div className="flex gap-2 shrink-0">
 							<button
 								type="button"
 								className="btn btn-ghost btn-sm"
-								tabIndex={0}
+								onClick={handleOpenFolder}
+								title="Open in file manager"
 							>
-								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-4">
-									<title>More</title>
-									<path d="M8 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM8 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM9.5 12.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0Z" />
-								</svg>
+								Open Folder
 							</button>
-							{/* biome-ignore lint/a11y/noNoninteractiveTabindex: daisyUI dropdown pattern */}
-							<ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-1 z-50">
-								<li>
-									<button type="button" onClick={handleExport}>
-										Export Client Data
-									</button>
-								</li>
-								<li>
-									<button type="button" onClick={handleImport}>
-										Import Client Data
-									</button>
-								</li>
-							</ul>
+							<button
+								type="button"
+								className="btn btn-primary btn-sm"
+								onClick={handleAddDocument}
+							>
+								+ Add Document
+							</button>
+							<div className="dropdown dropdown-end">
+								<button
+									type="button"
+									className="btn btn-ghost btn-sm"
+									tabIndex={0}
+								>
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										viewBox="0 0 16 16"
+										fill="currentColor"
+										className="size-4"
+									>
+										<title>More</title>
+										<path d="M8 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM8 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM9.5 12.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0Z" />
+									</svg>
+								</button>
+								{/* biome-ignore lint/a11y/noNoninteractiveTabindex: daisyUI dropdown pattern */}
+								<ul
+									tabIndex={0}
+									className="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-1 z-50"
+								>
+									<li>
+										<button type="button" onClick={handleExport}>
+											Export Client Data
+										</button>
+									</li>
+									<li>
+										<button type="button" onClick={handleImport}>
+											Import Client Data
+										</button>
+									</li>
+								</ul>
+							</div>
 						</div>
 					</div>
 				</div>
-			</div>
 
-			{/* Scrollable content */}
-			<div className="flex-1 overflow-y-auto p-6">
-				<div className="max-w-3xl space-y-6">
-					{/* Questionnaire card */}
-					<button
-						type="button"
-						className="w-full text-left p-5 rounded-xl border-2 border-primary/40 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_8px_28px_rgba(0,0,0,0.35)] transition-shadow"
-						onClick={onOpenQuestionnaire}
-					>
-						<div className="flex items-center gap-4">
-							<img
-								src={lilyIcon}
-								alt=""
-								className="size-9 opacity-60"
-							/>
-							<div className="flex-1 min-w-0">
-								<div className="font-semibold text-base">
-									Client Questionnaire
+				{/* Scrollable content */}
+				<div className="flex-1 overflow-y-auto p-6">
+					<div className="max-w-3xl space-y-6">
+						{/* Questionnaire card */}
+						<button
+							type="button"
+							className="w-full text-left p-5 rounded-xl border-2 border-primary/40 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_8px_28px_rgba(0,0,0,0.35)] transition-shadow"
+							onClick={onOpenQuestionnaire}
+						>
+							<div className="flex items-center gap-4">
+								<img src={lilyIcon} alt="" className="size-9 opacity-60" />
+								<div className="flex-1 min-w-0">
+									<div className="font-semibold text-base">
+										Client Questionnaire
+									</div>
+									<div className="text-sm text-base-content/50 mt-0.5">
+										{questionnaireStats.total > 0
+											? `${questionnaireStats.filled} of ${questionnaireStats.total} fields filled`
+											: "Fill out client information"}
+										{contactCount > 0 &&
+											` \u00B7 ${contactCount} contact${contactCount !== 1 ? "s" : ""}`}
+									</div>
 								</div>
-								<div className="text-sm text-base-content/50 mt-0.5">
-									{questionnaireStats.total > 0
-										? `${questionnaireStats.filled} of ${questionnaireStats.total} fields filled`
-										: "Fill out client information"}
-									{contactCount > 0 &&
-										` \u00B7 ${contactCount} contact${contactCount !== 1 ? "s" : ""}`}
-								</div>
+								{questionnaireStats.total > 0 && (
+									<div
+										className="radial-progress text-primary text-sm"
+										style={
+											{
+												"--value": Math.round(
+													(questionnaireStats.filled /
+														questionnaireStats.total) *
+														100,
+												),
+												"--size": "3rem",
+												"--thickness": "3px",
+											} as React.CSSProperties
+										}
+										role="progressbar"
+									>
+										{questionnaireStats.filled}/{questionnaireStats.total}
+									</div>
+								)}
 							</div>
-							{questionnaireStats.total > 0 && (
-								<div
-									className="radial-progress text-primary text-sm"
-									style={
-										{
-											"--value": Math.round(
-												(questionnaireStats.filled /
-													questionnaireStats.total) *
-													100,
-											),
-											"--size": "3rem",
-											"--thickness": "3px",
-										} as React.CSSProperties
-									}
-									role="progressbar"
-								>
-									{questionnaireStats.filled}/
-									{questionnaireStats.total}
+						</button>
+
+						{/* Documents section */}
+						<div>
+							<SectionHeading className="mb-3">Documents</SectionHeading>
+
+							{allDocs.length > 3 && (
+								<input
+									type="text"
+									className="input input-bordered input-sm w-full mb-3"
+									placeholder="Search documents..."
+									value={docSearch}
+									onChange={(e) => setDocSearch(e.target.value)}
+								/>
+							)}
+
+							{allDocs.length === 0 ? (
+								<div className="rounded-xl border border-base-300 bg-base-100 p-8 text-center text-base-content/50">
+									<p className="text-base">No documents in this folder yet.</p>
+									<button
+										type="button"
+										className="btn btn-primary btn-sm mt-4"
+										onClick={handleAddDocument}
+									>
+										Add New Document
+									</button>
+								</div>
+							) : (
+								<div className="rounded-xl border border-base-300 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] divide-y divide-base-200 overflow-hidden">
+									{allDocs
+										.filter((doc) => {
+											if (!docSearch.trim()) return true;
+											const q = docSearch.trim().toLowerCase();
+											return doc.filename.toLowerCase().includes(q);
+										})
+										.map((doc) => (
+											<DocumentRow
+												key={doc.filename}
+												doc={doc}
+												isMissing={missingOnDisk.has(doc.filename)}
+												onOpen={onOpenDocument}
+												onDelete={onDeleteDocument}
+												onNewVersion={onNewVersionDocument}
+												onOpenTemplate={onOpenTemplateFile}
+												onReload={onReloadLilyFile}
+											/>
+										))}
+									{untrackedOnDisk.map((filename) => (
+										<div
+											key={`untracked:${filename}`}
+											className="w-full text-left px-5 py-4 opacity-60"
+										>
+											<div className="flex flex-col gap-0.5">
+												<span className="font-medium text-base flex items-center gap-2">
+													{stripDocx(filename)}
+													<span className="badge badge-warning badge-sm">
+														untracked
+													</span>
+												</span>
+												<span className="text-sm text-base-content/40">
+													File exists on disk but is not tracked in project
+												</span>
+											</div>
+										</div>
+									))}
 								</div>
 							)}
 						</div>
-					</button>
-
-					{/* Documents section */}
-					<div>
-						<SectionHeading className="mb-3">
-							Documents
-						</SectionHeading>
-
-						{allDocs.length > 3 && (
-							<input
-								type="text"
-								className="input input-bordered input-sm w-full mb-3"
-								placeholder="Search documents..."
-								value={docSearch}
-								onChange={(e) =>
-									setDocSearch(e.target.value)
-								}
-							/>
-						)}
-
-						{allDocs.length === 0 ? (
-							<div className="rounded-xl border border-base-300 bg-base-100 p-8 text-center text-base-content/50">
-								<p className="text-base">
-									No documents in this folder yet.
-								</p>
-								<button
-									type="button"
-									className="btn btn-primary btn-sm mt-4"
-									onClick={handleAddDocument}
-								>
-									Add New Document
-								</button>
-							</div>
-						) : (
-							<div className="rounded-xl border border-base-300 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] divide-y divide-base-200 overflow-hidden">
-								{allDocs
-									.filter((doc) => {
-										if (!docSearch.trim()) return true;
-										const q = docSearch
-											.trim()
-											.toLowerCase();
-										return doc.filename
-											.toLowerCase()
-											.includes(q);
-									})
-									.map((doc) => (
-										<DocumentRow
-											key={doc.filename}
-											doc={doc}
-											isMissing={missingOnDisk.has(doc.filename)}
-											onOpen={onOpenDocument}
-											onDelete={onDeleteDocument}
-											onNewVersion={
-												onNewVersionDocument
-											}
-											onOpenTemplate={
-												onOpenTemplateFile
-											}
-											onReload={onReloadLilyFile}
-										/>
-									))}
-								{untrackedOnDisk.map((filename) => (
-									<div
-										key={`untracked:${filename}`}
-										className="w-full text-left px-5 py-4 opacity-60"
-									>
-										<div className="flex flex-col gap-0.5">
-											<span className="font-medium text-base flex items-center gap-2">
-												{stripDocx(filename)}
-												<span className="badge badge-warning badge-sm">untracked</span>
-											</span>
-											<span className="text-sm text-base-content/40">
-												File exists on disk but is not tracked in project
-											</span>
-										</div>
-									</div>
-								))}
-							</div>
-						)}
 					</div>
 				</div>
 			</div>
-		</div>
 		</>
 	);
 }
@@ -989,9 +961,7 @@ function DocumentRow({
 	onOpenTemplate: (templateRelPath: string) => Promise<void>;
 	onReload: () => Promise<void>;
 }) {
-	const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(
-		null,
-	);
+	const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
 	const menuRef = useRef<HTMLDivElement>(null);
 	const deleteDialogRef = useRef<HTMLDialogElement>(null);
@@ -999,10 +969,7 @@ function DocumentRow({
 	useEffect(() => {
 		if (!menuPos) return;
 		const handleClick = (e: MouseEvent) => {
-			if (
-				menuRef.current &&
-				!menuRef.current.contains(e.target as Node)
-			) {
+			if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
 				setMenuPos(null);
 			}
 		};
@@ -1038,17 +1005,16 @@ function DocumentRow({
 				<div className="flex flex-col gap-0.5">
 					<span className="font-medium text-base flex items-center gap-2">
 						{stripDocx(doc.filename)}
-						{isMissing && <span className="badge badge-error badge-sm">missing</span>}
+						{isMissing && (
+							<span className="badge badge-error badge-sm">missing</span>
+						)}
 					</span>
 					<span className="text-sm text-base-content/40">
 						{isMissing ? (
 							"File no longer exists on disk"
 						) : (
 							<>
-								from{" "}
-								{stripDocx(
-									extractFilename(doc.templateRelPath),
-								)}
+								from {stripDocx(extractFilename(doc.templateRelPath))}
 								{" \u00B7 "}
 								{formatDate(doc.modifiedAt)}
 							</>
@@ -1082,11 +1048,7 @@ function DocumentRow({
 							onClick={() => {
 								setMenuPos(null);
 								setConfirmingDelete(true);
-								setTimeout(
-									() =>
-										deleteDialogRef.current?.showModal(),
-									0,
-								);
+								setTimeout(() => deleteDialogRef.current?.showModal(), 0);
 							}}
 						>
 							Delete
@@ -1121,13 +1083,10 @@ function DocumentRow({
 					}}
 				>
 					<div className="modal-box">
-						<h3 className="text-lg font-bold mb-2">
-							Delete document?
-						</h3>
+						<h3 className="text-lg font-bold mb-2">Delete document?</h3>
 						<p className="text-base-content/70 mb-4">
-							Are you sure you want to delete{" "}
-							<strong>{doc.filename}</strong>? This cannot
-							be undone.
+							Are you sure you want to delete <strong>{doc.filename}</strong>?
+							This cannot be undone.
 						</p>
 						<div className="modal-action">
 							<button
@@ -1391,8 +1350,8 @@ function ProgressTab({
 			<div className="flex flex-col items-center justify-center h-full gap-4 p-8">
 				<img src={lilyIcon} alt="" className="size-16 opacity-20" />
 				<p className="text-base-content/50 text-center max-w-sm">
-					Configure a client library folder in Settings to track
-					document progress across clients.
+					Configure a client library folder in Settings to track document
+					progress across clients.
 				</p>
 				<button
 					type="button"
@@ -1417,90 +1376,65 @@ function ProgressTab({
 			<div className="max-w-3xl mx-auto space-y-6">
 				<div className="flex gap-4">
 					<div className="flex-1 px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
-						<div className="text-2xl font-bold">
-							{stats.totalClients}
-						</div>
-						<div className="text-xs text-base-content/50">
-							Clients
-						</div>
+						<div className="text-2xl font-bold">{stats.totalClients}</div>
+						<div className="text-xs text-base-content/50">Clients</div>
 					</div>
 					<div className="flex-1 px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
-						<div className="text-2xl font-bold">
-							{stats.totalDocs}
-						</div>
+						<div className="text-2xl font-bold">{stats.totalDocs}</div>
 						<div className="text-xs text-base-content/50">
 							Required Documents
 						</div>
 					</div>
 					<div className="flex-1 px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
-						<div className="text-2xl font-bold">
-							{completionPct}%
-						</div>
-						<div className="text-xs text-base-content/50">
-							Complete
-						</div>
+						<div className="text-2xl font-bold">{completionPct}%</div>
+						<div className="text-xs text-base-content/50">Complete</div>
 					</div>
 				</div>
 
 				{stats.totalDocs > 0 && (
 					<div className="flex gap-2 flex-wrap">
-						{(
-							Object.entries(STATUS_LABELS) as [
-								DocumentStatus,
-								string,
-							][]
-						).map(([status, label]) => {
-							const count = stats.byStatus[status] || 0;
-							if (count === 0) return null;
-							return (
-								<span
-									key={status}
-									className={`badge ${STATUS_BADGES[status]} gap-1`}
-								>
-									{count} {label}
-								</span>
-							);
-						})}
+						{(Object.entries(STATUS_LABELS) as [DocumentStatus, string][]).map(
+							([status, label]) => {
+								const count = stats.byStatus[status] || 0;
+								if (count === 0) return null;
+								return (
+									<span
+										key={status}
+										className={`badge ${STATUS_BADGES[status]} gap-1`}
+									>
+										{count} {label}
+									</span>
+								);
+							},
+						)}
 					</div>
 				)}
 
 				<div>
-					<SectionHeading className="mb-3">
-						By Client
-					</SectionHeading>
+					<SectionHeading className="mb-3">By Client</SectionHeading>
 					{clients.length === 0 ? (
-						<p className="text-sm text-base-content/50">
-							No clients found.
-						</p>
+						<p className="text-sm text-base-content/50">No clients found.</p>
 					) : (
 						<div className="rounded-xl border border-base-300 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] divide-y divide-base-200 overflow-hidden">
 							{clients.map((client) => (
-								<div
-									key={client.directory}
-									className="px-5 py-4"
-								>
+								<div key={client.directory} className="px-5 py-4">
 									<div className="font-medium text-sm mb-2">
 										{client.client_name}
 									</div>
-									{client.required_documents.length ===
-									0 ? (
+									{client.required_documents.length === 0 ? (
 										<p className="text-xs text-base-content/30">
 											No required documents
 										</p>
 									) : (
 										<div className="flex flex-wrap gap-1.5">
-											{client.required_documents.map(
-												(req, i) => (
-													<span
-														key={`${req.template_rel_path}-${i}`}
-														className={`badge badge-sm ${STATUS_BADGES[req.status]} gap-1`}
-													>
-														{extractTemplateName(
-															req.template_rel_path,
-														)}
-													</span>
-												),
-											)}
+											{client.required_documents.map((req, i) => (
+												<span
+													key={`${req.template_rel_path}-${i}`}
+													className={`badge badge-sm ${STATUS_BADGES[req.status]} gap-1`}
+												>
+													{extractTemplateName(req.template_rel_path)}
+												</span>
+											))}
 										</div>
 									)}
 								</div>

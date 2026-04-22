@@ -8,8 +8,8 @@
  *   TAURI_DEBUG  — when truthy, skips minification and enables sourcemaps
  */
 
-import { cp, rm, mkdir } from "fs/promises";
 import { existsSync } from "fs";
+import { cp, mkdir, rm } from "fs/promises";
 
 const DIST = "dist";
 const isDebug = !!process.env.TAURI_DEBUG;
@@ -28,9 +28,12 @@ await mkdir(DIST, { recursive: true });
 console.log("  -> Building CSS...");
 const cssProc = Bun.spawn(
 	[
-		"bunx", "@tailwindcss/cli",
-		"-i", "src/styles/index.css",
-		"-o", `${DIST}/styles.css`,
+		"bunx",
+		"@tailwindcss/cli",
+		"-i",
+		"src/styles/index.css",
+		"-o",
+		`${DIST}/styles.css`,
 		...(isDebug ? [] : ["--minify"]),
 	],
 	{ stdout: "inherit", stderr: "inherit" },

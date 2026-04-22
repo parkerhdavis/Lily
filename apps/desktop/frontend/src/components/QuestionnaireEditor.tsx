@@ -1,21 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useQuestionnaireStore } from "@/stores/questionnaireStore";
-import { useWorkflowStore } from "@/stores/workflowStore";
-import { useSettingsStore } from "@/stores/settingsStore";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
+import { useQuestionnaireStore } from "@/stores/questionnaireStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useWorkflowStore } from "@/stores/workflowStore";
 import type {
+	QuestionDef,
 	QuestionnaireDefFile,
 	QuestionnaireSectionDef,
-	QuestionDef,
 } from "@/types/questionnaire";
 
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export default function QuestionnaireEditor() {
 	const goToPipeline = useWorkflowStore((s) => s.goToPipeline);
-	const { currentDef, saveQuestionnaire, loading } =
-		useQuestionnaireStore();
+	const { currentDef, saveQuestionnaire, loading } = useQuestionnaireStore();
 	const index = useQuestionnaireStore((s) => s.index);
 	const setActive = useQuestionnaireStore((s) => s.setActiveQuestionnaire);
 	const autosave = useSettingsStore((s) => s.settings.autosave) !== false;
@@ -228,18 +227,14 @@ export default function QuestionnaireEditor() {
 				onBack={goToPipeline}
 			>
 				{saving && (
-					<span className="text-xs text-base-content/50">
-						Saving...
-					</span>
+					<span className="text-xs text-base-content/50">Saving...</span>
 				)}
 				{saved && !saving && (
 					<span className="text-xs text-success">Saved</span>
 				)}
 				{!autosave && dirty && !saving && (
 					<>
-						<span className="badge badge-warning badge-sm">
-							Unsaved
-						</span>
+						<span className="badge badge-warning badge-sm">Unsaved</span>
 						<button
 							type="button"
 							className="btn btn-primary btn-sm"
@@ -302,9 +297,7 @@ export default function QuestionnaireEditor() {
 							section={section}
 							index={idx}
 							total={tabSections.length}
-							onUpdate={(updater) =>
-								updateSection(idx, updater)
-							}
+							onUpdate={(updater) => updateSection(idx, updater)}
 							onRemove={() => removeSection(idx)}
 							onMoveUp={() => moveSectionUp(idx)}
 							onMoveDown={() => moveSectionDown(idx)}
@@ -490,9 +483,7 @@ function SectionCard({
 					{section.kind !== "contacts" && (
 						<>
 							{section.questions.length > 0 && (
-								<SectionHeading className="mt-2">
-									Questions
-								</SectionHeading>
+								<SectionHeading className="mt-2">Questions</SectionHeading>
 							)}
 							<div className="space-y-2">
 								{section.questions.map((q, qIdx) => (
@@ -501,15 +492,9 @@ function SectionCard({
 										question={q}
 										index={qIdx}
 										total={section.questions.length}
-										onUpdate={(updater) =>
-											updateQuestion(qIdx, updater)
-										}
-										onRemove={() =>
-											removeQuestion(qIdx)
-										}
-										onMove={(dir) =>
-											moveQuestion(qIdx, dir)
-										}
+										onUpdate={(updater) => updateQuestion(qIdx, updater)}
+										onRemove={() => removeQuestion(qIdx)}
+										onMove={(dir) => moveQuestion(qIdx, dir)}
 									/>
 								))}
 							</div>
@@ -525,18 +510,14 @@ function SectionCard({
 								<button
 									type="button"
 									className="btn btn-ghost btn-xs"
-									onClick={() =>
-										addQuestion("conditional")
-									}
+									onClick={() => addQuestion("conditional")}
 								>
 									+ Conditional
 								</button>
 								<button
 									type="button"
 									className="btn btn-ghost btn-xs"
-									onClick={() =>
-										addQuestion("contact-role")
-									}
+									onClick={() => addQuestion("contact-role")}
 								>
 									+ Contact Role
 								</button>
@@ -546,8 +527,8 @@ function SectionCard({
 
 					{section.kind === "contacts" && (
 						<p className="text-sm text-base-content/50 italic">
-							This section renders the inline contact
-							management list automatically.
+							This section renders the inline contact management list
+							automatically.
 						</p>
 					)}
 				</div>
@@ -585,22 +566,13 @@ function QuestionRow({
 			{/* Fields */}
 			<div className="flex-1 space-y-1">
 				{question.kind === "text" && (
-					<TextQuestionFields
-						question={q}
-						onUpdate={onUpdate}
-					/>
+					<TextQuestionFields question={q} onUpdate={onUpdate} />
 				)}
 				{question.kind === "conditional" && (
-					<ConditionalQuestionFields
-						question={q}
-						onUpdate={onUpdate}
-					/>
+					<ConditionalQuestionFields question={q} onUpdate={onUpdate} />
 				)}
 				{question.kind === "contact-role" && (
-					<ContactRoleQuestionFields
-						question={q}
-						onUpdate={onUpdate}
-					/>
+					<ContactRoleQuestionFields question={q} onUpdate={onUpdate} />
 				)}
 			</div>
 
@@ -649,18 +621,14 @@ function TextQuestionFields({
 				type="text"
 				className="input input-bordered input-xs flex-1 min-w-40"
 				value={(question.variable as string) ?? ""}
-				onChange={(e) =>
-					onUpdate((q) => ({ ...q, variable: e.target.value }))
-				}
+				onChange={(e) => onUpdate((q) => ({ ...q, variable: e.target.value }))}
 				placeholder="Variable name"
 			/>
 			<input
 				type="text"
 				className="input input-bordered input-xs flex-1 min-w-40"
 				value={(question.label as string) ?? ""}
-				onChange={(e) =>
-					onUpdate((q) => ({ ...q, label: e.target.value }))
-				}
+				onChange={(e) => onUpdate((q) => ({ ...q, label: e.target.value }))}
 				placeholder="Label"
 			/>
 			<input
@@ -720,18 +688,14 @@ function ConditionalQuestionFields({
 				type="text"
 				className="input input-bordered input-xs flex-1 min-w-40"
 				value={(question.variable as string) ?? ""}
-				onChange={(e) =>
-					onUpdate((q) => ({ ...q, variable: e.target.value }))
-				}
+				onChange={(e) => onUpdate((q) => ({ ...q, variable: e.target.value }))}
 				placeholder="Variable name"
 			/>
 			<input
 				type="text"
 				className="input input-bordered input-xs flex-1 min-w-40"
 				value={(question.label as string) ?? ""}
-				onChange={(e) =>
-					onUpdate((q) => ({ ...q, label: e.target.value }))
-				}
+				onChange={(e) => onUpdate((q) => ({ ...q, label: e.target.value }))}
 				placeholder="Label"
 			/>
 			<input
@@ -769,10 +733,7 @@ function ContactRoleQuestionFields({
 	question: Record<string, unknown>;
 	onUpdate: (updater: (q: QuestionDef) => QuestionDef) => void;
 }) {
-	const mappings = (question.variableMappings ?? {}) as Record<
-		string,
-		string
-	>;
+	const mappings = (question.variableMappings ?? {}) as Record<string, string>;
 	const entries = Object.entries(mappings);
 
 	const addMapping = () => {
@@ -809,18 +770,14 @@ function ContactRoleQuestionFields({
 					type="text"
 					className="input input-bordered input-xs flex-1 min-w-40"
 					value={(question.role as string) ?? ""}
-					onChange={(e) =>
-						onUpdate((q) => ({ ...q, role: e.target.value }))
-					}
+					onChange={(e) => onUpdate((q) => ({ ...q, role: e.target.value }))}
 					placeholder="Role name"
 				/>
 				<input
 					type="text"
 					className="input input-bordered input-xs flex-1 min-w-40"
 					value={(question.label as string) ?? ""}
-					onChange={(e) =>
-						onUpdate((q) => ({ ...q, label: e.target.value }))
-					}
+					onChange={(e) => onUpdate((q) => ({ ...q, label: e.target.value }))}
 					placeholder="Label"
 				/>
 			</div>
@@ -832,43 +789,24 @@ function ContactRoleQuestionFields({
 						Variable Mappings:
 					</span>
 					{entries.map(([varName, prop], i) => (
-						<div
-							key={i}
-							className="flex items-center gap-1"
-						>
+						<div key={i} className="flex items-center gap-1">
 							<input
 								type="text"
 								className="input input-bordered input-xs flex-1"
 								value={varName}
-								onChange={(e) =>
-									updateMappingKey(
-										varName,
-										e.target.value,
-									)
-								}
+								onChange={(e) => updateMappingKey(varName, e.target.value)}
 								placeholder="Variable name"
 							/>
-							<span className="text-xs text-base-content/40">
-								&rarr;
-							</span>
+							<span className="text-xs text-base-content/40">&rarr;</span>
 							<select
 								className="select select-bordered select-xs"
 								value={prop}
-								onChange={(e) =>
-									updateMappingValue(
-										varName,
-										e.target.value,
-									)
-								}
+								onChange={(e) => updateMappingValue(varName, e.target.value)}
 							>
 								<option value="full_name">full_name</option>
-								<option value="first_name">
-									first_name
-								</option>
+								<option value="first_name">first_name</option>
 								<option value="last_name">last_name</option>
-								<option value="relationship">
-									relationship
-								</option>
+								<option value="relationship">relationship</option>
 								<option value="phone">phone</option>
 								<option value="email">email</option>
 								<option value="address">address</option>

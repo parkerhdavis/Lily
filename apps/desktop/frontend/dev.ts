@@ -10,10 +10,9 @@
  * and avoid the complexity of a React Fast Refresh integration.
  */
 
-import { watch } from "fs";
-import { cp, mkdir } from "fs/promises";
-import { existsSync } from "fs";
 import type { ServerWebSocket } from "bun";
+import { existsSync, watch } from "fs";
+import { cp, mkdir } from "fs/promises";
 
 const DEV_PORT = 5173;
 const DIST = "dist";
@@ -26,7 +25,14 @@ const reloadClients = new Set<ServerWebSocket<unknown>>();
 
 async function buildCSS() {
 	const proc = Bun.spawn(
-		["bunx", "@tailwindcss/cli", "-i", "src/styles/index.css", "-o", `${DIST}/styles.css`],
+		[
+			"bunx",
+			"@tailwindcss/cli",
+			"-i",
+			"src/styles/index.css",
+			"-o",
+			`${DIST}/styles.css`,
+		],
 		{ stdout: "inherit", stderr: "inherit" },
 	);
 	await proc.exited;
@@ -82,12 +88,17 @@ Bun.serve({
 		// Serve from dist/
 		const filePath = url.pathname === "/" ? "/index.html" : url.pathname;
 		const file = Bun.file(`${DIST}${filePath}`);
-		if (!(await file.exists())) return new Response("Not found", { status: 404 });
+		if (!(await file.exists()))
+			return new Response("Not found", { status: 404 });
 		return new Response(file);
 	},
 	websocket: {
-		open(ws) { reloadClients.add(ws); },
-		close(ws) { reloadClients.delete(ws); },
+		open(ws) {
+			reloadClients.add(ws);
+		},
+		close(ws) {
+			reloadClients.delete(ws);
+		},
 		message() {},
 	},
 });

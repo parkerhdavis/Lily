@@ -1,9 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ConditionalDef, LilyFile, VariableInfo, VariableSchema } from "@/types";
-import { useUndoStore } from "@/stores/undoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useUndoStore } from "@/stores/undoStore";
+import type {
+	ConditionalDef,
+	LilyFile,
+	VariableInfo,
+	VariableSchema,
+} from "@/types";
 import { extractFilename } from "@/utils/path";
-import { buildDocumentFilename, mergeStoredVariables, pushNav, toastError, toastSuccess } from "./helpers";
+import {
+	buildDocumentFilename,
+	mergeStoredVariables,
+	pushNav,
+	toastError,
+	toastSuccess,
+} from "./helpers";
 import type { WorkflowSlice } from "./types";
 
 /** Load the conditional schema for a template from its .lily sidecar. */
@@ -61,10 +72,9 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				templateRelPath,
 			});
 
-			const variables = await invoke<VariableInfo[]>(
-				"extract_variables",
-				{ docxPath: docPath },
-			);
+			const variables = await invoke<VariableInfo[]>("extract_variables", {
+				docxPath: docPath,
+			});
 
 			await invoke("set_document_variables", {
 				workingDir,
@@ -80,10 +90,9 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			// conditionals (e.g. "Has Spouse") pick up values immediately.
 			await invoke("resolve_contact_variables", { workingDir });
 
-			const updatedLilyFile = await invoke<LilyFile>(
-				"load_lily_file_cmd",
-				{ workingDir },
-			);
+			const updatedLilyFile = await invoke<LilyFile>("load_lily_file_cmd", {
+				workingDir,
+			});
 
 			// Build variableValues from the updated .lily file so
 			// contact-resolved values are included
@@ -98,10 +107,10 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			// Load template schema (if it exists) for type-specific inputs
 			let templateSchema: VariableSchema | null = null;
 			try {
-				templateSchema = await invoke<VariableSchema>(
-					"load_template_schema",
-					{ templatesDir, templateRelPath },
-				);
+				templateSchema = await invoke<VariableSchema>("load_template_schema", {
+					templatesDir,
+					templateRelPath,
+				});
 			} catch {
 				// Schema is optional — continue without it
 			}
@@ -131,7 +140,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			});
 
 			// Refresh preview to reflect populated values
-			let documentHtml = await invoke<string>("get_document_html", {
+			const documentHtml = await invoke<string>("get_document_html", {
 				docxPath: docPath,
 			});
 
@@ -168,10 +177,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 
 			for (const templateRelPath of templateRelPaths) {
 				const fullTemplatePath = `${templatesDir}/${templateRelPath}`;
-				let filename = buildDocumentFilename(
-					templateRelPath,
-					lilyFile,
-				);
+				let filename = buildDocumentFilename(templateRelPath, lilyFile);
 
 				// De-duplicate filename
 				let candidate = filename;
@@ -192,10 +198,9 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 				});
 				addedDocPaths.push(docPath);
 
-				const variables = await invoke<VariableInfo[]>(
-					"extract_variables",
-					{ docxPath: docPath },
-				);
+				const variables = await invoke<VariableInfo[]>("extract_variables", {
+					docxPath: docPath,
+				});
 
 				await invoke("set_document_variables", {
 					workingDir,
@@ -213,10 +218,9 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			await invoke("resolve_contact_variables", { workingDir });
 
 			// Reload once at the end
-			const updatedLilyFile = await invoke<LilyFile>(
-				"load_lily_file_cmd",
-				{ workingDir },
-			);
+			const updatedLilyFile = await invoke<LilyFile>("load_lily_file_cmd", {
+				workingDir,
+			});
 
 			// Populate each added document with variable values from
 			// the questionnaire so they're saved into the .docx immediately
@@ -264,9 +268,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			// false conditionals, preserving document order and contact-role variants.
 			variables = mergeStoredVariables(variables, filename, lilyFile);
 
-			const conditionalSet = new Set(
-				lilyFile?.conditional_variables ?? [],
-			);
+			const conditionalSet = new Set(lilyFile?.conditional_variables ?? []);
 			if (conditionalSet.size > 0) {
 				variables = variables.map((v) =>
 					conditionalSet.has(v.display_name)
@@ -289,10 +291,9 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			await invoke("resolve_contact_variables", { workingDir });
 
 			// Reload .lily to pick up resolved values
-			const updatedLilyFile = await invoke<LilyFile>(
-				"load_lily_file_cmd",
-				{ workingDir },
-			);
+			const updatedLilyFile = await invoke<LilyFile>("load_lily_file_cmd", {
+				workingDir,
+			});
 
 			const savedVars = updatedLilyFile?.variables ?? {};
 			const variableValues: Record<string, string> = {};
@@ -305,9 +306,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			const docMeta = updatedLilyFile?.documents[filename];
 			if (docMeta?.role_overrides) {
 				for (const override of Object.values(docMeta.role_overrides)) {
-					for (const [varName, value] of Object.entries(
-						override.values,
-					)) {
+					for (const [varName, value] of Object.entries(override.values)) {
 						variableValues[varName] = value;
 					}
 				}
@@ -419,7 +418,13 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 	},
 
 	saveDocument: async () => {
-		const { documentPath, variableValues, workingDir, lilyFile, templateRelPath } = get();
+		const {
+			documentPath,
+			variableValues,
+			workingDir,
+			lilyFile,
+			templateRelPath,
+		} = get();
 		if (!documentPath) return;
 
 		set({ loading: true, error: null });
@@ -429,8 +434,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			const settings = useSettingsStore.getState().settings;
 			const docFilename = extractFilename(documentPath);
 			const docTemplateRelPath =
-				templateRelPath ??
-				lilyFile?.documents[docFilename]?.template_rel_path;
+				templateRelPath ?? lilyFile?.documents[docFilename]?.template_rel_path;
 			if (settings.templates_dir && docTemplateRelPath) {
 				conditionalSchema = await loadConditionalSchema(
 					settings.templates_dir,
@@ -447,9 +451,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			const filename = extractFilename(documentPath);
 			const docMeta = lilyFile?.documents[filename];
 			if (docMeta?.role_overrides && workingDir) {
-				for (const [role, override] of Object.entries(
-					docMeta.role_overrides,
-				)) {
+				for (const [role, override] of Object.entries(docMeta.role_overrides)) {
 					const updatedValues = { ...override.values };
 					for (const varName of Object.keys(updatedValues)) {
 						if (variableValues[varName] !== undefined) {
@@ -469,10 +471,9 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			}
 
 			if (workingDir) {
-				const lilyFile = await invoke<LilyFile>(
-					"load_lily_file_cmd",
-					{ workingDir },
-				);
+				const lilyFile = await invoke<LilyFile>("load_lily_file_cmd", {
+					workingDir,
+				});
 				set({ lilyFile });
 			}
 

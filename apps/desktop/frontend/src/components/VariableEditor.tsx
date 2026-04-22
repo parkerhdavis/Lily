@@ -1,21 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useWorkflowStore } from "@/stores/workflowStore";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import AppSwitcher from "@/components/ui/AppSwitcher";
 import SectionHeading from "@/components/ui/SectionHeading";
 import StatusDot from "@/components/ui/StatusDot";
-import AppSwitcher from "@/components/ui/AppSwitcher";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useWorkflowStore } from "@/stores/workflowStore";
 import { extractFilename } from "@/utils/path";
 import ContactRoleField from "./VariableEditor/ContactRoleField";
 import LinkedVariableField from "./VariableEditor/LinkedVariableField";
-import UnsavedChangesDialog from "./VariableEditor/UnsavedChangesDialog";
 import { renderLivePreview } from "./VariableEditor/previewRenderer";
+import UnsavedChangesDialog from "./VariableEditor/UnsavedChangesDialog";
 import {
+	type ContactRoleGroup,
 	fuzzyFilterVariables,
+	getContactProperty,
 	getDisplayName,
 	parseContactRoleVariant,
-	getContactProperty,
-	type ContactRoleGroup,
 } from "./VariableEditor/variableHelpers";
 
 export default function VariableEditor() {
@@ -50,18 +50,13 @@ export default function VariableEditor() {
 
 	// Per-document role overrides for the current document
 	const roleOverrides = useMemo(() => {
-		if (!currentFilename || !lilyFile?.documents[currentFilename])
-			return {};
-		return (
-			lilyFile.documents[currentFilename].role_overrides ?? {}
-		);
+		if (!currentFilename || !lilyFile?.documents[currentFilename]) return {};
+		return lilyFile.documents[currentFilename].role_overrides ?? {};
 	}, [lilyFile, currentFilename]);
 
 	// Per-document variable overrides: tracked as a Set of overridden variable names.
 	// Initialized from DocumentMeta.variable_overrides when a document is opened.
-	const [overriddenVars, setOverriddenVars] = useState<Set<string>>(
-		new Set(),
-	);
+	const [overriddenVars, setOverriddenVars] = useState<Set<string>>(new Set());
 
 	// Initialize overriddenVars from DocumentMeta
 	const initRef = useRef<string | null>(null);
@@ -69,9 +64,7 @@ export default function VariableEditor() {
 		initRef.current = currentFilename;
 		const docMeta = lilyFile?.documents[currentFilename];
 		if (docMeta?.variable_overrides) {
-			setOverriddenVars(
-				new Set(Object.keys(docMeta.variable_overrides)),
-			);
+			setOverriddenVars(new Set(Object.keys(docMeta.variable_overrides)));
 		} else {
 			setOverriddenVars(new Set());
 		}
@@ -83,9 +76,7 @@ export default function VariableEditor() {
 	// by matching "Has {X}" where X is NOT a known contact-binding role.
 	const hasRoleConditionals = useMemo(() => {
 		const map = new Map<string, string>(); // display_name -> role/relationship
-		const bindingRoles = new Set(
-			Object.keys(lilyFile?.contact_bindings ?? {}),
-		);
+		const bindingRoles = new Set(Object.keys(lilyFile?.contact_bindings ?? {}));
 		for (const v of variables) {
 			if (!v.is_conditional) continue;
 			const match = v.display_name.match(/^Has (.+)$/);
@@ -104,9 +95,7 @@ export default function VariableEditor() {
 		return map;
 	}, [variables, lilyFile?.contact_bindings, lilyFile?.conditional_variables]);
 
-	const [selectedVariable, setSelectedVariable] = useState<string | null>(
-		null,
-	);
+	const [selectedVariable, setSelectedVariable] = useState<string | null>(null);
 	const [varSearch, setVarSearch] = useState("");
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
@@ -198,7 +187,10 @@ export default function VariableEditor() {
 			const handleMove = (ev: MouseEvent) => {
 				if (!dragging.current) return;
 				const delta = ev.clientX - dragStartX.current;
-				const newWidth = Math.max(280, Math.min(600, dragStartWidth.current + delta));
+				const newWidth = Math.max(
+					280,
+					Math.min(600, dragStartWidth.current + delta),
+				);
 				setSidebarWidth(newWidth);
 			};
 			const handleUp = () => {
@@ -238,9 +230,7 @@ export default function VariableEditor() {
 	const handlePreviewClick = useCallback(
 		(e: React.MouseEvent) => {
 			const target = e.target as HTMLElement;
-			const span = target.closest<HTMLElement>(
-				"[data-variable]",
-			);
+			const span = target.closest<HTMLElement>("[data-variable]");
 			if (!span) {
 				setSelectedVariable(null);
 				return;
@@ -266,10 +256,7 @@ export default function VariableEditor() {
 				const focusable =
 					sidebarEl.querySelector<HTMLElement>(
 						"input[type=text]:not([disabled])",
-					) ??
-					sidebarEl.querySelector<HTMLElement>(
-						"select:not([disabled])",
-					);
+					) ?? sidebarEl.querySelector<HTMLElement>("select:not([disabled])");
 				if (focusable) {
 					setTimeout(() => focusable.focus(), 100);
 				} else {
@@ -305,13 +292,9 @@ export default function VariableEditor() {
 			const currentIdx = occurrenceIndex[displayName] ?? -1;
 			let newIdx: number;
 			if (direction === "next") {
-				newIdx =
-					currentIdx + 1 >= spans.length ? 0 : currentIdx + 1;
+				newIdx = currentIdx + 1 >= spans.length ? 0 : currentIdx + 1;
 			} else {
-				newIdx =
-					currentIdx - 1 < 0
-						? spans.length - 1
-						: currentIdx - 1;
+				newIdx = currentIdx - 1 < 0 ? spans.length - 1 : currentIdx - 1;
 			}
 
 			setOccurrenceIndex((prev) => ({
@@ -376,12 +359,15 @@ export default function VariableEditor() {
 		if (templateSchema) {
 			for (const [name, entry] of Object.entries(templateSchema.variables)) {
 				// Support both single `condition` and multi `conditions`
-				const condList = entry.conditions && entry.conditions.length > 0
-					? entry.conditions
-					: entry.condition ? [entry.condition] : [];
+				const condList =
+					entry.conditions && entry.conditions.length > 0
+						? entry.conditions
+						: entry.condition
+							? [entry.condition]
+							: [];
 				if (condList.length > 0) {
-					defs[name] = condList.map((c) =>
-						`${name} ?? "${c.true_template}" :: "${c.false_template}"`,
+					defs[name] = condList.map(
+						(c) => `${name} ?? "${c.true_template}" :: "${c.false_template}"`,
 					);
 				}
 			}
@@ -405,8 +391,21 @@ export default function VariableEditor() {
 
 	// Build a live preview by replacing variable placeholders in the HTML.
 	const livePreviewHtml = useMemo(
-		() => renderLivePreview(documentHtml, mergedPreviewValues, selectedVariable, canonicalToDisplay, conditionalDefs),
-		[documentHtml, mergedPreviewValues, selectedVariable, canonicalToDisplay, conditionalDefs],
+		() =>
+			renderLivePreview(
+				documentHtml,
+				mergedPreviewValues,
+				selectedVariable,
+				canonicalToDisplay,
+				conditionalDefs,
+			),
+		[
+			documentHtml,
+			mergedPreviewValues,
+			selectedVariable,
+			canonicalToDisplay,
+			conditionalDefs,
+		],
 	);
 
 	const handleVariableChange = (name: string, value: string) => {
@@ -500,7 +499,9 @@ export default function VariableEditor() {
 		return (
 			<div className="flex flex-col items-center justify-center h-full gap-3">
 				<span className="loading loading-spinner loading-lg" />
-				<span className="text-base-content/50 text-sm">Loading document...</span>
+				<span className="text-base-content/50 text-sm">
+					Loading document...
+				</span>
 			</div>
 		);
 	}
@@ -553,9 +554,7 @@ export default function VariableEditor() {
 							title="Double-click to rename"
 						>
 							{documentPath ? getDisplayName(documentPath) : ""}
-							<span className="text-base-content/30 font-normal">
-								.docx
-							</span>
+							<span className="text-base-content/30 font-normal">.docx</span>
 						</h2>
 					)}
 					<p className="text-xs text-base-content/50">
@@ -564,9 +563,7 @@ export default function VariableEditor() {
 				</div>
 				<div className="flex items-center gap-2">
 					{dirty && (
-						<span className="badge badge-warning badge-sm">
-							Unsaved
-						</span>
+						<span className="badge badge-warning badge-sm">Unsaved</span>
 					)}
 					<button
 						type="button"
@@ -604,265 +601,392 @@ export default function VariableEditor() {
 						className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors z-10"
 						onMouseDown={handleDragStart}
 					/>
-					<SectionHeading className="mb-3">
-						Variables
-					</SectionHeading>
-				{variables.length > 0 && (
-					<div className="pb-3 mb-3 border-b border-base-300">
-						<input
-							ref={varSearchRef}
-							type="text"
-							className="input input-bordered input-sm w-full"
-							placeholder="Search variables... (Ctrl+F)"
-							value={varSearch}
-							onChange={(e) => setVarSearch(e.target.value)}
-						/>
-					</div>
-				)}
-				{variables.length === 0 ? (
-					<p className="text-sm text-base-content/50">
-						No variables found in this document.
-					</p>
-				) : filteredVariables.length === 0 ? (
-					<p className="text-sm text-base-content/50">
-						No variables match your search.
-					</p>
-				) : (
-				<div className="flex flex-col gap-3">
-					{(() => {
-						const renderedRoles = new Set<string>();
-						const clientVars = lilyFile?.variables ?? {};
-						return filteredVariables.map((varInfo) => {
-						const name = varInfo.display_name;
+					<SectionHeading className="mb-3">Variables</SectionHeading>
+					{variables.length > 0 && (
+						<div className="pb-3 mb-3 border-b border-base-300">
+							<input
+								ref={varSearchRef}
+								type="text"
+								className="input input-bordered input-sm w-full"
+								placeholder="Search variables... (Ctrl+F)"
+								value={varSearch}
+								onChange={(e) => setVarSearch(e.target.value)}
+							/>
+						</div>
+					)}
+					{variables.length === 0 ? (
+						<p className="text-sm text-base-content/50">
+							No variables found in this document.
+						</p>
+					) : filteredVariables.length === 0 ? (
+						<p className="text-sm text-base-content/50">
+							No variables match your search.
+						</p>
+					) : (
+						<div className="flex flex-col gap-3">
+							{(() => {
+								const renderedRoles = new Set<string>();
+								const clientVars = lilyFile?.variables ?? {};
+								return filteredVariables.map((varInfo) => {
+									const name = varInfo.display_name;
 
-						// ── Contact-role variable ──
-						const crInfo = contactRoleVarMap[name];
-						if (crInfo) {
-							// Render the group once at the first property
-							if (renderedRoles.has(crInfo.role)) return null;
-							renderedRoles.add(crInfo.role);
-							const group = contactRoleGroups.find(
-								(g) => g.role === crInfo.role,
-							);
-							if (!group) return null;
-							return (
-								<ContactRoleField
-									key={`role:${group.role}`}
-									group={group}
-									contacts={lilyFile?.contacts ?? []}
-									bindings={lilyFile?.contact_bindings ?? {}}
-									variableValues={variableValues}
-									isOverridden={group.role in roleOverrides}
-									isSelected={group.properties.some(
-										(p) => p.displayName === selectedVariable,
-									)}
-									onToggleOverride={async (overriding) => {
-										if (overriding) {
-											const values: Record<string, string> = {};
-											for (const p of group.properties) {
-												values[p.displayName] = variableValues[p.displayName] ?? "";
-											}
-											const binding = lilyFile?.contact_bindings?.[group.role];
-											await setRoleOverride(group.role, {
-												contact_id: binding?.contact_id ?? null,
-												values,
-											});
-										} else {
-											await setRoleOverride(group.role, null);
-											const savedVars = lilyFile?.variables ?? {};
-											for (const p of group.properties) {
-												handleVariableChange(p.displayName, savedVars[p.displayName] ?? "");
-											}
-										}
-									}}
-									onSelectContact={async (contactId) => {
-										const values: Record<string, string> = {};
-										const contact = contactId
-											? (lilyFile?.contacts ?? []).find((c) => c.id === contactId)
-											: null;
-										for (const p of group.properties) {
-											values[p.displayName] = contact
-												? getContactProperty(contact, p.property)
-												: "";
-										}
-										await setRoleOverride(group.role, {
-											contact_id: contactId,
-											values,
-										});
-										for (const [varName, value] of Object.entries(values)) {
-											handleVariableChange(varName, value);
-										}
-									}}
-									onManualChange={(varName, value) => {
-										handleVariableChange(varName, value);
-									}}
-									onApplyToQuestionnaire={async () => {
-										const overrideValues: Record<string, string> = {};
-										for (const p of group.properties) {
-											overrideValues[p.displayName] = variableValues[p.displayName] ?? "";
-										}
-										const overrideData = roleOverrides[group.role];
-										if (overrideData?.contact_id) {
-											await setContactBinding(group.role, {
-												contact_id: overrideData.contact_id,
-												variable_mappings:
-													lilyFile?.contact_bindings?.[group.role]?.variable_mappings ??
-													Object.fromEntries(
-														group.properties.map((p) => [p.displayName, p.property]),
-													),
-											});
-										}
-										for (const p of group.properties) {
-											await saveClientVariable(p.displayName, overrideValues[p.displayName]);
-										}
-										await setRoleOverride(group.role, null);
-										const { lilyFile: updatedLily } = useWorkflowStore.getState();
-										const savedVars = updatedLily?.variables ?? {};
-										for (const p of group.properties) {
-											handleVariableChange(p.displayName, savedVars[p.displayName] ?? "");
-										}
-									}}
-									onSelect={(varName) =>
-										setSelectedVariable(varName)
+									// ── Contact-role variable ──
+									const crInfo = contactRoleVarMap[name];
+									if (crInfo) {
+										// Render the group once at the first property
+										if (renderedRoles.has(crInfo.role)) return null;
+										renderedRoles.add(crInfo.role);
+										const group = contactRoleGroups.find(
+											(g) => g.role === crInfo.role,
+										);
+										if (!group) return null;
+										return (
+											<ContactRoleField
+												key={`role:${group.role}`}
+												group={group}
+												contacts={lilyFile?.contacts ?? []}
+												bindings={lilyFile?.contact_bindings ?? {}}
+												variableValues={variableValues}
+												isOverridden={group.role in roleOverrides}
+												isSelected={group.properties.some(
+													(p) => p.displayName === selectedVariable,
+												)}
+												onToggleOverride={async (overriding) => {
+													if (overriding) {
+														const values: Record<string, string> = {};
+														for (const p of group.properties) {
+															values[p.displayName] =
+																variableValues[p.displayName] ?? "";
+														}
+														const binding =
+															lilyFile?.contact_bindings?.[group.role];
+														await setRoleOverride(group.role, {
+															contact_id: binding?.contact_id ?? null,
+															values,
+														});
+													} else {
+														await setRoleOverride(group.role, null);
+														const savedVars = lilyFile?.variables ?? {};
+														for (const p of group.properties) {
+															handleVariableChange(
+																p.displayName,
+																savedVars[p.displayName] ?? "",
+															);
+														}
+													}
+												}}
+												onSelectContact={async (contactId) => {
+													const values: Record<string, string> = {};
+													const contact = contactId
+														? (lilyFile?.contacts ?? []).find(
+																(c) => c.id === contactId,
+															)
+														: null;
+													for (const p of group.properties) {
+														values[p.displayName] = contact
+															? getContactProperty(contact, p.property)
+															: "";
+													}
+													await setRoleOverride(group.role, {
+														contact_id: contactId,
+														values,
+													});
+													for (const [varName, value] of Object.entries(
+														values,
+													)) {
+														handleVariableChange(varName, value);
+													}
+												}}
+												onManualChange={(varName, value) => {
+													handleVariableChange(varName, value);
+												}}
+												onApplyToQuestionnaire={async () => {
+													const overrideValues: Record<string, string> = {};
+													for (const p of group.properties) {
+														overrideValues[p.displayName] =
+															variableValues[p.displayName] ?? "";
+													}
+													const overrideData = roleOverrides[group.role];
+													if (overrideData?.contact_id) {
+														await setContactBinding(group.role, {
+															contact_id: overrideData.contact_id,
+															variable_mappings:
+																lilyFile?.contact_bindings?.[group.role]
+																	?.variable_mappings ??
+																Object.fromEntries(
+																	group.properties.map((p) => [
+																		p.displayName,
+																		p.property,
+																	]),
+																),
+														});
+													}
+													for (const p of group.properties) {
+														await saveClientVariable(
+															p.displayName,
+															overrideValues[p.displayName],
+														);
+													}
+													await setRoleOverride(group.role, null);
+													const { lilyFile: updatedLily } =
+														useWorkflowStore.getState();
+													const savedVars = updatedLily?.variables ?? {};
+													for (const p of group.properties) {
+														handleVariableChange(
+															p.displayName,
+															savedVars[p.displayName] ?? "",
+														);
+													}
+												}}
+												onSelect={(varName) => setSelectedVariable(varName)}
+												scrollToOccurrence={scrollToOccurrence}
+											/>
+										);
 									}
-									scrollToOccurrence={scrollToOccurrence}
-								/>
-							);
-						}
 
-						// ── Linkable variable (has client-level value or is Has-role conditional) ──
-						const hasClientValue = name in clientVars;
-						const linkedRole = hasRoleConditionals.get(name);
-						const isLinkable = hasClientValue || linkedRole !== undefined;
+									// ── Linkable variable (has client-level value or is Has-role conditional) ──
+									const hasClientValue = name in clientVars;
+									const linkedRole = hasRoleConditionals.get(name);
+									const isLinkable = hasClientValue || linkedRole !== undefined;
 
-						if (isLinkable) {
-							const isLinked = !overriddenVars.has(name);
-							const clientVal = clientVars[name] ?? (varInfo.is_conditional ? "false" : "");
-							const schemaEntry = templateSchema?.variables[name];
-							const varType = (schemaEntry?.var_type ?? "text") as "text" | "date" | "currency";
+									if (isLinkable) {
+										const isLinked = !overriddenVars.has(name);
+										const clientVal =
+											clientVars[name] ??
+											(varInfo.is_conditional ? "false" : "");
+										const schemaEntry = templateSchema?.variables[name];
+										const varType = (schemaEntry?.var_type ?? "text") as
+											| "text"
+											| "date"
+											| "currency";
 
-							return (
-								<LinkedVariableField
-									key={name}
-									name={name}
-									value={variableValues[name] ?? clientVal}
-									clientValue={clientVal}
-									isLinked={isLinked}
-									isSelected={selectedVariable === name}
-									isConditional={varInfo.is_conditional}
-									linkedToRole={linkedRole}
-									varType={varType}
-									schemaEntry={schemaEntry}
-									isMalformed={malformedConditionals.has(name)}
-									onToggleLink={(linked) => {
-										if (linked) {
-											// Re-link: restore client value, remove from overrides
-											setOverriddenVars((prev) => {
-												const next = new Set(prev);
-												next.delete(name);
-												return next;
-											});
-											handleVariableChange(name, clientVal);
-										} else {
-											// Unlink: snapshot current value as override
-											setOverriddenVars((prev) => {
-												const next = new Set(prev);
-												next.add(name);
-												return next;
-											});
-										}
-									}}
-									onChange={(value) => handleVariableChange(name, value)}
-									onSelect={() => setSelectedVariable(name)}
-									onOpenQuestionnaire={openQuestionnaire}
-									scrollToOccurrence={scrollToOccurrence}
-								/>
-							);
-						}
+										return (
+											<LinkedVariableField
+												key={name}
+												name={name}
+												value={variableValues[name] ?? clientVal}
+												clientValue={clientVal}
+												isLinked={isLinked}
+												isSelected={selectedVariable === name}
+												isConditional={varInfo.is_conditional}
+												linkedToRole={linkedRole}
+												varType={varType}
+												schemaEntry={schemaEntry}
+												isMalformed={malformedConditionals.has(name)}
+												onToggleLink={(linked) => {
+													if (linked) {
+														// Re-link: restore client value, remove from overrides
+														setOverriddenVars((prev) => {
+															const next = new Set(prev);
+															next.delete(name);
+															return next;
+														});
+														handleVariableChange(name, clientVal);
+													} else {
+														// Unlink: snapshot current value as override
+														setOverriddenVars((prev) => {
+															const next = new Set(prev);
+															next.add(name);
+															return next;
+														});
+													}
+												}}
+												onChange={(value) => handleVariableChange(name, value)}
+												onSelect={() => setSelectedVariable(name)}
+												onOpenQuestionnaire={openQuestionnaire}
+												scrollToOccurrence={scrollToOccurrence}
+											/>
+										);
+									}
 
-						// ── Plain conditional (not linked to any client-level value) ──
-						if (varInfo.is_conditional) {
-							const isTrue = variableValues[name] === "true";
-							const isFalse = variableValues[name] === "false";
-							return (
-								<div
-									key={name}
-									data-var-entry={name}
-									className={`w-full rounded-lg border bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
-								>
-									<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300 rounded-t-lg">
-										<span className="text-sm font-bold">{name}</span>
-										<div className="join">
-											<button type="button" className="join-item btn btn-ghost btn-xs px-1" onClick={() => scrollToOccurrence(name, "prev")} title="Previous occurrence">&lsaquo;</button>
-											<button type="button" className="join-item btn btn-ghost btn-xs px-1" onClick={() => scrollToOccurrence(name, "next")} title="Next occurrence">&rsaquo;</button>
-										</div>
-									</div>
-									<div className="p-3">
-										<div className="flex rounded-lg overflow-hidden border border-base-300">
-											<button type="button" className={`flex-1 text-xs font-semibold py-1.5 transition-colors ${isTrue ? "bg-success text-success-content" : "bg-base-200 text-base-content/40 hover:bg-base-300"}`} onClick={() => { setSelectedVariable(name); handleVariableChange(name, "true"); }} onFocus={() => setSelectedVariable(name)}>True</button>
-											<button type="button" className={`flex-1 text-xs font-semibold py-1.5 transition-colors ${isFalse ? "bg-error text-error-content" : "bg-base-200 text-base-content/40 hover:bg-base-300"}`} onClick={() => { setSelectedVariable(name); handleVariableChange(name, "false"); }} onFocus={() => setSelectedVariable(name)}>False</button>
-										</div>
-									</div>
-								</div>
-							);
-						}
+									// ── Plain conditional (not linked to any client-level value) ──
+									if (varInfo.is_conditional) {
+										const isTrue = variableValues[name] === "true";
+										const isFalse = variableValues[name] === "false";
+										return (
+											<div
+												key={name}
+												data-var-entry={name}
+												className={`w-full rounded-lg border bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] ${selectedVariable === name ? "ring-2 ring-warning border-warning" : "border-base-300"}`}
+											>
+												<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300 rounded-t-lg">
+													<span className="text-sm font-bold">{name}</span>
+													<div className="join">
+														<button
+															type="button"
+															className="join-item btn btn-ghost btn-xs px-1"
+															onClick={() => scrollToOccurrence(name, "prev")}
+															title="Previous occurrence"
+														>
+															&lsaquo;
+														</button>
+														<button
+															type="button"
+															className="join-item btn btn-ghost btn-xs px-1"
+															onClick={() => scrollToOccurrence(name, "next")}
+															title="Next occurrence"
+														>
+															&rsaquo;
+														</button>
+													</div>
+												</div>
+												<div className="p-3">
+													<div className="flex rounded-lg overflow-hidden border border-base-300">
+														<button
+															type="button"
+															className={`flex-1 text-xs font-semibold py-1.5 transition-colors ${isTrue ? "bg-success text-success-content" : "bg-base-200 text-base-content/40 hover:bg-base-300"}`}
+															onClick={() => {
+																setSelectedVariable(name);
+																handleVariableChange(name, "true");
+															}}
+															onFocus={() => setSelectedVariable(name)}
+														>
+															True
+														</button>
+														<button
+															type="button"
+															className={`flex-1 text-xs font-semibold py-1.5 transition-colors ${isFalse ? "bg-error text-error-content" : "bg-base-200 text-base-content/40 hover:bg-base-300"}`}
+															onClick={() => {
+																setSelectedVariable(name);
+																handleVariableChange(name, "false");
+															}}
+															onFocus={() => setSelectedVariable(name)}
+														>
+															False
+														</button>
+													</div>
+												</div>
+											</div>
+										);
+									}
 
-						// ── Plain replacement variable (no client-level value) ──
-						const isFilled = Boolean(variableValues[name]);
-						const isMalformed = malformedConditionals.has(name);
-						const schemaEntry = templateSchema?.variables[name];
-						const varType = schemaEntry?.var_type ?? "text";
-						const val = variableValues[name] ?? "";
-						return (
-							<div
-								key={name}
-								data-var-entry={name}
-								className={`w-full rounded-lg border bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] ${selectedVariable === name ? "ring-2 ring-warning border-warning" : isMalformed ? "border-warning/50" : "border-base-300"}`}
-							>
-								<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300 rounded-t-lg">
-									<button
-										type="button"
-										className="text-sm font-bold flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer"
-										onClick={() => openQuestionnaire()}
-										title={isMalformed ? "Possible malformed conditional — check ?? and :: syntax in template" : "Open in questionnaire"}
-									>
-										<StatusDot filled={isFilled} />
-										{name}
-										{isMalformed && (
-											<span className="badge badge-warning badge-xs ml-1" title="This variable contains ?? or :: but wasn't parsed as a conditional. Check the template syntax.">!</span>
-										)}
-									</button>
-									<div className="join">
-										<button type="button" className="join-item btn btn-ghost btn-xs px-1" onClick={() => scrollToOccurrence(name, "prev")} title="Previous occurrence">&lsaquo;</button>
-										<button type="button" className="join-item btn btn-ghost btn-xs px-1" onClick={() => scrollToOccurrence(name, "next")} title="Next occurrence">&rsaquo;</button>
-									</div>
-								</div>
-								<div className="p-3">
-									{varType === "date" ? (
-										<div className="flex gap-2">
-											<input type="date" className="input input-bordered input-sm flex-1" value={val} onChange={(e) => handleVariableChange(name, e.target.value)} onFocus={() => setSelectedVariable(name)} />
-											{schemaEntry?.required && !val && <span className="badge badge-error badge-sm self-center">required</span>}
+									// ── Plain replacement variable (no client-level value) ──
+									const isFilled = Boolean(variableValues[name]);
+									const isMalformed = malformedConditionals.has(name);
+									const schemaEntry = templateSchema?.variables[name];
+									const varType = schemaEntry?.var_type ?? "text";
+									const val = variableValues[name] ?? "";
+									return (
+										<div
+											key={name}
+											data-var-entry={name}
+											className={`w-full rounded-lg border bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] ${selectedVariable === name ? "ring-2 ring-warning border-warning" : isMalformed ? "border-warning/50" : "border-base-300"}`}
+										>
+											<div className="flex items-center justify-between px-3 py-2 bg-base-200/60 border-b border-base-300 rounded-t-lg">
+												<button
+													type="button"
+													className="text-sm font-bold flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer"
+													onClick={() => openQuestionnaire()}
+													title={
+														isMalformed
+															? "Possible malformed conditional — check ?? and :: syntax in template"
+															: "Open in questionnaire"
+													}
+												>
+													<StatusDot filled={isFilled} />
+													{name}
+													{isMalformed && (
+														<span
+															className="badge badge-warning badge-xs ml-1"
+															title="This variable contains ?? or :: but wasn't parsed as a conditional. Check the template syntax."
+														>
+															!
+														</span>
+													)}
+												</button>
+												<div className="join">
+													<button
+														type="button"
+														className="join-item btn btn-ghost btn-xs px-1"
+														onClick={() => scrollToOccurrence(name, "prev")}
+														title="Previous occurrence"
+													>
+														&lsaquo;
+													</button>
+													<button
+														type="button"
+														className="join-item btn btn-ghost btn-xs px-1"
+														onClick={() => scrollToOccurrence(name, "next")}
+														title="Next occurrence"
+													>
+														&rsaquo;
+													</button>
+												</div>
+											</div>
+											<div className="p-3">
+												{varType === "date" ? (
+													<div className="flex gap-2">
+														<input
+															type="date"
+															className="input input-bordered input-sm flex-1"
+															value={val}
+															onChange={(e) =>
+																handleVariableChange(name, e.target.value)
+															}
+															onFocus={() => setSelectedVariable(name)}
+														/>
+														{schemaEntry?.required && !val && (
+															<span className="badge badge-error badge-sm self-center">
+																required
+															</span>
+														)}
+													</div>
+												) : varType === "currency" ? (
+													<div className="flex gap-2">
+														<span className="flex items-center text-base-content/50 text-sm pl-1">
+															$
+														</span>
+														<input
+															type="text"
+															inputMode="decimal"
+															className="input input-bordered input-sm flex-1"
+															placeholder="0.00"
+															value={val}
+															onChange={(e) =>
+																handleVariableChange(
+																	name,
+																	e.target.value.replace(/[^0-9.,]/g, ""),
+																)
+															}
+															onFocus={() => setSelectedVariable(name)}
+														/>
+														{schemaEntry?.required && !val && (
+															<span className="badge badge-error badge-sm self-center">
+																required
+															</span>
+														)}
+													</div>
+												) : (
+													<div className="flex gap-2">
+														<input
+															type="text"
+															className="input input-bordered input-sm flex-1"
+															placeholder={`Enter ${name}`}
+															value={val}
+															onChange={(e) =>
+																handleVariableChange(name, e.target.value)
+															}
+															onFocus={() => setSelectedVariable(name)}
+														/>
+														{schemaEntry?.required && !val && (
+															<span className="badge badge-error badge-sm self-center">
+																required
+															</span>
+														)}
+													</div>
+												)}
+												{schemaEntry?.help && (
+													<p className="text-xs text-base-content/40 mt-1">
+														{schemaEntry.help}
+													</p>
+												)}
+											</div>
 										</div>
-									) : varType === "currency" ? (
-										<div className="flex gap-2">
-											<span className="flex items-center text-base-content/50 text-sm pl-1">$</span>
-											<input type="text" inputMode="decimal" className="input input-bordered input-sm flex-1" placeholder="0.00" value={val} onChange={(e) => handleVariableChange(name, e.target.value.replace(/[^0-9.,]/g, ""))} onFocus={() => setSelectedVariable(name)} />
-											{schemaEntry?.required && !val && <span className="badge badge-error badge-sm self-center">required</span>}
-										</div>
-									) : (
-										<div className="flex gap-2">
-											<input type="text" className="input input-bordered input-sm flex-1" placeholder={`Enter ${name}`} value={val} onChange={(e) => handleVariableChange(name, e.target.value)} onFocus={() => setSelectedVariable(name)} />
-											{schemaEntry?.required && !val && <span className="badge badge-error badge-sm self-center">required</span>}
-										</div>
-									)}
-									{schemaEntry?.help && <p className="text-xs text-base-content/40 mt-1">{schemaEntry.help}</p>}
-								</div>
-							</div>
-						);
-					});
-					})()}
-				</div>
-				)}
+									);
+								});
+							})()}
+						</div>
+					)}
 				</div>
 
 				{/* Document preview */}

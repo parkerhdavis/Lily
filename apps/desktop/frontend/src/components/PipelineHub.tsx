@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useSettingsStore } from "@/stores/settingsStore";
-import { useWorkflowStore } from "@/stores/workflowStore";
-import { useQuestionnaireStore } from "@/stores/questionnaireStore";
-import type { TemplateTreeNode, VariableInfo } from "@/types";
-import type { QuestionnaireIndex } from "@/types/questionnaire";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
+import { useQuestionnaireStore } from "@/stores/questionnaireStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useWorkflowStore } from "@/stores/workflowStore";
+import type { TemplateTreeNode, VariableInfo } from "@/types";
+import type { QuestionnaireIndex } from "@/types/questionnaire";
 import { extractFilename } from "@/utils/path";
 
 // ─── Tree building (reused from TemplatePicker) ─────────────────────────────
@@ -64,9 +64,7 @@ export default function PipelineHub() {
 	const { settings, save } = useSettingsStore();
 	const goToHub = useWorkflowStore((s) => s.goToHub);
 	const goToSettings = useWorkflowStore((s) => s.goToSettings);
-	const openTemplateEditor = useWorkflowStore(
-		(s) => s.openTemplateEditor,
-	);
+	const openTemplateEditor = useWorkflowStore((s) => s.openTemplateEditor);
 	const goToQuestionnaireEditor = useWorkflowStore(
 		(s) => s.goToQuestionnaireEditor,
 	);
@@ -80,9 +78,7 @@ export default function PipelineHub() {
 	const [activeTab, setActiveTab] = useState<PipelineTab>("templates");
 	const [templates, setTemplates] = useState<string[]>([]);
 	const [loading, setLoading] = useState(false);
-	const [selectedTemplate, setSelectedTemplate] = useState<string | null>(
-		null,
-	);
+	const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
 	const [templateVars, setTemplateVars] = useState<VariableInfo[]>([]);
 	const [loadingVars, setLoadingVars] = useState(false);
 
@@ -99,9 +95,7 @@ export default function PipelineHub() {
 				templatesDir: settings.templates_dir,
 			})
 				.then(setTemplates)
-				.catch((err) =>
-					console.error("Failed to load templates:", err),
-				)
+				.catch((err) => console.error("Failed to load templates:", err))
 				.finally(() => setLoading(false));
 		}
 	}, [settings.templates_dir]);
@@ -207,18 +201,25 @@ export default function PipelineHub() {
 							goToQuestionnaireEditor();
 						}}
 						onNewQuestionnaire={async () => {
-							const def =
-								await createQuestionnaire(
-									"New Questionnaire",
-								);
+							const def = await createQuestionnaire("New Questionnaire");
 							await loadQuestionnaire(def.id);
 							goToQuestionnaireEditor();
 						}}
 						onGoToSettings={goToSettings}
 					/>
 				)}
-				{activeTab === "processes" && <PlaceholderTab title="Processes" description="Define common client processes and document packages. Group templates into workflows that can be assigned to clients." />}
-				{activeTab === "team" && <PlaceholderTab title="Team" description="Manage team members, roles, and work assignments. Define who handles which parts of the client engagement process." />}
+				{activeTab === "processes" && (
+					<PlaceholderTab
+						title="Processes"
+						description="Define common client processes and document packages. Group templates into workflows that can be assigned to clients."
+					/>
+				)}
+				{activeTab === "team" && (
+					<PlaceholderTab
+						title="Team"
+						description="Manage team members, roles, and work assignments. Define who handles which parts of the client engagement process."
+					/>
+				)}
 			</div>
 		</div>
 	);
@@ -267,8 +268,7 @@ function TemplatesTab({
 		return (
 			<div className="flex flex-col items-center justify-center h-full gap-4 p-8">
 				<p className="text-base-content/50 text-center max-w-sm">
-					Set a templates folder to browse and manage your document
-					templates.
+					Set a templates folder to browse and manage your document templates.
 				</p>
 				<button
 					type="button"
@@ -294,14 +294,13 @@ function TemplatesTab({
 			{/* Left: template tree */}
 			<div className="w-72 shrink-0 border-r border-base-300 overflow-y-auto p-4">
 				{/* CLIENT SETUP section */}
-				<SectionHeading className="mb-3">
-					Client Setup
-				</SectionHeading>
+				<SectionHeading className="mb-3">Client Setup</SectionHeading>
 				<div className="flex flex-col gap-0.5 mb-4">
 					{!questionnairesDir ? (
 						<div className="px-3 py-2 space-y-2">
 							<p className="text-xs text-base-content/40">
-								Set a questionnaires folder in Settings to manage questionnaire definitions.
+								Set a questionnaires folder in Settings to manage questionnaire
+								definitions.
 							</p>
 							<button
 								type="button"
@@ -335,14 +334,9 @@ function TemplatesTab({
 											d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
 										/>
 									</svg>
-									<span className="truncate flex-1">
-										{q.name}
-									</span>
-									{q.id ===
-										questionnaireIndex.active_questionnaire_id && (
-										<span className="badge badge-xs badge-primary">
-											Active
-										</span>
+									<span className="truncate flex-1">{q.name}</span>
+									{q.id === questionnaireIndex.active_questionnaire_id && (
+										<span className="badge badge-xs badge-primary">Active</span>
 									)}
 								</button>
 							))}
@@ -366,9 +360,7 @@ function TemplatesTab({
 										d="M12 4v16m8-8H4"
 									/>
 								</svg>
-								<span className="truncate">
-									New Questionnaire
-								</span>
+								<span className="truncate">New Questionnaire</span>
 							</button>
 						</>
 					)}
@@ -377,22 +369,14 @@ function TemplatesTab({
 				<div className="border-b border-base-300 mb-4" />
 
 				{/* TEMPLATE LIBRARY section */}
-				<SectionHeading className="mb-3">
-					Template Library
-				</SectionHeading>
+				<SectionHeading className="mb-3">Template Library</SectionHeading>
 				{tree.length === 0 ? (
-					<p className="text-sm text-base-content/50">
-						No templates found.
-					</p>
+					<p className="text-sm text-base-content/50">No templates found.</p>
 				) : (
 					<div className="flex flex-col gap-0.5">
 						{tree.map((node) => (
 							<TreeItem
-								key={
-									node.kind === "file"
-										? node.relPath
-										: node.name
-								}
+								key={node.kind === "file" ? node.relPath : node.name}
 								node={node}
 								selectedTemplate={selectedTemplate}
 								onSelect={onSelectTemplate}
@@ -450,13 +434,9 @@ function TemplateDetails({
 
 	return (
 		<div className="max-w-lg">
-			<h3 className="text-xl font-semibold mb-1">
-				{stripDocx(filename)}
-			</h3>
+			<h3 className="text-xl font-semibold mb-1">{stripDocx(filename)}</h3>
 			{folder && (
-				<p className="text-xs text-base-content/40 mb-4 font-mono">
-					{folder}
-				</p>
+				<p className="text-xs text-base-content/40 mb-4 font-mono">{folder}</p>
 			)}
 
 			<div className="flex gap-2 mb-6">
@@ -490,9 +470,7 @@ function TemplateDetails({
 					{/* Summary */}
 					<div className="flex gap-4">
 						<div className="px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
-							<div className="text-2xl font-bold">
-								{variables.length}
-							</div>
+							<div className="text-2xl font-bold">{variables.length}</div>
 							<div className="text-xs text-base-content/50">
 								Total Variables
 							</div>
@@ -502,9 +480,7 @@ function TemplateDetails({
 								<div className="text-2xl font-bold">
 									{replacementVars.length}
 								</div>
-								<div className="text-xs text-base-content/50">
-									Replacement
-								</div>
+								<div className="text-xs text-base-content/50">Replacement</div>
 							</div>
 						)}
 						{conditionalVars.length > 0 && (
@@ -512,9 +488,7 @@ function TemplateDetails({
 								<div className="text-2xl font-bold">
 									{conditionalVars.length}
 								</div>
-								<div className="text-xs text-base-content/50">
-									Conditional
-								</div>
+								<div className="text-xs text-base-content/50">Conditional</div>
 							</div>
 						)}
 					</div>
@@ -527,10 +501,7 @@ function TemplateDetails({
 							</SectionHeading>
 							<div className="rounded-xl border border-base-300 divide-y divide-base-200">
 								{replacementVars.map((v) => (
-									<div
-										key={v.display_name}
-										className="px-3 py-2 text-sm"
-									>
+									<div key={v.display_name} className="px-3 py-2 text-sm">
 										<span className="font-mono text-xs">
 											{"{"}
 											{v.display_name}
@@ -554,12 +525,8 @@ function TemplateDetails({
 										key={v.display_name}
 										className="px-3 py-2 text-sm flex items-center gap-2"
 									>
-										<span className="badge badge-xs badge-warning">
-											?
-										</span>
-										<span className="font-mono text-xs">
-											{v.display_name}
-										</span>
+										<span className="badge badge-xs badge-warning">?</span>
+										<span className="font-mono text-xs">{v.display_name}</span>
 									</div>
 								))}
 							</div>
@@ -651,11 +618,7 @@ function TreeFolder({
 				<div className="ml-4 border-l border-base-300 pl-1">
 					{node.children.map((child) => (
 						<TreeItem
-							key={
-								child.kind === "file"
-									? child.relPath
-									: child.name
-							}
+							key={child.kind === "file" ? child.relPath : child.name}
 							node={child}
 							selectedTemplate={selectedTemplate}
 							onSelect={onSelect}
@@ -716,14 +679,8 @@ function PlaceholderTab({
 	const lilyIcon = useLilyIcon();
 	return (
 		<div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-			<img
-				src={lilyIcon}
-				alt=""
-				className="size-16 opacity-20"
-			/>
-			<h3 className="text-xl font-semibold text-base-content/60">
-				{title}
-			</h3>
+			<img src={lilyIcon} alt="" className="size-16 opacity-20" />
+			<h3 className="text-xl font-semibold text-base-content/60">{title}</h3>
 			<p className="text-sm text-base-content/40 text-center max-w-sm">
 				{description}
 			</p>

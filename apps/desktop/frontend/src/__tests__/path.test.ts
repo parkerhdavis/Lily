@@ -7,7 +7,9 @@ describe("extractFilename", () => {
 	});
 
 	test("extracts filename from backslash path", () => {
-		expect(extractFilename("C:\\Users\\user\\docs\\file.docx")).toBe("file.docx");
+		expect(extractFilename("C:\\Users\\user\\docs\\file.docx")).toBe(
+			"file.docx",
+		);
 	});
 
 	test("extracts filename from mixed separators", () => {
@@ -29,7 +31,9 @@ describe("extractFolderName", () => {
 	});
 
 	test("handles backslash paths", () => {
-		expect(extractFolderName("C:\\Users\\user\\Clients\\Doe, Jane")).toBe("Doe, Jane");
+		expect(extractFolderName("C:\\Users\\user\\Clients\\Doe, Jane")).toBe(
+			"Doe, Jane",
+		);
 	});
 
 	test("handles trailing slash", () => {

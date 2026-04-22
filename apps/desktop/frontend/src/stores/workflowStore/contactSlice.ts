@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Contact } from "@/types";
 import { useUndoStore } from "@/stores/undoStore";
+import type { Contact } from "@/types";
 import { extractFilename } from "@/utils/path";
 import type { WorkflowSlice } from "./types";
 
@@ -67,9 +67,7 @@ export const createContactSlice: WorkflowSlice = (set, get) => ({
 		const { workingDir } = get();
 		if (!workingDir) return;
 
-		const oldContact = get().lilyFile?.contacts.find(
-			(c) => c.id === contactId,
-		);
+		const oldContact = get().lilyFile?.contacts.find((c) => c.id === contactId);
 		await invoke("delete_contact", { workingDir, contactId });
 		await get().reloadLilyFile();
 		if (oldContact) {
