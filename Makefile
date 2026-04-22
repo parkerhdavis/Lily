@@ -44,20 +44,17 @@ ifeq ($(DETECTED_OS),windows)
     SHELL := pwsh.exe
     .SHELLFLAGS := -NoProfile -Command
     BUN := bun
-    # Run the tauri CLI JS entry point directly with bun to avoid needing node on PATH.
-    # Path is relative to $(BACKEND) — backend and frontend are siblings under
-    # apps/desktop/, so ..\frontend\node_modules\... resolves correctly.
-    TAURI := bun ..\frontend\node_modules\@tauri-apps\cli\tauri.js
+    # @tauri-apps/cli is a root devDependency, so Bun hoists the bin to
+    # <repo>/node_modules/.bin/tauri and bunx resolves from any cwd.
+    TAURI := bunx tauri
     MKDIR := New-Item -ItemType Directory -Force -Path
     RM := Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     NULL := $$null
 else
     BUN := bun
-    # Run the tauri CLI JS entry point directly with bun to avoid the #!/usr/bin/env node shim,
-    # since node may not be on PATH (bun replaces it as our JS runtime).
-    # Path is relative to $(BACKEND) — backend and frontend are siblings under
-    # apps/desktop/, so ../frontend/node_modules/... resolves correctly.
-    TAURI := bun ../frontend/node_modules/@tauri-apps/cli/tauri.js
+    # @tauri-apps/cli is a root devDependency, so Bun hoists the bin to
+    # <repo>/node_modules/.bin/tauri and bunx resolves from any cwd.
+    TAURI := bunx tauri
     MKDIR := mkdir -p
     RM := rm -rf
     NULL := /dev/null
