@@ -86,7 +86,7 @@ export const questionnaireDef: QuestionnaireDef = [
 				kind: "text",
 				variable: "Client County",
 				label: "County of Residence",
-				placeholder: "e.g. Denver County",
+				placeholder: "e.g. Denver",
 			},
 		],
 	},
@@ -416,6 +416,14 @@ export const questionnaireDef: QuestionnaireDef = [
 				label: "Secondary Trustee",
 				variableMappings: {
 					"Secondary Trustee Full Name": "full_name",
+				},
+			},
+			{
+				kind: "contact-role",
+				role: "Tertiary Trustee",
+				label: "Tertiary Trustee",
+				variableMappings: {
+					"Tertiary Trustee Full Name": "full_name",
 				},
 			},
 		],
