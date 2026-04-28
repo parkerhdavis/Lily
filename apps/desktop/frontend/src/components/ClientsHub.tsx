@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import CopyFromSpouseDialog from "@/components/CopyFromSpouseDialog";
 import MigrationDialog, {
 	type FieldMapping,
 	type MigrationReport,
@@ -577,6 +578,7 @@ function ClientContentPane({
 	>;
 }) {
 	const [docSearch, setDocSearch] = useState("");
+	const [showCopyFromSpouse, setShowCopyFromSpouse] = useState(false);
 
 	// Document consistency check: compare .lily metadata against actual files on disk
 	const [missingOnDisk, setMissingOnDisk] = useState<Set<string>>(new Set());
@@ -746,6 +748,12 @@ function ClientContentPane({
 	const folderName = extractFolderName(workingDir);
 	const contactCount = lilyFile.contacts?.length ?? 0;
 	const docCount = allDocs.length;
+	const isFreshWorkspace =
+		!lilyFile.questionnaire_id &&
+		docCount === 0 &&
+		contactCount === 0 &&
+		Object.keys(lilyFile.variables ?? {}).length === 0 &&
+		(lilyFile.required_documents ?? []).length === 0;
 
 	return (
 		<>
@@ -754,6 +762,12 @@ function ClientContentPane({
 					report={migrationReport}
 					onApply={handleApplyMigration}
 					onSkip={handleSkipMigration}
+				/>
+			)}
+			{showCopyFromSpouse && (
+				<CopyFromSpouseDialog
+					targetDir={workingDir}
+					onClose={() => setShowCopyFromSpouse(false)}
 				/>
 			)}
 			<div className="flex-1 flex flex-col min-w-0">
@@ -827,6 +841,26 @@ function ClientContentPane({
 				{/* Scrollable content */}
 				<div className="flex-1 overflow-y-auto p-6">
 					<div className="max-w-3xl space-y-6">
+						{isFreshWorkspace && (
+							<div className="rounded-xl border border-base-300 bg-base-200/40 p-4 flex items-start gap-3">
+								<div className="flex-1 min-w-0">
+									<div className="font-medium text-sm">
+										Spouse already set up?
+									</div>
+									<div className="text-sm text-base-content/60 mt-0.5">
+										Copy questionnaire data, contacts, and documents from their
+										folder, with the client/spouse swap applied.
+									</div>
+								</div>
+								<button
+									type="button"
+									className="btn btn-sm btn-outline"
+									onClick={() => setShowCopyFromSpouse(true)}
+								>
+									Copy from Spouse
+								</button>
+							</div>
+						)}
 						{/* Questionnaire card */}
 						<button
 							type="button"

@@ -1546,3 +1546,824 @@ pub fn import_client_data(working_dir: String, import_path: String) -> Result<Li
     write_lily_file(&working_dir, &lily)?;
     read_lily_file(&working_dir)
 }
+
+// ─── Copy from spouse ────────────────────────────────────────────────────
+
+/// `Client *` variables that swap with the promoted spouse contact's
+/// properties. The first element is the variable name; the second is the
+/// matching `Contact` property key recognized by `get_contact_property`.
+const CLIENT_VAR_TO_CONTACT_PROP: &[(&str, &str)] = &[
+    ("Client Full Name", "full_name"),
+    ("Client First Name", "first_name"),
+    ("Client Middle Name", "middle_name"),
+    ("Client Last Name", "last_name"),
+    ("Client Phone", "phone"),
+    ("Client Email", "email"),
+    ("Client Address", "address"),
+    ("Client City", "city"),
+    ("Client State", "state"),
+    ("Client Zip", "zip"),
+];
+
+/// Variables that `resolve_contact_variables` regenerates from contacts.
+/// Carrying these from the source would briefly seed stale values; instead
+/// we drop them and let resolve_contact_variables repopulate.
+const DERIVED_VARS_TO_DROP: &[&str] = &[
+    "Client Spouse Name",
+    "Client Children Full Names",
+    "Client has Children",
+    "Has Minor Children",
+];
+
+/// True if the variable name is a derived helper that
+/// `resolve_contact_variables` regenerates (so we should drop it on copy).
+fn is_derived_helper_var(name: &str) -> bool {
+    name.starts_with("Has ")
+        || name.ends_with(" And Name")
+        || name.ends_with(" And Phone")
+        || name.ends_with(" Verb")
+        || name.ends_with(" Title")
+        || DERIVED_VARS_TO_DROP.contains(&name)
+}
+
+/// True if a `LilyFile` has no user-meaningful content — i.e., looks like a
+/// freshly-created or default project file.
+fn is_empty_project(lily: &LilyFile) -> bool {
+    lily.variables.is_empty()
+        && lily.documents.is_empty()
+        && lily.contacts.is_empty()
+        && lily.contact_bindings.is_empty()
+        && lily.questionnaire_notes.is_empty()
+        && lily.required_documents.is_empty()
+        && lily.questionnaire_id.is_none()
+}
+
+/// Build the swapped `LilyFile` for the target, given the source and the
+/// chosen spouse contact. Pure: does no I/O. The new spouse contact (the
+/// original client's "demoted" entry) gets `new_spouse_id` as its UUID so
+/// callers can retarget bindings predictably.
+fn build_swapped_lily(source: &LilyFile, spouse: &Contact, new_spouse_id: &str) -> LilyFile {
+    let mut new_lily = LilyFile::default();
+
+    // Copy variables, dropping client-identity vars (we'll set fresh below)
+    // and derived helpers (`resolve_contact_variables` regenerates them).
+    for (k, v) in &source.variables {
+        if CLIENT_VAR_TO_CONTACT_PROP.iter().any(|(name, _)| name == k) {
+            continue;
+        }
+        if is_derived_helper_var(k) {
+            continue;
+        }
+        new_lily.variables.insert(k.clone(), v.clone());
+    }
+
+    // Promote spouse contact's properties into Client * variables.
+    for (var_name, prop_key) in CLIENT_VAR_TO_CONTACT_PROP {
+        let value = get_contact_property(spouse, prop_key);
+        new_lily.variables.insert(var_name.to_string(), value);
+    }
+
+    // Carry over all contacts except the promoted spouse, preserving IDs.
+    // Then add a new contact representing the original client (relationship
+    // = "Spouse"), built from source's `Client *` variables.
+    for c in &source.contacts {
+        if c.id == spouse.id {
+            continue;
+        }
+        new_lily.contacts.push(c.clone());
+    }
+    let original_client_as_spouse = Contact {
+        id: new_spouse_id.to_string(),
+        full_name: source
+            .variables
+            .get("Client Full Name")
+            .cloned()
+            .unwrap_or_default(),
+        first_name: source
+            .variables
+            .get("Client First Name")
+            .cloned()
+            .unwrap_or_default(),
+        middle_name: source
+            .variables
+            .get("Client Middle Name")
+            .cloned()
+            .unwrap_or_default(),
+        last_name: source
+            .variables
+            .get("Client Last Name")
+            .cloned()
+            .unwrap_or_default(),
+        relationship: "Spouse".to_string(),
+        other_relationship: String::new(),
+        phone: source
+            .variables
+            .get("Client Phone")
+            .cloned()
+            .unwrap_or_default(),
+        email: source
+            .variables
+            .get("Client Email")
+            .cloned()
+            .unwrap_or_default(),
+        address: source
+            .variables
+            .get("Client Address")
+            .cloned()
+            .unwrap_or_default(),
+        city: source
+            .variables
+            .get("Client City")
+            .cloned()
+            .unwrap_or_default(),
+        state: source
+            .variables
+            .get("Client State")
+            .cloned()
+            .unwrap_or_default(),
+        zip: source
+            .variables
+            .get("Client Zip")
+            .cloned()
+            .unwrap_or_default(),
+        is_minor: false,
+    };
+    new_lily.contacts.push(original_client_as_spouse);
+
+    // Copy bindings, retargeting any that pointed at the promoted spouse.
+    for (role, binding) in &source.contact_bindings {
+        let mut new_binding = binding.clone();
+        if new_binding.contact_id.as_deref() == Some(&spouse.id) {
+            new_binding.contact_id = Some(new_spouse_id.to_string());
+        }
+        new_lily.contact_bindings.insert(role.clone(), new_binding);
+    }
+
+    new_lily.questionnaire_id = source.questionnaire_id.clone();
+    new_lily.questionnaire_version = source.questionnaire_version;
+    new_lily.questionnaire_notes = source.questionnaire_notes.clone();
+
+    // Required documents: new IDs, reset status. Keep document_filename so
+    // recreated docs (same filenames) stay linked.
+    for req in &source.required_documents {
+        new_lily.required_documents.push(RequiredDocument {
+            id: Uuid::new_v4().to_string(),
+            template_rel_path: req.template_rel_path.clone(),
+            status: DocumentStatus::NotStarted,
+            document_filename: req.document_filename.clone(),
+            notes: req.notes.clone(),
+        });
+    }
+
+    new_lily
+}
+
+/// Result of a copy-from-spouse operation.
+#[derive(Debug, Serialize)]
+pub struct CopyFromSpouseResult {
+    /// The fully resolved target `.lily` file after the swap and document
+    /// recreation.
+    pub lily: LilyFile,
+    /// Filenames successfully recreated in the target directory.
+    pub copied_documents: Vec<String>,
+    /// Filenames that could not be recreated (e.g., template missing).
+    pub skipped_documents: Vec<String>,
+    /// Non-fatal warnings to surface to the user.
+    pub warnings: Vec<String>,
+}
+
+/// Rename a copied document filename so it reflects the target client's
+/// name instead of the source client's. Tries the full "First Last" form
+/// first (most common, produced by the frontend's `buildDocumentFilename`),
+/// then a first-name-only fallback, then a last-name-only fallback. Returns
+/// the original filename unchanged if no source name appears in it.
+///
+/// Only the first occurrence is replaced (matches `replacen(..., 1)`), so
+/// names that recur elsewhere in the filename — unlikely but possible —
+/// won't be double-substituted.
+fn swap_client_name_in_filename(
+    filename: &str,
+    source_first: &str,
+    source_last: &str,
+    new_first: &str,
+    new_last: &str,
+) -> String {
+    let source_full = format!("{} {}", source_first.trim(), source_last.trim());
+    let new_full = format!("{} {}", new_first.trim(), new_last.trim());
+
+    if !source_first.trim().is_empty()
+        && !source_last.trim().is_empty()
+        && filename.contains(&source_full)
+    {
+        return filename.replacen(&source_full, &new_full, 1);
+    }
+    if !source_first.trim().is_empty()
+        && !new_first.trim().is_empty()
+        && filename.contains(source_first.trim())
+    {
+        return filename.replacen(source_first.trim(), new_first.trim(), 1);
+    }
+    if !source_last.trim().is_empty()
+        && !new_last.trim().is_empty()
+        && filename.contains(source_last.trim())
+    {
+        return filename.replacen(source_last.trim(), new_last.trim(), 1);
+    }
+    filename.to_string()
+}
+
+/// Ensure `filename` doesn't collide with anything in `dir` or with names
+/// already in `taken`. If it does, appends ` (2)`, ` (3)`, ... before the
+/// extension. Records the chosen name in `taken`.
+fn dedupe_filename(
+    dir: &Path,
+    filename: &str,
+    taken: &mut std::collections::HashSet<String>,
+) -> String {
+    let original = Path::new(filename);
+    let stem = original
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| filename.to_string());
+    let ext = original
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+
+    let mut candidate = filename.to_string();
+    let mut counter = 2u32;
+    while taken.contains(&candidate) || dir.join(&candidate).exists() {
+        candidate = format!("{} ({}){}", stem, counter, ext);
+        counter += 1;
+    }
+    taken.insert(candidate.clone());
+    candidate
+}
+
+/// Resolve which contact in `source` should be promoted to the client of
+/// `target`. If `spouse_contact_id` is provided, verify it matches a real
+/// contact. Otherwise auto-pick the single contact with relationship
+/// "Spouse"; error if there's not exactly one.
+fn resolve_spouse_contact<'a>(
+    source: &'a LilyFile,
+    spouse_contact_id: Option<&str>,
+) -> Result<&'a Contact, String> {
+    if let Some(id) = spouse_contact_id {
+        return source
+            .contacts
+            .iter()
+            .find(|c| c.id == id)
+            .ok_or_else(|| format!("Contact '{}' not found in source .lily", id));
+    }
+    let candidates: Vec<&Contact> = source
+        .contacts
+        .iter()
+        .filter(|c| c.relationship.eq_ignore_ascii_case("Spouse"))
+        .collect();
+    match candidates.len() {
+        0 => Err("Source .lily has no contact with relationship 'Spouse'".to_string()),
+        1 => Ok(candidates[0]),
+        n => Err(format!(
+            "Source .lily has {} 'Spouse' contacts; specify spouse_contact_id to choose",
+            n
+        )),
+    }
+}
+
+/// Recreate a single document in the target directory from its source
+/// template, baking in the target's resolved variables. Returns
+/// `Ok(filename)` on success or `Err(message)` to record as a warning.
+fn recreate_document_from_template(
+    target_dir: &str,
+    templates_dir: &str,
+    filename: &str,
+    template_rel_path: &str,
+    target_variables: &HashMap<String, String>,
+) -> Result<(), String> {
+    let template_full = Path::new(templates_dir).join(template_rel_path);
+    if !template_full.exists() {
+        return Err(format!(
+            "template not found at '{}'",
+            template_rel_path
+        ));
+    }
+    let template_path_str = template_full.to_string_lossy().to_string();
+
+    let docx_path = crate::docx_ops::copy_template(
+        template_path_str,
+        target_dir.to_string(),
+        filename.to_string(),
+        template_rel_path.to_string(),
+    )?;
+
+    // Extract variable names so future opens know what fields apply, even
+    // after placeholders are replaced.
+    let variable_names: Vec<String> =
+        match crate::docx_ops::extract_variables(docx_path.clone()) {
+            Ok(vars) => vars.into_iter().map(|v| v.display_name).collect(),
+            Err(_) => Vec::new(),
+        };
+    {
+        let mut tl = read_lily_file(target_dir)?;
+        if let Some(meta) = tl.documents.get_mut(filename) {
+            meta.variable_names = variable_names;
+        }
+        write_lily_file(target_dir, &tl)?;
+    }
+
+    // Build conditional schema and bake in variable values.
+    let schema = crate::docx_ops::load_template_schema(
+        templates_dir.to_string(),
+        template_rel_path.to_string(),
+    )
+    .unwrap_or_default();
+    let mut conditional_schema: HashMap<String, Vec<crate::docx_ops::ConditionalDef>> =
+        HashMap::new();
+    for (name, entry) in &schema.variables {
+        if !entry.conditions.is_empty() {
+            conditional_schema.insert(name.clone(), entry.conditions.clone());
+        } else if let Some(c) = &entry.condition {
+            conditional_schema.insert(name.clone(), vec![c.clone()]);
+        }
+    }
+
+    crate::docx_ops::replace_variables_v2(
+        docx_path,
+        target_variables.clone(),
+        conditional_schema,
+    )?;
+
+    Ok(())
+}
+
+/// Create a new client `.lily` in `target_dir` by promoting a Spouse
+/// contact in `source_dir` to the client of the new file (and demoting the
+/// original client to a Spouse contact). Carries over questionnaire data,
+/// non-spouse contacts, contact bindings, and required documents; recreates
+/// each of source's documents from template with the swapped variable
+/// values. Manual edits made to source's `.docx` files are NOT preserved.
+#[tauri::command]
+pub fn copy_from_spouse_lily(
+    target_dir: String,
+    source_dir: String,
+    spouse_contact_id: Option<String>,
+    templates_dir: String,
+) -> Result<CopyFromSpouseResult, String> {
+    info!(%source_dir, %target_dir, "Copying from spouse");
+
+    if source_dir == target_dir {
+        return Err("Source and target directories must be different".to_string());
+    }
+
+    // Guard: target must not already have a non-empty .lily project.
+    let existing = read_lily_file(&target_dir)?;
+    if !is_empty_project(&existing) {
+        return Err(
+            "Target directory already has a non-empty .lily project. Choose an empty folder."
+                .to_string(),
+        );
+    }
+
+    let source = read_lily_file(&source_dir)?;
+    let spouse = resolve_spouse_contact(&source, spouse_contact_id.as_deref())?;
+    let new_spouse_id = Uuid::new_v4().to_string();
+    let new_lily = build_swapped_lily(&source, spouse, &new_spouse_id);
+
+    // Persist the swapped .lily and let resolve_contact_variables compute
+    // derived values (Client Spouse Name, Has *, co-agent helpers).
+    write_lily_file(&target_dir, &new_lily)?;
+    resolve_contact_variables(target_dir.clone())?;
+
+    // Re-read so we have the resolved variable pool to feed into document
+    // recreation.
+    let resolved = read_lily_file(&target_dir)?;
+
+    let mut warnings: Vec<String> = Vec::new();
+    let mut copied_documents: Vec<String> = Vec::new();
+    let mut skipped_documents: Vec<String> = Vec::new();
+
+    // Build name-swap inputs: source filenames embed the source client's
+    // name (per `buildDocumentFilename` on the frontend), and we want them
+    // to embed the new client's name in the target.
+    let source_first = source
+        .variables
+        .get("Client First Name")
+        .cloned()
+        .unwrap_or_default();
+    let source_last = source
+        .variables
+        .get("Client Last Name")
+        .cloned()
+        .unwrap_or_default();
+    let new_first = resolved
+        .variables
+        .get("Client First Name")
+        .cloned()
+        .unwrap_or_default();
+    let new_last = resolved
+        .variables
+        .get("Client Last Name")
+        .cloned()
+        .unwrap_or_default();
+
+    // Recreate each document from template with the swapped variables.
+    // Iterate in stable sorted order so warnings/output are deterministic.
+    let mut doc_entries: Vec<(&String, &DocumentMeta)> = source.documents.iter().collect();
+    doc_entries.sort_by(|a, b| a.0.cmp(b.0));
+
+    let target_path = Path::new(&target_dir);
+    let mut taken: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Old → new filename map so we can update required_documents.document_filename.
+    let mut renamed: HashMap<String, String> = HashMap::new();
+
+    for (filename, meta) in doc_entries {
+        let swapped = swap_client_name_in_filename(
+            filename,
+            &source_first,
+            &source_last,
+            &new_first,
+            &new_last,
+        );
+        let final_name = dedupe_filename(target_path, &swapped, &mut taken);
+
+        match recreate_document_from_template(
+            &target_dir,
+            &templates_dir,
+            &final_name,
+            &meta.template_rel_path,
+            &resolved.variables,
+        ) {
+            Ok(()) => {
+                if &final_name != filename {
+                    renamed.insert(filename.clone(), final_name.clone());
+                }
+                copied_documents.push(final_name);
+            }
+            Err(msg) => {
+                warn!(%filename, %msg, "Skipped document during copy-from-spouse");
+                warnings.push(format!("Skipped '{}' — {}", filename, msg));
+                skipped_documents.push(filename.clone());
+            }
+        }
+    }
+
+    // Retarget required_documents to the renamed copies so status detection
+    // stays linked to the actual files on disk.
+    if !renamed.is_empty() {
+        let mut tl = read_lily_file(&target_dir)?;
+        for req in tl.required_documents.iter_mut() {
+            if let Some(old_name) = req.document_filename.clone() {
+                if let Some(new_name) = renamed.get(&old_name) {
+                    req.document_filename = Some(new_name.clone());
+                }
+            }
+        }
+        write_lily_file(&target_dir, &tl)?;
+    }
+
+    let final_lily = read_lily_file(&target_dir)?;
+    Ok(CopyFromSpouseResult {
+        lily: final_lily,
+        copied_documents,
+        skipped_documents,
+        warnings,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_contact(id: &str, first: &str, last: &str, relationship: &str) -> Contact {
+        Contact {
+            id: id.to_string(),
+            full_name: format!("{} {}", first, last),
+            first_name: first.to_string(),
+            middle_name: String::new(),
+            last_name: last.to_string(),
+            relationship: relationship.to_string(),
+            other_relationship: String::new(),
+            phone: format!("555-{}", first),
+            email: format!("{}@x", first.to_lowercase()),
+            address: format!("{} St", first),
+            city: "Denver".to_string(),
+            state: "CO".to_string(),
+            zip: "80202".to_string(),
+            is_minor: false,
+        }
+    }
+
+    fn source_with_jane_and_john() -> (LilyFile, Contact) {
+        // Jane is the client; John is her spouse.
+        let mut lily = LilyFile::default();
+        lily.variables.insert("Client Full Name".into(), "Jane Doe".into());
+        lily.variables.insert("Client First Name".into(), "Jane".into());
+        lily.variables.insert("Client Last Name".into(), "Doe".into());
+        lily.variables.insert("Client Phone".into(), "555-Jane".into());
+        lily.variables.insert("Client Email".into(), "jane@x".into());
+        lily.variables.insert("Client Address".into(), "Jane St".into());
+        lily.variables.insert("Client City".into(), "Denver".into());
+        lily.variables.insert("Client State".into(), "CO".into());
+        lily.variables.insert("Client Zip".into(), "80202".into());
+        // Custom user variable that should carry over.
+        lily.variables.insert("Engagement Date".into(), "2024-06-01".into());
+        // Derived helpers from a previous resolve — these should be dropped.
+        lily.variables.insert("Has Spouse".into(), "true".into());
+        lily.variables.insert("Client Spouse Name".into(), "John Doe".into());
+        lily.variables.insert("Primary HPOA Agent Title".into(), "Healthcare Representative.".into());
+
+        let john = make_contact("john-id", "John", "Doe", "Spouse");
+        let kid = make_contact("kid-id", "Kelly", "Doe", "Child");
+        lily.contacts.push(john.clone());
+        lily.contacts.push(kid);
+
+        // A binding that references the spouse directly — should retarget.
+        let mut spouse_binding = ContactBinding {
+            contact_id: Some("john-id".into()),
+            variable_mappings: HashMap::new(),
+        };
+        spouse_binding
+            .variable_mappings
+            .insert("Primary HPOA Agent Full Name".into(), "full_name".into());
+        lily.contact_bindings
+            .insert("Primary HPOA Agent".into(), spouse_binding);
+        // A binding that references a non-spouse — should pass through unchanged.
+        let mut other_binding = ContactBinding {
+            contact_id: Some("kid-id".into()),
+            variable_mappings: HashMap::new(),
+        };
+        other_binding
+            .variable_mappings
+            .insert("Personal Representative Full Name".into(), "full_name".into());
+        lily.contact_bindings
+            .insert("Personal Representative".into(), other_binding);
+
+        lily.questionnaire_id = Some("elder-law".into());
+        lily.questionnaire_version = Some(7);
+        lily.questionnaire_notes.insert(
+            "Family".into(),
+            SectionNotes {
+                client: "client note".into(),
+                internal: "internal note".into(),
+            },
+        );
+
+        lily.required_documents.push(RequiredDocument {
+            id: "req-1".into(),
+            template_rel_path: "Estate/Will.docx".into(),
+            status: DocumentStatus::Complete,
+            document_filename: Some("Will.docx".into()),
+            notes: "n".into(),
+        });
+
+        (lily, john)
+    }
+
+    #[test]
+    fn is_derived_helper_var_classification() {
+        assert!(is_derived_helper_var("Has Spouse"));
+        assert!(is_derived_helper_var("Has Minor Children"));
+        assert!(is_derived_helper_var("Client Spouse Name"));
+        assert!(is_derived_helper_var("Primary HPOA Agent Title"));
+        assert!(is_derived_helper_var("Primary HPOA Co-Agent And Name"));
+        assert!(!is_derived_helper_var("Engagement Date"));
+        assert!(!is_derived_helper_var("Client Full Name"));
+    }
+
+    #[test]
+    fn build_swapped_lily_promotes_spouse_to_client() {
+        let (source, john) = source_with_jane_and_john();
+        let new_id = "new-spouse-uuid";
+        let result = build_swapped_lily(&source, &john, new_id);
+
+        // Client * variables now reflect John's properties.
+        assert_eq!(result.variables.get("Client Full Name").unwrap(), "John Doe");
+        assert_eq!(result.variables.get("Client First Name").unwrap(), "John");
+        assert_eq!(result.variables.get("Client Phone").unwrap(), "555-John");
+        // Custom variable carries over.
+        assert_eq!(result.variables.get("Engagement Date").unwrap(), "2024-06-01");
+        // Derived helpers are dropped (will be regenerated by resolve).
+        assert!(!result.variables.contains_key("Has Spouse"));
+        assert!(!result.variables.contains_key("Client Spouse Name"));
+        assert!(!result.variables.contains_key("Primary HPOA Agent Title"));
+    }
+
+    #[test]
+    fn build_swapped_lily_demotes_client_into_spouse_contact() {
+        let (source, john) = source_with_jane_and_john();
+        let new_id = "new-spouse-uuid";
+        let result = build_swapped_lily(&source, &john, new_id);
+
+        // John (the original spouse) is no longer in contacts.
+        assert!(result.contacts.iter().all(|c| c.id != "john-id"));
+        // The non-spouse contact (Kelly) keeps her ID.
+        assert!(result.contacts.iter().any(|c| c.id == "kid-id"));
+        // A new "Spouse" contact exists with the new ID and Jane's data.
+        let new_spouse = result
+            .contacts
+            .iter()
+            .find(|c| c.id == new_id)
+            .expect("new spouse contact should be present");
+        assert_eq!(new_spouse.relationship, "Spouse");
+        assert_eq!(new_spouse.full_name, "Jane Doe");
+        assert_eq!(new_spouse.first_name, "Jane");
+        assert_eq!(new_spouse.last_name, "Doe");
+        assert_eq!(new_spouse.phone, "555-Jane");
+    }
+
+    #[test]
+    fn build_swapped_lily_retargets_bindings_pointing_at_promoted_spouse() {
+        let (source, john) = source_with_jane_and_john();
+        let new_id = "new-spouse-uuid";
+        let result = build_swapped_lily(&source, &john, new_id);
+
+        // The binding that pointed at the promoted spouse is retargeted.
+        let hpoa = result
+            .contact_bindings
+            .get("Primary HPOA Agent")
+            .expect("Primary HPOA Agent binding should be present");
+        assert_eq!(hpoa.contact_id.as_deref(), Some(new_id));
+        // Bindings pointing elsewhere are unchanged.
+        let pr = result
+            .contact_bindings
+            .get("Personal Representative")
+            .expect("Personal Representative binding should be present");
+        assert_eq!(pr.contact_id.as_deref(), Some("kid-id"));
+    }
+
+    #[test]
+    fn build_swapped_lily_carries_questionnaire_and_resets_required_docs() {
+        let (source, john) = source_with_jane_and_john();
+        let result = build_swapped_lily(&source, &john, "new-id");
+
+        assert_eq!(result.questionnaire_id.as_deref(), Some("elder-law"));
+        assert_eq!(result.questionnaire_version, Some(7));
+        assert_eq!(
+            result
+                .questionnaire_notes
+                .get("Family")
+                .map(|n| n.client.as_str()),
+            Some("client note")
+        );
+
+        assert_eq!(result.required_documents.len(), 1);
+        let req = &result.required_documents[0];
+        assert_ne!(req.id, "req-1", "required document id should be regenerated");
+        assert_eq!(req.status, DocumentStatus::NotStarted);
+        assert_eq!(req.template_rel_path, "Estate/Will.docx");
+        assert_eq!(req.document_filename.as_deref(), Some("Will.docx"));
+    }
+
+    #[test]
+    fn build_swapped_lily_drops_documents_and_overrides() {
+        let (mut source, john) = source_with_jane_and_john();
+        source.documents.insert(
+            "Will.docx".into(),
+            DocumentMeta {
+                template_rel_path: "Estate/Will.docx".into(),
+                created_at: Utc::now(),
+                modified_at: Utc::now(),
+                variable_names: vec!["Client Full Name".into()],
+                role_overrides: HashMap::new(),
+                variable_overrides: HashMap::new(),
+            },
+        );
+
+        let result = build_swapped_lily(&source, &john, "new-id");
+        assert!(result.documents.is_empty());
+    }
+
+    #[test]
+    fn resolve_spouse_contact_auto_picks_single_spouse() {
+        let (source, _) = source_with_jane_and_john();
+        let picked = resolve_spouse_contact(&source, None).unwrap();
+        assert_eq!(picked.id, "john-id");
+    }
+
+    #[test]
+    fn resolve_spouse_contact_errors_when_multiple_spouses_without_id() {
+        let (mut source, _) = source_with_jane_and_john();
+        source.contacts.push(make_contact("ex-id", "Alex", "Ex", "Spouse"));
+        let err = resolve_spouse_contact(&source, None).unwrap_err();
+        assert!(err.contains("2"), "error should mention count: {}", err);
+    }
+
+    #[test]
+    fn resolve_spouse_contact_uses_provided_id_over_relationship() {
+        let (mut source, _) = source_with_jane_and_john();
+        // A non-Spouse contact picked explicitly should still resolve.
+        source
+            .contacts
+            .push(make_contact("partner-id", "Pat", "Partner", "Other"));
+        let picked = resolve_spouse_contact(&source, Some("partner-id")).unwrap();
+        assert_eq!(picked.id, "partner-id");
+    }
+
+    #[test]
+    fn resolve_spouse_contact_errors_for_unknown_id() {
+        let (source, _) = source_with_jane_and_john();
+        let err = resolve_spouse_contact(&source, Some("nope")).unwrap_err();
+        assert!(err.to_lowercase().contains("not found"));
+    }
+
+    #[test]
+    fn swap_client_name_in_filename_full_match() {
+        let out = swap_client_name_in_filename(
+            "GPOA - Jack Doe.docx",
+            "Jack",
+            "Doe",
+            "Jane",
+            "Doe",
+        );
+        assert_eq!(out, "GPOA - Jane Doe.docx");
+    }
+
+    #[test]
+    fn swap_client_name_in_filename_different_last_names() {
+        let out = swap_client_name_in_filename(
+            "Will - Jack Smith.docx",
+            "Jack",
+            "Smith",
+            "Jane",
+            "Doe",
+        );
+        assert_eq!(out, "Will - Jane Doe.docx");
+    }
+
+    #[test]
+    fn swap_client_name_in_filename_first_name_only() {
+        let out = swap_client_name_in_filename(
+            "GPOA - Jack.docx",
+            "Jack",
+            "Doe",
+            "Jane",
+            "Doe",
+        );
+        assert_eq!(out, "GPOA - Jane.docx");
+    }
+
+    #[test]
+    fn swap_client_name_in_filename_unchanged_when_no_match() {
+        let out = swap_client_name_in_filename(
+            "Estate Plan.docx",
+            "Jack",
+            "Doe",
+            "Jane",
+            "Doe",
+        );
+        assert_eq!(out, "Estate Plan.docx");
+    }
+
+    #[test]
+    fn swap_client_name_in_filename_unchanged_when_source_names_blank() {
+        let out =
+            swap_client_name_in_filename("GPOA - Jack Doe.docx", "", "", "Jane", "Doe");
+        assert_eq!(out, "GPOA - Jack Doe.docx");
+    }
+
+    #[test]
+    fn swap_client_name_in_filename_replaces_only_first_occurrence() {
+        // Defensive: a name appearing twice (very unusual) should only be
+        // replaced once so we never produce a filename with mixed casing or
+        // double-substituted text.
+        let out = swap_client_name_in_filename(
+            "Jack - For Jack.docx",
+            "Jack",
+            "Doe",
+            "Jane",
+            "Doe",
+        );
+        assert_eq!(out, "Jane - For Jack.docx");
+    }
+
+    #[test]
+    fn dedupe_filename_appends_suffix_on_collision() {
+        use std::collections::HashSet;
+        let dir = std::env::temp_dir();
+        let mut taken: HashSet<String> = HashSet::new();
+        taken.insert("GPOA - Jane Doe.docx".to_string());
+
+        let out = dedupe_filename(&dir, "GPOA - Jane Doe.docx", &mut taken);
+        assert_eq!(out, "GPOA - Jane Doe (2).docx");
+        assert!(taken.contains("GPOA - Jane Doe (2).docx"));
+    }
+
+    #[test]
+    fn dedupe_filename_passes_through_when_unique() {
+        use std::collections::HashSet;
+        let dir = std::env::temp_dir();
+        let mut taken: HashSet<String> = HashSet::new();
+        let out = dedupe_filename(&dir, "Unique-12345abcdef.docx", &mut taken);
+        assert_eq!(out, "Unique-12345abcdef.docx");
+    }
+
+    #[test]
+    fn is_empty_project_recognizes_default_lily() {
+        let empty = LilyFile::default();
+        assert!(is_empty_project(&empty));
+
+        let mut not_empty = LilyFile::default();
+        not_empty.variables.insert("X".into(), "y".into());
+        assert!(!is_empty_project(&not_empty));
+    }
+}

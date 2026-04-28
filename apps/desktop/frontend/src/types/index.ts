@@ -170,6 +170,15 @@ export interface LilyFile {
 	warnings: string[];
 }
 
+/** Result of `copy_from_spouse_lily`: the new resolved .lily plus
+ *  per-document outcomes and any non-fatal warnings. */
+export interface CopyFromSpouseResult {
+	lily: LilyFile;
+	copied_documents: string[];
+	skipped_documents: string[];
+	warnings: string[];
+}
+
 /** Notes attached to a questionnaire section. */
 export interface SectionNotes {
 	/** Notes from/for the client (visible in client-facing tools). */
