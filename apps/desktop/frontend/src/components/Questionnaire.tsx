@@ -16,6 +16,35 @@ import type {
 } from "@/types/questionnaire";
 import { extractFolderName } from "@/utils/path";
 
+/** Status chip shown on every section row in the rail.
+ *  Three visual states: empty (muted), partial (warning), complete (success). */
+function SectionStatusChip({
+	stats,
+}: {
+	stats: { total: number; filled: number; countText: string };
+}) {
+	if (!stats.countText) return null;
+	const state =
+		stats.total > 0 && stats.filled === stats.total
+			? "complete"
+			: stats.filled > 0
+				? "partial"
+				: "empty";
+	const tone =
+		state === "complete"
+			? "bg-success/15 text-success"
+			: state === "partial"
+				? "bg-warning/15 text-warning"
+				: "bg-base-300/60 text-base-content/50";
+	return (
+		<span
+			className={`text-[10px] shrink-0 tabular-nums px-1.5 py-0.5 rounded-full font-medium ${tone}`}
+		>
+			{stats.countText}
+		</span>
+	);
+}
+
 /** Highlight search matches within text. */
 function HighlightText({ text, query }: { text: string; query: string }) {
 	const q = query.trim().toLowerCase();
@@ -105,8 +134,10 @@ export default function Questionnaire() {
 		})();
 	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-	// Tab state
-	const [activeTab, setActiveTab] = useState<string>("client-info");
+	// Master/detail: track the single active section across all tabs
+	const [activeSectionTitle, setActiveSectionTitle] = useState<string | null>(
+		null,
+	);
 
 	// Save-state indicator
 	const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
@@ -224,46 +255,6 @@ export default function Questionnaire() {
 		};
 	}, []);
 
-	// Sections for the active tab
-	const tabSections = useMemo(
-		() => questionnaireDef.filter((s) => s.tab === activeTab),
-		[activeTab, questionnaireDef],
-	);
-
-	// All sections start collapsed
-	const [collapsedSections, setCollapsedSections] = useState<
-		Record<string, boolean>
-	>(() => {
-		const init: Record<string, boolean> = {};
-		for (const s of questionnaireDef) {
-			init[s.title] = true;
-		}
-		return init;
-	});
-
-	const toggleSection = (title: string) => {
-		setCollapsedSections((prev) => ({
-			...prev,
-			[title]: !prev[title],
-		}));
-	};
-
-	const expandAll = () => {
-		setCollapsedSections((prev) => {
-			const next = { ...prev };
-			for (const s of tabSections) next[s.title] = false;
-			return next;
-		});
-	};
-
-	const collapseAll = () => {
-		setCollapsedSections((prev) => {
-			const next = { ...prev };
-			for (const s of tabSections) next[s.title] = true;
-			return next;
-		});
-	};
-
 	// Search
 	const [search, setSearch] = useState("");
 	const searchRef = useRef<HTMLInputElement>(null);
@@ -280,17 +271,15 @@ export default function Questionnaire() {
 		return () => document.removeEventListener("keydown", handler);
 	}, []);
 
-	// Filter sections by search query
+	// Filter all sections by search query (across every tab)
 	const filteredSections = useMemo(() => {
 		const q = search.trim().toLowerCase();
-		if (!q) return tabSections;
+		if (!q) return questionnaireDef;
 
 		const tokens = q.split(/\s+/);
-		return tabSections.filter((section) => {
-			// Match section title
+		return questionnaireDef.filter((section) => {
 			if (tokens.every((t) => section.title.toLowerCase().includes(t)))
 				return true;
-			// Match question labels or variable names
 			return section.questions.some((question) => {
 				const label =
 					question.kind === "contact-role"
@@ -301,18 +290,52 @@ export default function Questionnaire() {
 				return tokens.every((t) => label.toLowerCase().includes(t));
 			});
 		});
-	}, [tabSections, search]);
+	}, [questionnaireDef, search]);
 
-	// Auto-expand sections that match search
+	// Group filtered sections by tab for rail rendering, preserving tab order
+	const railGroups = useMemo(() => {
+		return questionnaireTabs
+			.map((tab) => ({
+				tab,
+				sections: filteredSections.filter((s) => s.tab === tab.id),
+			}))
+			.filter((g) => g.sections.length > 0);
+	}, [filteredSections, questionnaireTabs]);
+
+	// Default-select the first section overall once defs are loaded
 	useEffect(() => {
-		if (search.trim()) {
-			setCollapsedSections((prev) => {
-				const next = { ...prev };
-				for (const s of filteredSections) next[s.title] = false;
-				return next;
-			});
-		}
-	}, [filteredSections, search]);
+		if (activeSectionTitle) return;
+		const first = questionnaireDef[0];
+		if (first) setActiveSectionTitle(first.title);
+	}, [questionnaireDef, activeSectionTitle]);
+
+	// If search filters out the currently active section, jump to the first match
+	useEffect(() => {
+		if (!search.trim() || filteredSections.length === 0) return;
+		if (
+			activeSectionTitle &&
+			filteredSections.some((s) => s.title === activeSectionTitle)
+		)
+			return;
+		setActiveSectionTitle(filteredSections[0].title);
+	}, [filteredSections, search, activeSectionTitle]);
+
+	const activeSection =
+		questionnaireDef.find((s) => s.title === activeSectionTitle) ??
+		filteredSections[0] ??
+		null;
+	const activeIdx = activeSection
+		? filteredSections.findIndex((s) => s.title === activeSection.title)
+		: -1;
+	const nextSection =
+		activeIdx >= 0 && activeIdx < filteredSections.length - 1
+			? filteredSections[activeIdx + 1]
+			: null;
+	const prevSection = activeIdx > 0 ? filteredSections[activeIdx - 1] : null;
+
+	const selectSection = (title: string) => {
+		setActiveSectionTitle(title);
+	};
 
 	// Completion stats
 	const stats = useMemo(() => {
@@ -334,18 +357,23 @@ export default function Questionnaire() {
 		return { total, filled };
 	}, [variables, contacts, questionnaireDef]);
 
-	// Per-section stats
+	const bindings = lilyFile?.contact_bindings ?? {};
+
+	// Per-section stats. Counts every non-derived question kind so every
+	// section gets a meaningful filled/total. The "contacts" section kind has
+	// no fixed total — it reports the contact count directly.
 	const sectionStats = useMemo(() => {
 		const map: Record<
 			string,
-			{ total: number; filled: number; label: string | null }
+			{ total: number; filled: number; countText: string }
 		> = {};
 		for (const section of questionnaireDef) {
 			if (section.kind === "contacts") {
+				const n = contacts.length;
 				map[section.title] = {
 					total: 1,
-					filled: contacts.length > 0 ? 1 : 0,
-					label: `${contacts.length} contact${contacts.length !== 1 ? "s" : ""}`,
+					filled: n > 0 ? 1 : 0,
+					countText: String(n),
 				};
 				continue;
 			}
@@ -355,16 +383,27 @@ export default function Questionnaire() {
 				if (q.kind === "text") {
 					total++;
 					if (variables[q.variable]?.trim()) filled++;
+				} else if (q.kind === "conditional") {
+					total++;
+					const v = variables[q.variable];
+					if (v === "true" || v === "false") filled++;
+				} else if (q.kind === "contact-role") {
+					total++;
+					if (bindings[q.role]) filled++;
 				}
 			}
-			map[section.title] = { total, filled, label: null };
+			map[section.title] = {
+				total,
+				filled,
+				countText: total > 0 ? `${filled}/${total}` : "",
+			};
 		}
 		return map;
-	}, [variables, contacts, questionnaireDef]);
+	}, [variables, contacts, bindings, questionnaireDef]);
 
 	const folderName = workingDir ? extractFolderName(workingDir) : "Client";
 
-	const allExpanded = tabSections.every((s) => !collapsedSections[s.title]);
+	const isContacts = activeSection?.kind === "contacts";
 
 	return (
 		<div className="flex flex-col h-full">
@@ -386,146 +425,160 @@ export default function Questionnaire() {
 				</span>
 			</PageHeader>
 
-			{/* Tab bar — sticky below header */}
-			<div className="sticky top-0 z-10 bg-base-200 border-b border-base-300">
-				<div className="flex">
-					{questionnaireTabs.map((tab) => (
-						<button
-							key={tab.id}
-							type="button"
-							className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-								activeTab === tab.id
-									? "border-primary text-primary"
-									: "border-transparent text-base-content/50 hover:text-base-content/80 hover:bg-base-200/50"
-							}`}
-							onClick={() => setActiveTab(tab.id)}
-						>
-							{tab.label}
-						</button>
-					))}
-				</div>
-			</div>
-
-			{/* Controls bar */}
-			<div className="flex items-center gap-2 px-6 py-2 bg-base-200 border-b border-base-300">
-				<input
-					ref={searchRef}
-					type="text"
-					className="input input-bordered input-xs flex-1 max-w-xs"
-					placeholder="Search fields... (Ctrl+F)"
-					value={search}
-					onChange={(e) => setSearch(e.target.value)}
-				/>
-				<button
-					type="button"
-					className="btn btn-ghost btn-xs"
-					onClick={allExpanded ? collapseAll : expandAll}
-				>
-					{allExpanded ? "Collapse All" : "Expand All"}
-				</button>
-			</div>
-
-			{/* Sections */}
-			<div className="flex-1 overflow-y-auto p-6 pb-48">
-				<div className="max-w-2xl mx-auto flex flex-col gap-6">
-					{filteredSections.length === 0 && search && (
-						<p className="text-sm text-base-content/50 text-center py-8">
-							No fields match your search.
-						</p>
-					)}
-
-					{filteredSections.map((section) => {
-						const collapsed = collapsedSections[section.title] ?? true;
-						const ss = sectionStats[section.title];
-						const isContacts = section.kind === "contacts";
-
-						return (
-							<div
-								key={section.title}
-								className="card bg-base-100 border border-base-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)]"
-							>
-								{/* Section header */}
-								<button
-									type="button"
-									className="flex items-center gap-3 p-4 w-full text-left hover:bg-base-200/50 transition-colors rounded-t-2xl"
-									onClick={() => toggleSection(section.title)}
-								>
-									<span
-										className={`transition-transform text-base-content/40 ${collapsed ? "" : "rotate-90"}`}
-									>
-										&#9654;
-									</span>
-									<div className="flex-1 min-w-0">
-										<h3 className="text-lg font-semibold">{section.title}</h3>
-										{section.description && (
-											<p className="text-sm text-base-content/50 mt-0.5">
-												{section.description}
-											</p>
-										)}
-									</div>
-									{ss && (
-										<span className="text-xs text-base-content/40 shrink-0">
-											{ss.label ??
-												(ss.total > 0 ? `${ss.filled} / ${ss.total}` : "")}
-										</span>
-									)}
-								</button>
-
-								{/* Section body */}
-								{!collapsed && (
-									<div className="px-4 pb-4 border-t border-base-200 pt-4">
-										{isContacts ? (
-											<InlineContactList
-												contacts={contacts}
-												onAdd={handleAddContact}
-												onUpdate={handleUpdateContact}
-												onDelete={handleDeleteContact}
-											/>
-										) : (
-											<div className="grid grid-cols-6 gap-x-3 gap-y-4">
-												{section.questions.map((q) => {
-													const span =
-														q.kind === "text" && q.third
-															? "col-span-2"
-															: q.kind === "text" && q.half
-																? "col-span-3"
-																: "col-span-6";
-													return (
-														<div
-															key={
-																q.kind === "contact-role" ? q.role : q.variable
-															}
-															className={span}
+			{/* Master/detail body */}
+			<div className="flex flex-1 min-h-0">
+				{/* Section rail */}
+				<aside className="w-72 shrink-0 border-r border-base-300 bg-base-200/50 flex flex-col">
+					<div className="p-3 border-b border-base-300">
+						<input
+							ref={searchRef}
+							type="text"
+							className="input input-bordered input-xs w-full"
+							placeholder="Search fields... (Ctrl+F)"
+							value={search}
+							onChange={(e) => setSearch(e.target.value)}
+						/>
+					</div>
+					<nav className="flex-1 overflow-y-auto p-2">
+						{railGroups.length === 0 ? (
+							<p className="text-xs text-base-content/50 text-center py-6 px-2">
+								{search ? "No matching fields." : "No sections."}
+							</p>
+						) : (
+							<div className="flex flex-col gap-4">
+								{railGroups.map(({ tab, sections }) => (
+									<div key={tab.id}>
+										<div className="px-3 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-base-content/40">
+											{tab.label}
+										</div>
+										<ul className="flex flex-col gap-1">
+											{sections.map((section) => {
+												const ss = sectionStats[section.title];
+												const isActive = section.title === activeSection?.title;
+												return (
+													<li key={section.title}>
+														<button
+															type="button"
+															onClick={() => selectSection(section.title)}
+															className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+																isActive
+																	? "bg-primary/15 text-primary border border-primary/30"
+																	: "border border-transparent hover:bg-base-300/60"
+															}`}
 														>
-															<QuestionField
-																question={q}
-																value={
-																	q.kind === "contact-role"
-																		? ""
-																		: (variables[q.variable] ?? "")
-																}
-																onSave={handleSaveVariable}
-																searchQuery={search}
-															/>
-														</div>
-													);
-												})}
-											</div>
-										)}
-
-										{/* Notes (collapsible) */}
-										<SectionNotesFields
-											sectionTitle={section.title}
-											clientNotes={notes[section.title]?.client ?? ""}
-											internalNotes={notes[section.title]?.internal ?? ""}
-											onSave={handleSaveNote}
-										/>
+															<div className="flex items-center gap-2">
+																<span className="flex-1 min-w-0 text-sm font-medium truncate">
+																	<HighlightText
+																		text={section.title}
+																		query={search}
+																	/>
+																</span>
+																{ss && <SectionStatusChip stats={ss} />}
+															</div>
+														</button>
+													</li>
+												);
+											})}
+										</ul>
 									</div>
+								))}
+							</div>
+						)}
+					</nav>
+				</aside>
+
+				{/* Section pane */}
+				<main className="flex-1 overflow-y-auto">
+					{activeSection ? (
+						<div className="max-w-3xl mx-auto px-8 py-6 pb-32">
+							<div className="mb-6">
+								<h2 className="text-2xl font-semibold">
+									{activeSection.title}
+								</h2>
+								{activeSection.description && (
+									<p className="text-sm text-base-content/60 mt-1">
+										{activeSection.description}
+									</p>
 								)}
 							</div>
-						);
-					})}
-				</div>
+
+							{isContacts ? (
+								<InlineContactList
+									contacts={contacts}
+									onAdd={handleAddContact}
+									onUpdate={handleUpdateContact}
+									onDelete={handleDeleteContact}
+								/>
+							) : (
+								<div className="grid grid-cols-6 gap-x-3 gap-y-4">
+									{activeSection.questions.map((q) => {
+										const span =
+											q.kind === "text" && q.third
+												? "col-span-2"
+												: q.kind === "text" && q.half
+													? "col-span-3"
+													: "col-span-6";
+										return (
+											<div
+												key={q.kind === "contact-role" ? q.role : q.variable}
+												className={span}
+											>
+												<QuestionField
+													question={q}
+													value={
+														q.kind === "contact-role"
+															? ""
+															: (variables[q.variable] ?? "")
+													}
+													onSave={handleSaveVariable}
+													searchQuery={search}
+												/>
+											</div>
+										);
+									})}
+								</div>
+							)}
+
+							<SectionNotesFields
+								sectionTitle={activeSection.title}
+								clientNotes={notes[activeSection.title]?.client ?? ""}
+								internalNotes={notes[activeSection.title]?.internal ?? ""}
+								onSave={handleSaveNote}
+							/>
+
+							<div className="mt-10 pt-4 border-t border-base-300 flex items-center justify-between gap-3">
+								<button
+									type="button"
+									className="btn btn-ghost btn-sm"
+									onClick={() =>
+										prevSection && selectSection(prevSection.title)
+									}
+									disabled={!prevSection}
+								>
+									&#9664; {prevSection?.title ?? "Previous"}
+								</button>
+								<button
+									type="button"
+									className="btn btn-primary btn-sm"
+									onClick={() =>
+										nextSection && selectSection(nextSection.title)
+									}
+									disabled={!nextSection}
+								>
+									{nextSection?.title ?? "Done"} &#9654;
+								</button>
+							</div>
+						</div>
+					) : (
+						<div className="h-full flex items-center justify-center">
+							<p className="text-sm text-base-content/50">
+								{search
+									? "No fields match your search."
+									: "No sections defined."}
+							</p>
+						</div>
+					)}
+				</main>
 			</div>
 		</div>
 	);
