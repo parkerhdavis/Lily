@@ -1,9 +1,8 @@
+# ─── Lily Makefile ───
+
 .PHONY: help dev dev-frontend down build build-linux build-windows build-macos notarize setup install lint lint-fix format check test typecheck clean version
 
-# ==================================================================
-# OS DETECTION
-# ==================================================================
-# Detect OS for platform-specific commands
+# ─── OS Detection ───
 # On Windows, uname doesn't exist, so we check for Windows-specific env vars first
 ifdef OS
     # Windows sets OS=Windows_NT
@@ -31,9 +30,7 @@ else
     DETECTED_OS := windows
 endif
 
-# ==================================================================
-# PATHS
-# ==================================================================
+# ─── Paths ───
 # Apps live under apps/<name>/ per the portfolio structure. Lily is a
 # single-deployment Tauri desktop app, so one app dir: apps/desktop/.
 BACKEND := apps/desktop/backend
@@ -65,67 +62,25 @@ else
     endif
 endif
 
-help:
-	@echo "================================================================================"
-	@echo "  Lily — Document Drafting Toolset"
-	@echo "================================================================================"
-	@echo ""
-	@echo "Usage: make [target]"
-	@echo ""
-	@echo "Running (Development):"
-	@echo "  dev                - Start Tauri dev server (frontend + Rust hot-reload)"
-	@echo "  dev-frontend       - Start Bun dev server only (rapid UI iteration)"
-	@echo "  down               - Stop any running dev server"
-	@echo ""
-	@echo "Building:"
-	@echo "  setup              - Install all dependencies (Rust + Bun)"
-	@echo "  install            - Alias for setup"
-	@echo "  build              - Build for current platform (detects OS)"
-	@echo "  build-linux        - Build Linux installers (.deb, .rpm, AppImage)"
-	@echo "  build-windows      - Build Windows installers (.msi, .exe)"
-	@echo "  build-macos        - Build macOS installers (.dmg, .app)"
-	@echo "  notarize     - Submit macOS build for Apple notarization"
-	@echo "  check              - Run Rust compiler checks without building"
-	@echo ""
-	@echo "Quality:"
-	@echo "  lint               - Run Biome linter and Rust clippy"
-	@echo "  lint-fix           - Run Biome linter with auto-fix"
-	@echo "  format             - Format code with Biome and rustfmt"
-	@echo "  typecheck          - Run TypeScript type checking"
-	@echo "  test               - Run Rust tests"
-	@echo ""
-	@echo "Versioning:"
-	@echo "  version            - Show current version"
-	@echo "  version V=X.Y.Z   - Set version across all config files"
-	@echo ""
-	@echo "Maintenance:"
-	@echo "  clean              - Remove build artifacts and dependencies"
-	@echo ""
-	@echo "Detected OS: $(DETECTED_OS)"
-	@echo "================================================================================"
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort -u | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-# ==================================================================
-# SERVICE COMMANDS
-# ==================================================================
-
-# -------------
-# Running
-# -------------
+# ─── Run ───
 
 ifeq ($(DETECTED_OS),windows)
-dev:
+dev: ## Start Tauri dev server (frontend + Rust hot-reload)
 	@echo "Starting Tauri development server (frontend + Rust)..."
 	cd $(BACKEND); $(TAURI) dev
 
-dev-frontend:
+dev-frontend: ## Start Bun dev server only (rapid UI iteration)
 	@echo "Starting Bun dev server only (rapid UI iteration)..."
 	cd $(FRONTEND); $(BUN) run dev
 
-down:
+down: ## Stop any running dev server
 	@echo "Stopping dev server..."
 	@echo "On Windows, close the terminal running the dev server or use Task Manager."
 else
-dev:
+dev: ## Start Tauri dev server (frontend + Rust hot-reload)
 	@echo "Starting Tauri development server (frontend + Rust)..."
 	@# Warn about and kill any leftover dev server on port 5173
 	@EXISTING_PID=$$(lsof -ti :5173 2>/dev/null); \
@@ -137,7 +92,7 @@ dev:
 	@echo "  -> Starting Tauri (frontend dev server started by Tauri via beforeDevCommand)..."
 	@cd $(BACKEND) && $(TAURI) dev
 
-down:
+down: ## Stop any running dev server
 	@echo "Stopping Lily dev server..."
 	@echo "  -> Checking port 5173..."
 	@PORT_PID=$$(lsof -ti :5173 2>/dev/null); \
@@ -148,40 +103,104 @@ down:
 		echo "  -> No dev server running"; \
 	fi
 
-dev-frontend:
+dev-frontend: ## Start Bun dev server only (rapid UI iteration)
 	@echo "Starting Bun dev server only (rapid UI iteration)..."
 	@cd $(FRONTEND) && $(BUN) run dev
 endif
 
-# ==================================================================
-# COMMAND MODULES
-# ==================================================================
-
-# -------------
-# Building
-# -------------
+# ─── Setup ───
+# Probes for Rust + Bun + system deps (webkit2gtk on Linux, Xcode CLT on
+# macOS, VS Build Tools on Windows), then runs `bun install` at the root.
 
 ifeq ($(DETECTED_OS),windows)
-setup:
-	@echo "Installing all dependencies (Rust + Bun)..."
-	@echo "Please ensure Rust and Bun are installed."
+setup: ## Check/install Rust + Bun + system deps, then bun install
+	@echo "================================================================================"
+	@echo "  Lily Setup - Installing Dependencies"
+	@echo "================================================================================"
+	@if (-not (Get-Command rustc -ErrorAction SilentlyContinue)) { \
+		Write-Host "Rust not found. Install from https://rustup.rs then re-run 'make setup'."; \
+		exit 1; \
+	} else { \
+		Write-Host "Rust: $$(rustc --version)"; \
+	}
+	@if (-not (Get-Command bun -ErrorAction SilentlyContinue)) { \
+		Write-Host "Bun not found. Install from https://bun.sh then re-run 'make setup'."; \
+		exit 1; \
+	} else { \
+		Write-Host "Bun: $$(bun --version)"; \
+	}
+	@Write-Host ""
+	@Write-Host "Windows system requirements for Tauri:"
+	@Write-Host "  - Visual Studio C++ Build Tools"
+	@Write-Host "  - WebView2 Runtime (pre-installed on Windows 10+)"
+	@Write-Host "  See https://tauri.app/start/prerequisites/#windows"
+	@Write-Host ""
+	@Write-Host "Installing JS dependencies..."
 	$(BUN) install
-	@echo "Setup complete"
+	@Write-Host "Setup complete"
 
 install: setup
-
 else
-setup:
-	@echo "Installing all dependencies (Rust + Bun)..."
+setup: ## Check/install Rust + Bun + system deps, then bun install
+	@echo "================================================================================"
+	@echo "  Lily Setup - Installing Dependencies"
+	@echo "================================================================================"
+	@if ! command -v rustc >/dev/null 2>&1; then \
+		echo "Rust not found. Installing via rustup..."; \
+		curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh; \
+		echo "Rust installed. Please restart your shell and re-run 'make setup'."; \
+		exit 0; \
+	else \
+		echo "Rust: $$(rustc --version)"; \
+	fi
+	@if ! command -v bun >/dev/null 2>&1; then \
+		echo "Bun not found. Installing..."; \
+		curl -fsSL https://bun.sh/install | bash; \
+		echo "Bun installed. Please restart your shell and re-run 'make setup'."; \
+		exit 0; \
+	else \
+		echo "Bun: $$(bun --version)"; \
+	fi
+ifeq ($(DETECTED_OS),linux)
+	@echo ""
+	@echo "Checking Linux system dependencies for Tauri..."
+	@MISSING=""; \
+	for p in libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev; do \
+		if ! dpkg-query -W -f='$${Status}' "$$p" 2>/dev/null | grep -q "install ok installed"; then \
+			MISSING="$$MISSING $$p"; \
+		fi; \
+	done; \
+	if [ -n "$$MISSING" ]; then \
+		echo "Missing system packages:$$MISSING"; \
+		echo ""; \
+		echo "Install with: sudo apt install$$MISSING"; \
+		echo ""; \
+		echo "Continuing with JS install anyway — Tauri build will fail until these land."; \
+	else \
+		echo "All required system packages present."; \
+	fi
+else ifeq ($(DETECTED_OS),macos)
+	@echo ""
+	@echo "Checking macOS system dependencies..."
+	@if ! xcode-select -p >/dev/null 2>&1; then \
+		echo "Xcode Command Line Tools not installed."; \
+		echo "Install with: xcode-select --install"; \
+	else \
+		echo "Xcode Command Line Tools installed."; \
+	fi
+endif
+	@echo ""
+	@echo "Installing JS dependencies..."
 	@$(BUN) install
 	@echo "Setup complete"
 
 install: setup
-
 endif
 
+# ─── Build ───
+
 ifeq ($(DETECTED_OS),windows)
-build:
+build: ## Build for current platform (auto-detects OS)
 	@echo "Building Windows installers (.msi, .exe)..."
 	@echo "  -> Building frontend..."
 	cd $(FRONTEND); $(BUN) run build
@@ -194,7 +213,7 @@ build:
 	@echo "  - MSI Installer:  ./target/release/bundle/msi/"
 	@echo "  - NSIS Installer: ./target/release/bundle/nsis/"
 else
-build:
+build: ## Build for current platform (auto-detects OS)
 ifeq ($(DETECTED_OS),linux)
 	@$(MAKE) build-linux
 else ifeq ($(DETECTED_OS),macos)
@@ -203,11 +222,11 @@ endif
 endif
 
 ifeq ($(DETECTED_OS),windows)
-build-linux:
+build-linux: ## Build Linux installers (.deb, .rpm, AppImage)
 	@echo "ERROR: Linux builds must be run on Linux"
 	@exit 1
 
-build-windows:
+build-windows: ## Build Windows installers (.msi, .exe)
 	@echo "Building Windows installers (.msi, .exe)..."
 	@echo "  -> Building frontend..."
 	cd $(FRONTEND); $(BUN) run build
@@ -220,15 +239,15 @@ build-windows:
 	@echo "  - MSI Installer:  ./target/release/bundle/msi/"
 	@echo "  - NSIS Installer: ./target/release/bundle/nsis/"
 
-build-macos:
+build-macos: ## Build macOS installers (.dmg, .app)
 	@echo "ERROR: macOS builds must be run on macOS"
 	@exit 1
 
-notarize:
+notarize: ## Submit macOS build for Apple notarization
 	@echo "ERROR: macOS notarization must be run on macOS"
 	@exit 1
 else
-build-linux:
+build-linux: ## Build Linux installers (.deb, .rpm, AppImage)
 	@echo "Building Linux installers (.deb, .rpm, AppImage)..."
 	@echo "  -> Building frontend..."
 	@cd $(FRONTEND) && $(BUN) run build
@@ -242,11 +261,11 @@ build-linux:
 	@echo "  - Debian:   ./target/release/bundle/deb/"
 	@echo "  - RPM:      ./target/release/bundle/rpm/"
 
-build-windows:
+build-windows: ## Build Windows installers (.msi, .exe)
 	@echo "ERROR: Windows builds must be run on Windows"
 	@exit 1
 
-build-macos:
+build-macos: ## Build macOS installers (.dmg, .app)
 	@echo "Building macOS installers (.dmg, .app)..."
 	@if [ -f .env ]; then \
 		echo "  -> Loading signing config from .env"; \
@@ -308,7 +327,7 @@ build-macos:
 		echo "To notarize, run: make notarize"; \
 	fi
 
-notarize:
+notarize: ## Submit macOS build for Apple notarization
 	@if [ ! -f .env ]; then \
 		echo "ERROR: .env file required for notarization"; \
 		echo "  Copy .env.example to .env and fill in your Apple credentials"; \
@@ -341,78 +360,76 @@ notarize:
 endif
 
 ifeq ($(DETECTED_OS),windows)
-check:
+check: ## Run Rust compiler checks without building
 	@echo "Running Rust compiler checks..."
 	cd $(BACKEND); cargo check
 	@echo "Rust checks passed"
 else
-check:
+check: ## Run Rust compiler checks without building
 	@echo "Running Rust compiler checks..."
 	@cd $(BACKEND) && cargo check
 	@echo "Rust checks passed"
 endif
 
-# -------------
-# Quality
-# -------------
+# ─── Quality ───
 
 ifeq ($(DETECTED_OS),windows)
-lint:
+lint: ## Run Biome linter and Rust clippy
 	@echo "Linting frontend code..."
 	$(BUN)x biome check .
 	@echo "Linting Rust code..."
 	cd $(BACKEND); cargo clippy -- -D warnings
 	@echo "Lint complete"
 
-lint-fix:
+lint-fix: ## Run Biome linter with auto-fix
 	@echo "Fixing frontend lint issues..."
 	$(BUN)x biome check --write .
 	@echo "Lint fix complete"
 
-format:
+format: ## Format code with Biome and rustfmt
 	@echo "Formatting frontend code..."
 	$(BUN)x biome format --write .
 	@echo "Formatting Rust code..."
 	cd $(BACKEND); cargo fmt
 	@echo "Format complete"
 
-typecheck:
+typecheck: ## Run TypeScript type checking
 	@echo "Running TypeScript type checking..."
 	cd $(FRONTEND); $(BUN) run typecheck
 	@echo "Type check passed"
 
-test:
+test: ## Run all tests (Bun + Rust)
 	@echo "Running frontend tests..."
 	cd $(FRONTEND); $(BUN) test
 	@echo "Running Rust tests..."
 	cd $(BACKEND); cargo test
 	@echo "Tests complete"
 else
-lint:
+lint: ## Run Biome linter and Rust clippy
 	@echo "Linting frontend code..."
 	@$(BUN)x biome check .
 	@echo "Linting Rust code..."
 	@cd $(BACKEND) && cargo clippy -- -D warnings
 	@echo "Lint complete"
 
-lint-fix:
+lint-fix: ## Run Biome linter with auto-fix
 	@echo "Fixing frontend lint issues..."
 	@$(BUN)x biome check --write .
 	@echo "Lint fix complete"
 
-format:
+format: ## Format code with Biome and rustfmt
 	@echo "Formatting frontend code..."
 	@$(BUN)x biome format --write .
 	@echo "Formatting Rust code..."
 	@cd $(BACKEND) && cargo fmt
 	@echo "Format complete"
 
-typecheck:
+typecheck: ## Run TypeScript type checking
 	@echo "Running TypeScript type checking..."
 	@cd $(FRONTEND) && $(BUN) run typecheck
 	@echo "Type check passed"
 
-test:
+test: ## Run all tests (Bun + Rust)
 	@echo "Running frontend tests..."
 	@cd $(FRONTEND) && $(BUN) test
 	@echo "Running Rust tests..."
@@ -420,15 +437,13 @@ test:
 	@echo "Tests complete"
 endif
 
-# -------------
-# Versioning
-# -------------
+# ─── Versioning ───
 
 ifeq ($(DETECTED_OS),windows)
-version:
+version: ## Show or set version (use V=X.Y.Z to set)
 ifndef V
 	@echo "Current version:"
-	@cd $(BACKEND); (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches.Groups[1].Value
+	@(Select-String -Path package.json -Pattern '"version": "(.+)"').Matches.Groups[1].Value
 else
 	@echo "Updating version to $(V)..."
 	@(Get-Content $(BACKEND)\Cargo.toml -Raw) -replace '(?m)^version = ".*"', 'version = "$(V)"' | Set-Content $(BACKEND)\Cargo.toml -NoNewline
@@ -443,9 +458,9 @@ else
 	@echo "Version updated to $(V)"
 endif
 else
-version:
+version: ## Show or set version (use V=X.Y.Z to set)
 ifndef V
-	@echo "Current version: $$(grep '^version = ' $(BACKEND)/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')"
+	@echo "Current version: $$(grep '^\s*\"version\":' package.json | head -1 | sed 's/.*\"version\": \"\(.*\)\".*/\1/')"
 else
 	@echo "Updating version to $(V)..."
 	@$(SED_INPLACE) 's/^version = ".*"/version = "$(V)"/' $(BACKEND)/Cargo.toml
@@ -461,19 +476,17 @@ else
 endif
 endif
 
-# -------------
-# Maintenance
-# -------------
+# ─── Maintenance ───
 
 ifeq ($(DETECTED_OS),windows)
-clean:
+clean: ## Remove build artifacts and dependencies
 	@echo "Cleaning build artifacts..."
 	if (Test-Path node_modules) { Remove-Item -Recurse -Force node_modules }
 	if (Test-Path $(FRONTEND)\dist) { Remove-Item -Recurse -Force $(FRONTEND)\dist }
 	if (Test-Path target) { Remove-Item -Recurse -Force target }
 	@echo "Cleanup complete"
 else
-clean:
+clean: ## Remove build artifacts and dependencies
 	@echo "Cleaning build artifacts..."
 	@$(RM) node_modules
 	@$(RM) $(FRONTEND)/dist
