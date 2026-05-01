@@ -15,38 +15,17 @@ import { useQuestionnaireStore } from "@/stores/questionnaireStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
-import type { ClientSummary, ClientTreeNode, DocumentStatus } from "@/types";
+import type { ClientTreeNode } from "@/types";
 import type {
 	QuestionnaireDefFile,
 	QuestionnaireSectionDef,
 } from "@/types/questionnaire";
 import { extractFilename, extractFolderName } from "@/utils/path";
 
-// ─── Status helpers ──────────────────────────────────────────────────────
-
-const STATUS_LABELS: Record<DocumentStatus, string> = {
-	not_started: "Not Started",
-	drafting: "Drafting",
-	reviewing: "Reviewing",
-	complete: "Complete",
-	executed: "Executed",
-};
-
-const STATUS_BADGES: Record<DocumentStatus, string> = {
-	not_started: "badge-ghost",
-	drafting: "badge-warning",
-	reviewing: "badge-info",
-	complete: "badge-success",
-	executed: "badge-primary",
-};
+// ─── Helpers ─────────────────────────────────────────────────────────────
 
 function stripDocx(name: string): string {
 	return name.replace(/\.docx$/i, "");
-}
-
-function extractTemplateName(relPath: string): string {
-	const parts = relPath.split("/");
-	return stripDocx(parts[parts.length - 1] || relPath);
 }
 
 function formatDate(iso: string): string {
@@ -64,17 +43,6 @@ function formatDate(iso: string): string {
 }
 
 // ─── Tree helpers ────────────────────────────────────────────────────────
-
-function extractClientsFromTree(nodes: ClientTreeNode[]): ClientSummary[] {
-	const clients: ClientSummary[] = [];
-	for (const node of nodes) {
-		if (node.is_client && node.client_summary) {
-			clients.push(node.client_summary);
-		}
-		clients.push(...extractClientsFromTree(node.children));
-	}
-	return clients;
-}
 
 /** Check if a directory path corresponds to a client (has .lily file) in the tree data. */
 function isClientInTree(nodes: ClientTreeNode[], path: string): boolean {
@@ -153,9 +121,7 @@ function computeMigrationReport(
 	};
 }
 
-// ─── Tab types ───────────────────────────────────────────────────────────
-
-type ClientsTab = "clients" | "progress";
+// ─── Local types ─────────────────────────────────────────────────────────
 
 interface LibraryTree {
 	dir: string;
@@ -185,13 +151,13 @@ export default function ClientsHub() {
 		startAddDocument,
 		deleteDocument,
 		newVersionDocument,
+		addMultipleDocuments,
 		openTemplateFile,
 		reloadLilyFile,
 	} = useWorkflowStore();
 	const { loadActiveQuestionnaire } = useQuestionnaireStore();
 	const lilyIcon = useLilyIcon();
 
-	const [activeTab, setActiveTab] = useState<ClientsTab>("clients");
 	const [trees, setTrees] = useState<LibraryTree[]>([]);
 	const [treeLoading, setTreeLoading] = useState(false);
 
@@ -230,13 +196,6 @@ export default function ClientsHub() {
 		loadTrees();
 	}, [loadTrees]);
 
-	// Derive flat client list from trees for the progress tab
-	const clients = useMemo(() => {
-		const all = trees.flatMap((t) => extractClientsFromTree(t.nodes));
-		all.sort((a, b) => a.client_name.localeCompare(b.client_name));
-		return all;
-	}, [trees]);
-
 	const selectClient = async (dir: string) => {
 		await addRecentDirectory(dir);
 		save({ last_working_dir: dir });
@@ -257,17 +216,6 @@ export default function ClientsHub() {
 		}
 	};
 
-	// Aggregate stats for progress tab
-	const stats = useMemo(() => {
-		const allReqs = clients.flatMap((c) => c.required_documents);
-		const total = allReqs.length;
-		const byStatus: Record<string, number> = {};
-		for (const req of allReqs) {
-			byStatus[req.status] = (byStatus[req.status] || 0) + 1;
-		}
-		return { totalClients: clients.length, totalDocs: total, byStatus };
-	}, [clients]);
-
 	return (
 		<div className="flex flex-col h-full">
 			<PageHeader title="Clients" onBack={goToHub}>
@@ -280,65 +228,29 @@ export default function ClientsHub() {
 				</button>
 			</PageHeader>
 
-			{/* Tab bar */}
-			<div className="border-b border-base-300">
-				<div className="flex">
-					{(
-						[
-							{ id: "clients", label: "Clients" },
-							{ id: "progress", label: "Progress" },
-						] as const
-					).map((tab) => (
-						<button
-							key={tab.id}
-							type="button"
-							className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-								activeTab === tab.id
-									? "border-primary text-primary"
-									: "border-transparent text-base-content/50 hover:text-base-content/80 hover:bg-base-200/50"
-							}`}
-							onClick={() => setActiveTab(tab.id)}
-						>
-							{tab.label}
-						</button>
-					))}
-				</div>
-			</div>
-
-			{/* Tab content */}
 			<div className="flex-1 overflow-hidden">
-				{activeTab === "clients" && (
-					<ClientsTreeTab
-						trees={trees}
-						loading={treeLoading}
-						hasLibraryDirs={libraryDirs.length > 0}
-						workingDir={workingDir}
-						lilyFile={lilyFile}
-						onSelectClient={selectClient}
-						onGoToSettings={goToSettings}
-						lilyIcon={lilyIcon}
-						settings={settings}
-						onOpenQuestionnaire={openQuestionnaire}
-						onStartAddDocument={startAddDocument}
-						onOpenDocument={openDocument}
-						onDeleteDocument={deleteDocument}
-						onNewVersionDocument={newVersionDocument}
-						onOpenTemplateFile={openTemplateFile}
-						onReloadLilyFile={reloadLilyFile}
-						onLoadTemplates={loadTemplates}
-						loadActiveQuestionnaire={loadActiveQuestionnaire}
-						onReloadTrees={loadTrees}
-					/>
-				)}
-				{activeTab === "progress" && (
-					<ProgressTab
-						clients={clients}
-						stats={stats}
-						hasLibraryDirs={libraryDirs.length > 0}
-						onGoToSettings={goToSettings}
-						lilyIcon={lilyIcon}
-					/>
-				)}
+				<ClientsTreeTab
+					trees={trees}
+					loading={treeLoading}
+					hasLibraryDirs={libraryDirs.length > 0}
+					workingDir={workingDir}
+					lilyFile={lilyFile}
+					onSelectClient={selectClient}
+					onGoToSettings={goToSettings}
+					lilyIcon={lilyIcon}
+					settings={settings}
+					onOpenQuestionnaire={openQuestionnaire}
+					onStartAddDocument={startAddDocument}
+					onOpenDocument={openDocument}
+					onDeleteDocument={deleteDocument}
+					onNewVersionDocument={newVersionDocument}
+					onAddMultipleDocuments={addMultipleDocuments}
+					onOpenTemplateFile={openTemplateFile}
+					onReloadLilyFile={reloadLilyFile}
+					onLoadTemplates={loadTemplates}
+					loadActiveQuestionnaire={loadActiveQuestionnaire}
+					onReloadTrees={loadTrees}
+				/>
 			</div>
 		</div>
 	);
@@ -361,6 +273,7 @@ function ClientsTreeTab({
 	onOpenDocument,
 	onDeleteDocument,
 	onNewVersionDocument,
+	onAddMultipleDocuments,
 	onOpenTemplateFile,
 	onReloadLilyFile,
 	onLoadTemplates,
@@ -381,6 +294,10 @@ function ClientsTreeTab({
 	onOpenDocument: (filename: string, templateRelPath: string) => void;
 	onDeleteDocument: (filename: string) => Promise<void>;
 	onNewVersionDocument: (filename: string) => Promise<void>;
+	onAddMultipleDocuments: (
+		templateRelPaths: string[],
+		templatesDir: string,
+	) => Promise<void>;
 	onOpenTemplateFile: (templateRelPath: string) => Promise<void>;
 	onReloadLilyFile: () => Promise<void>;
 	onLoadTemplates: (templatesDir: string) => Promise<void>;
@@ -530,6 +447,7 @@ function ClientsTreeTab({
 					onOpenDocument={onOpenDocument}
 					onDeleteDocument={onDeleteDocument}
 					onNewVersionDocument={onNewVersionDocument}
+					onAddMultipleDocuments={onAddMultipleDocuments}
 					onOpenTemplateFile={onOpenTemplateFile}
 					onReloadLilyFile={onReloadLilyFile}
 					onLoadTemplates={onLoadTemplates}
@@ -556,6 +474,7 @@ function ClientContentPane({
 	onOpenDocument,
 	onDeleteDocument,
 	onNewVersionDocument,
+	onAddMultipleDocuments,
 	onOpenTemplateFile,
 	onReloadLilyFile,
 	onLoadTemplates,
@@ -570,6 +489,10 @@ function ClientContentPane({
 	onOpenDocument: (filename: string, templateRelPath: string) => void;
 	onDeleteDocument: (filename: string) => Promise<void>;
 	onNewVersionDocument: (filename: string) => Promise<void>;
+	onAddMultipleDocuments: (
+		templateRelPaths: string[],
+		templatesDir: string,
+	) => Promise<void>;
 	onOpenTemplateFile: (templateRelPath: string) => Promise<void>;
 	onReloadLilyFile: () => Promise<void>;
 	onLoadTemplates: (templatesDir: string) => Promise<void>;
@@ -698,6 +621,44 @@ function ClientContentPane({
 		onStartAddDocument();
 	};
 
+	const handleNewVersionMissing = useCallback(
+		async (filename: string, templateRelPath: string) => {
+			if (!settings.templates_dir) {
+				useToastStore
+					.getState()
+					.addToast(
+						"error",
+						"Templates folder is not configured. Set it in Settings.",
+					);
+				return;
+			}
+			try {
+				await onDeleteDocument(filename);
+				await onAddMultipleDocuments([templateRelPath], settings.templates_dir);
+			} catch (err) {
+				useToastStore
+					.getState()
+					.addToast("error", `Failed to create new version: ${err}`);
+			}
+		},
+		[settings.templates_dir, onDeleteDocument, onAddMultipleDocuments],
+	);
+
+	const handleEditInDocx = useCallback(
+		async (filename: string) => {
+			try {
+				await invoke("open_file_in_os", {
+					filePath: `${workingDir}/${filename}`,
+				});
+			} catch (err) {
+				useToastStore
+					.getState()
+					.addToast("error", `Failed to open document: ${err}`);
+			}
+		},
+		[workingDir],
+	);
+
 	const handleExport = async () => {
 		const folderName = extractFolderName(workingDir);
 		const path = await saveDialog({
@@ -773,7 +734,7 @@ function ClientContentPane({
 			<div className="flex-1 flex flex-col min-w-0">
 				{/* Pinned header */}
 				<div className="shrink-0 border-b border-base-300 px-6 py-4">
-					<div className="flex items-start justify-between gap-4">
+					<div className="max-w-3xl mx-auto flex items-start justify-between gap-4">
 						<div className="min-w-0">
 							<h2 className="text-xl font-semibold truncate">{folderName}</h2>
 							<p className="text-xs text-base-content/40 font-mono truncate mt-0.5">
@@ -840,7 +801,7 @@ function ClientContentPane({
 
 				{/* Scrollable content */}
 				<div className="flex-1 overflow-y-auto p-6">
-					<div className="max-w-3xl space-y-6">
+					<div className="max-w-3xl mx-auto space-y-6">
 						{isFreshWorkspace && (
 							<div className="rounded-xl border border-base-300 bg-base-200/40 p-4 flex items-start gap-3">
 								<div className="flex-1 min-w-0">
@@ -942,10 +903,11 @@ function ClientContentPane({
 												doc={doc}
 												isMissing={missingOnDisk.has(doc.filename)}
 												onOpen={onOpenDocument}
+												onEditInDocx={handleEditInDocx}
 												onDelete={onDeleteDocument}
 												onNewVersion={onNewVersionDocument}
+												onNewVersionMissing={handleNewVersionMissing}
 												onOpenTemplate={onOpenTemplateFile}
-												onReload={onReloadLilyFile}
 											/>
 										))}
 									{untrackedOnDisk.map((filename) => (
@@ -982,23 +944,31 @@ function DocumentRow({
 	doc,
 	isMissing,
 	onOpen,
+	onEditInDocx,
 	onDelete,
 	onNewVersion,
+	onNewVersionMissing,
 	onOpenTemplate,
-	onReload,
 }: {
 	doc: ClientDoc;
 	isMissing?: boolean;
 	onOpen: (filename: string, templateRelPath: string) => void;
+	onEditInDocx: (filename: string) => Promise<void>;
 	onDelete: (filename: string) => Promise<void>;
 	onNewVersion: (filename: string) => Promise<void>;
+	onNewVersionMissing: (
+		filename: string,
+		templateRelPath: string,
+	) => Promise<void>;
 	onOpenTemplate: (templateRelPath: string) => Promise<void>;
-	onReload: () => Promise<void>;
 }) {
 	const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
+	const [confirmingNewVersionMissing, setConfirmingNewVersionMissing] =
+		useState(false);
 	const menuRef = useRef<HTMLDivElement>(null);
 	const deleteDialogRef = useRef<HTMLDialogElement>(null);
+	const newVersionMissingDialogRef = useRef<HTMLDialogElement>(null);
 
 	useEffect(() => {
 		if (!menuPos) return;
@@ -1027,23 +997,29 @@ function DocumentRow({
 		setMenuPos({ x, y });
 	};
 
+	const handleNewVersionClick = () => {
+		if (isMissing) {
+			setConfirmingNewVersionMissing(true);
+			setTimeout(() => newVersionMissingDialogRef.current?.showModal(), 0);
+		} else {
+			onNewVersion(doc.filename);
+		}
+	};
+
 	return (
 		<>
-			<button
-				type="button"
-				className={`w-full text-left px-5 py-4 hover:bg-base-200/60 transition-colors ${isMissing ? "opacity-50" : ""}`}
-				onClick={() => !isMissing && onOpen(doc.filename, doc.templateRelPath)}
+			<div
+				className={`px-5 py-4 flex items-center gap-4 hover:bg-base-200/60 transition-colors ${isMissing ? "opacity-60" : ""}`}
 				onContextMenu={handleContextMenu}
-				disabled={isMissing}
 			>
-				<div className="flex flex-col gap-0.5">
+				<div className="flex-1 min-w-0 flex flex-col gap-0.5">
 					<span className="font-medium text-base flex items-center gap-2">
 						{stripDocx(doc.filename)}
 						{isMissing && (
 							<span className="badge badge-error badge-sm">missing</span>
 						)}
 					</span>
-					<span className="text-sm text-base-content/40">
+					<span className="text-sm text-base-content/40 truncate">
 						{isMissing ? (
 							"File no longer exists on disk"
 						) : (
@@ -1055,7 +1031,33 @@ function DocumentRow({
 						)}
 					</span>
 				</div>
-			</button>
+				<div className="shrink-0 flex items-center gap-2">
+					<button
+						type="button"
+						className="btn btn-sm btn-primary"
+						onClick={() => onOpen(doc.filename, doc.templateRelPath)}
+						disabled={isMissing}
+						title={
+							isMissing ? "File is missing on disk" : "Open in Lily editor"
+						}
+					>
+						Edit in Lily
+					</button>
+					<button
+						type="button"
+						className="btn btn-sm btn-ghost"
+						onClick={() => onEditInDocx(doc.filename)}
+						disabled={isMissing}
+						title={
+							isMissing
+								? "File is missing on disk"
+								: "Open .docx in default app"
+						}
+					>
+						Edit in Docx
+					</button>
+				</div>
+			</div>
 
 			{menuPos && (
 				<div
@@ -1069,7 +1071,7 @@ function DocumentRow({
 							className="text-sm"
 							onClick={() => {
 								setMenuPos(null);
-								onNewVersion(doc.filename);
+								handleNewVersionClick();
 							}}
 						>
 							New Version
@@ -1143,6 +1145,53 @@ function DocumentRow({
 								}}
 							>
 								Delete
+							</button>
+						</div>
+					</div>
+				</dialog>
+			)}
+
+			{confirmingNewVersionMissing && (
+				<dialog
+					ref={newVersionMissingDialogRef}
+					className="modal"
+					onClick={(e) => {
+						if (e.target === newVersionMissingDialogRef.current) {
+							newVersionMissingDialogRef.current?.close();
+							setConfirmingNewVersionMissing(false);
+						}
+					}}
+				>
+					<div className="modal-box">
+						<h3 className="text-lg font-bold mb-2">Create new version?</h3>
+						<p className="text-base-content/70 mb-4">
+							The original document <strong>{doc.filename}</strong> is missing
+							on disk. Creating a new version will remove this entry and create
+							a fresh document from{" "}
+							<strong>{stripDocx(extractFilename(doc.templateRelPath))}</strong>
+							.
+						</p>
+						<div className="modal-action">
+							<button
+								type="button"
+								className="btn btn-ghost btn-sm"
+								onClick={() => {
+									newVersionMissingDialogRef.current?.close();
+									setConfirmingNewVersionMissing(false);
+								}}
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								className="btn btn-primary btn-sm"
+								onClick={async () => {
+									newVersionMissingDialogRef.current?.close();
+									setConfirmingNewVersionMissing(false);
+									await onNewVersionMissing(doc.filename, doc.templateRelPath);
+								}}
+							>
+								Create New Version
 							</button>
 						</div>
 					</div>
@@ -1357,126 +1406,5 @@ function ClientIcon() {
 				d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
 			/>
 		</svg>
-	);
-}
-
-// ─── Progress Tab ────────────────────────────────────────────────────────
-
-function ProgressTab({
-	clients,
-	stats,
-	hasLibraryDirs,
-	onGoToSettings,
-	lilyIcon,
-}: {
-	clients: ClientSummary[];
-	stats: {
-		totalClients: number;
-		totalDocs: number;
-		byStatus: Record<string, number>;
-	};
-	hasLibraryDirs: boolean;
-	onGoToSettings: () => void;
-	lilyIcon: string;
-}) {
-	if (!hasLibraryDirs) {
-		return (
-			<div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-				<img src={lilyIcon} alt="" className="size-16 opacity-20" />
-				<p className="text-base-content/50 text-center max-w-sm">
-					Configure a client library folder in Settings to track document
-					progress across clients.
-				</p>
-				<button
-					type="button"
-					className="btn btn-primary btn-sm"
-					onClick={onGoToSettings}
-				>
-					Open Settings
-				</button>
-			</div>
-		);
-	}
-
-	const completedDocs =
-		(stats.byStatus.complete || 0) + (stats.byStatus.executed || 0);
-	const completionPct =
-		stats.totalDocs > 0
-			? Math.round((completedDocs / stats.totalDocs) * 100)
-			: 0;
-
-	return (
-		<div className="flex-1 overflow-y-auto p-6">
-			<div className="max-w-3xl mx-auto space-y-6">
-				<div className="flex gap-4">
-					<div className="flex-1 px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
-						<div className="text-2xl font-bold">{stats.totalClients}</div>
-						<div className="text-xs text-base-content/50">Clients</div>
-					</div>
-					<div className="flex-1 px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
-						<div className="text-2xl font-bold">{stats.totalDocs}</div>
-						<div className="text-xs text-base-content/50">
-							Required Documents
-						</div>
-					</div>
-					<div className="flex-1 px-4 py-3 rounded-lg bg-base-100 border border-base-300 text-center">
-						<div className="text-2xl font-bold">{completionPct}%</div>
-						<div className="text-xs text-base-content/50">Complete</div>
-					</div>
-				</div>
-
-				{stats.totalDocs > 0 && (
-					<div className="flex gap-2 flex-wrap">
-						{(Object.entries(STATUS_LABELS) as [DocumentStatus, string][]).map(
-							([status, label]) => {
-								const count = stats.byStatus[status] || 0;
-								if (count === 0) return null;
-								return (
-									<span
-										key={status}
-										className={`badge ${STATUS_BADGES[status]} gap-1`}
-									>
-										{count} {label}
-									</span>
-								);
-							},
-						)}
-					</div>
-				)}
-
-				<div>
-					<SectionHeading className="mb-3">By Client</SectionHeading>
-					{clients.length === 0 ? (
-						<p className="text-sm text-base-content/50">No clients found.</p>
-					) : (
-						<div className="rounded-xl border border-base-300 bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] divide-y divide-base-200 overflow-hidden">
-							{clients.map((client) => (
-								<div key={client.directory} className="px-5 py-4">
-									<div className="font-medium text-sm mb-2">
-										{client.client_name}
-									</div>
-									{client.required_documents.length === 0 ? (
-										<p className="text-xs text-base-content/30">
-											No required documents
-										</p>
-									) : (
-										<div className="flex flex-wrap gap-1.5">
-											{client.required_documents.map((req, i) => (
-												<span
-													key={`${req.template_rel_path}-${i}`}
-													className={`badge badge-sm ${STATUS_BADGES[req.status]} gap-1`}
-												>
-													{extractTemplateName(req.template_rel_path)}
-												</span>
-											))}
-										</div>
-									)}
-								</div>
-							))}
-						</div>
-					)}
-				</div>
-			</div>
-		</div>
 	);
 }
