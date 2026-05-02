@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Synchronize a .lily template schema sidecar with the DOCX template's
 actual SDT inventory.

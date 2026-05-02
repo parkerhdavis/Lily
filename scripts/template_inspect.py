@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Inspect a Lily DOCX template — extract and display all SDTs, bookmarks,
 {Variable} placeholders, and their structure.

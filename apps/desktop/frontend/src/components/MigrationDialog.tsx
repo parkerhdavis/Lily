@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import { useCallback, useMemo, useState } from "react";
 
 /** A variable in the client's .lily file that has no home in the current questionnaire. */

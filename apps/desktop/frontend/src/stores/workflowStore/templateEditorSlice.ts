@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import { invoke } from "@tauri-apps/api/core";
 import type { TextOccurrence, VariableInfo } from "@/types";
 import { pushNav, toastError, toastSuccess } from "./helpers";

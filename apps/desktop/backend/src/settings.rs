@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;

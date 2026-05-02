@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import { invoke } from "@tauri-apps/api/core";
 import { useUndoStore } from "@/stores/undoStore";
 import { toastError } from "./helpers";
