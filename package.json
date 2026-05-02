@@ -3,6 +3,7 @@
 	"private": true,
 	"version": "0.7.0",
 	"description": "Lily — legal drafting and client management toolset",
+	"license": "AGPL-3.0-or-later",
 	"workspaces": ["apps/desktop/frontend"],
 	"devDependencies": {
 		"@biomejs/biome": "^2.0.0",
