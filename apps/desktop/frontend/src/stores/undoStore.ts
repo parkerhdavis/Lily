@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import { create } from "zustand";
 
 const MAX_UNDO = 100;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import { useNavigationStore } from "@/stores/navigationStore";
 import { useUndoStore } from "@/stores/undoStore";
 import { pushNav } from "./helpers";

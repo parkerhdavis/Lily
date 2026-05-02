@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import StatusDot from "@/components/ui/StatusDot";
 import type { Contact, ContactBinding } from "@/types";
 import {

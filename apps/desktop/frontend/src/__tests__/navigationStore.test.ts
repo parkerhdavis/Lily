@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import { beforeEach, describe, expect, test } from "bun:test";
 import type { NavigationEntry } from "@/stores/navigationStore";
 import { useNavigationStore } from "@/stores/navigationStore";

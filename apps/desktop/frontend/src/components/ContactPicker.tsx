@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import { useCallback, useMemo, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import type { Contact, ContactBinding } from "@/types";

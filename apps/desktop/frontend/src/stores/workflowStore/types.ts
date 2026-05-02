@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import type { NavigationEntry } from "@/stores/navigationStore";
 import type {
 	Contact,

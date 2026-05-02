@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import { useSettingsStore } from "@/stores/settingsStore";
 
 /** Returns the correct Lily icon path for the current theme. */

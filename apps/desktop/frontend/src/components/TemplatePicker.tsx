@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import { open } from "@tauri-apps/plugin-dialog";
 import { useMemo, useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";

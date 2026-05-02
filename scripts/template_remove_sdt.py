@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Remove a Lily SDT content control from a DOCX template, replacing it
 with plain text.

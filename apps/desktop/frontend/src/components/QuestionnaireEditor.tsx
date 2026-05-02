@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import { useCallback, useEffect, useRef, useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
