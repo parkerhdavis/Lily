@@ -482,8 +482,9 @@ pub fn replace_variables_v2(
                     &conditional_schema,
                     &mut next_id,
                 );
+                let pruned = prune_empty_conditional_paragraphs(&updated);
                 writer
-                    .write_all(updated.as_bytes())
+                    .write_all(pruned.as_bytes())
                     .map_err(|e| format!("Failed to write entry: {}", e))?;
             } else if name == "[Content_Types].xml" && is_docx {
                 let ct_xml = String::from_utf8_lossy(content);
@@ -683,6 +684,52 @@ fn update_sdt_v2(
         }
     }
 
+    result.push_str(&xml[last_end..]);
+    result
+}
+
+/// Remove `<w:p>` elements that contain a `lily-cond:` bookmark (i.e., a
+/// conditional that resolved to empty) and have no remaining visible content.
+///
+/// This is the post-pass complement to `update_sdt_v2`: when a conditional
+/// SDT resolves to an empty string, that SDT is rewritten to a zero-width
+/// `lily-cond:` bookmark. If the entire paragraph collapses to nothing
+/// visible, the bullet/numbering still renders as a blank list item. This
+/// function strips those collapsed paragraphs so list counters stay tight.
+///
+/// A paragraph is preserved if it has *any* visible content beyond the
+/// bookmark — non-whitespace `<w:t>` text, or block-content elements like
+/// `<w:tab/>`, `<w:br/>`, drawings, fields, etc. That way mixed paragraphs
+/// (conditional + literal text, or one true conditional + one false one)
+/// are never pruned.
+fn prune_empty_conditional_paragraphs(xml: &str) -> String {
+    let p_re = Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("invalid regex");
+    let cond_bm_re = Regex::new(
+        r#"<w:bookmarkStart\s+w:id="\d+"\s+w:name="lily-cond:[^"]*"\s*/>"#,
+    )
+    .expect("invalid regex");
+    let t_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
+    // Block-level visible content other than text runs. Presence of any of
+    // these inside the paragraph means it's not safe to drop.
+    let visible_re = Regex::new(
+        r#"<w:(?:tab|br|drawing|pict|object|fldChar|sym|ptab|noBreakHyphen|softHyphen)\b"#,
+    )
+    .expect("invalid regex");
+
+    let mut result = String::with_capacity(xml.len());
+    let mut last_end = 0;
+    for m in p_re.find_iter(xml) {
+        let para = m.as_str();
+        let pruneable = cond_bm_re.is_match(para)
+            && !visible_re.is_match(para)
+            && !t_re
+                .captures_iter(para)
+                .any(|c| !c[1].trim().is_empty());
+        if pruneable {
+            result.push_str(&xml[last_end..m.start()]);
+            last_end = m.end();
+        }
+    }
     result.push_str(&xml[last_end..]);
     result
 }
@@ -5782,5 +5829,60 @@ mod tests {
             "Expected 'Alt Agent Full Name', got: {:?}",
             names
         );
+    }
+
+    #[test]
+    fn test_prune_empty_conditional_paragraph() {
+        // List paragraph where the conditional resolved to empty -> bookmark only.
+        // No other text runs, no tabs/breaks. Should be removed.
+        let xml = r#"<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr></w:pPr><w:bookmarkStart w:id="9" w:name="lily-cond:Has Secondary HPOA Agent"/><w:bookmarkEnd w:id="9"/></w:p>"#;
+        let pruned = prune_empty_conditional_paragraphs(xml);
+        assert_eq!(pruned, "");
+    }
+
+    #[test]
+    fn test_prune_keeps_paragraph_with_text_alongside_conditional() {
+        // A conditional resolved to empty but the paragraph has other text.
+        let xml = r#"<w:p><w:r><w:t xml:space="preserve">Note: </w:t></w:r><w:bookmarkStart w:id="9" w:name="lily-cond:Has Note"/><w:bookmarkEnd w:id="9"/></w:p>"#;
+        let pruned = prune_empty_conditional_paragraphs(xml);
+        assert_eq!(pruned, xml);
+    }
+
+    #[test]
+    fn test_prune_keeps_empty_lily_bookmark_paragraph() {
+        // Non-conditional bookmarks (`lily:`, not `lily-cond:`) are out of scope —
+        // we only prune list items whose disappearance was *intentional*.
+        let xml = r#"<w:p><w:bookmarkStart w:id="3" w:name="lily:Optional Field"/><w:bookmarkEnd w:id="3"/></w:p>"#;
+        let pruned = prune_empty_conditional_paragraphs(xml);
+        assert_eq!(pruned, xml);
+    }
+
+    #[test]
+    fn test_prune_keeps_paragraph_with_tab_or_break() {
+        // A paragraph with only tabs/breaks plus the bookmark is preserved —
+        // the user put visible whitespace there on purpose.
+        let xml = r#"<w:p><w:r><w:tab/></w:r><w:bookmarkStart w:id="9" w:name="lily-cond:Has Tab"/><w:bookmarkEnd w:id="9"/></w:p>"#;
+        let pruned = prune_empty_conditional_paragraphs(xml);
+        assert_eq!(pruned, xml);
+    }
+
+    #[test]
+    fn test_prune_collapses_consecutive_empty_conditional_paragraphs() {
+        // Two list paragraphs in a row, both with empty conditionals — both pruned.
+        // Surrounding paragraphs are preserved.
+        let xml = r#"<w:body><w:p><w:r><w:t>Before</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="9" w:name="lily-cond:A"/><w:bookmarkEnd w:id="9"/></w:p><w:p><w:bookmarkStart w:id="10" w:name="lily-cond:B"/><w:bookmarkEnd w:id="10"/></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p></w:body>"#;
+        let pruned = prune_empty_conditional_paragraphs(xml);
+        assert_eq!(
+            pruned,
+            r#"<w:body><w:p><w:r><w:t>Before</w:t></w:r></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p></w:body>"#
+        );
+    }
+
+    #[test]
+    fn test_prune_keeps_whitespace_only_text_with_no_conditional() {
+        // No conditional bookmark — must not touch even a fully blank paragraph.
+        let xml = r#"<w:p><w:r><w:t xml:space="preserve">   </w:t></w:r></w:p>"#;
+        let pruned = prune_empty_conditional_paragraphs(xml);
+        assert_eq!(pruned, xml);
     }
 }

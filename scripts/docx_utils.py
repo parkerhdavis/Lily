@@ -111,6 +111,45 @@ def write_docx(docx_path: str, entries: list[tuple[str, bytes]]) -> None:
 	Path(docx_path).write_bytes(buf.getvalue())
 
 
+# ── Empty conditional paragraph pruning ────────────────────────────────────
+
+_PARAGRAPH_RE = re.compile(r"<w:p\b[^>]*>.*?</w:p>", re.DOTALL)
+_COND_BOOKMARK_RE = re.compile(r'<w:bookmarkStart\s+w:id="\d+"\s+w:name="lily-cond:[^"]*"\s*/>')
+_T_TEXT_RE = re.compile(r"<w:t(?: [^>]*)?>([^<]*)</w:t>")
+_VISIBLE_BLOCK_RE = re.compile(
+	r"<w:(?:tab|br|drawing|pict|object|fldChar|sym|ptab|noBreakHyphen|softHyphen)\b"
+)
+
+
+def prune_empty_conditional_paragraphs(xml: str) -> str:
+	"""
+	Remove `<w:p>` elements that contain a `lily-cond:` bookmark and have
+	no remaining visible content.
+
+	Mirrors `prune_empty_conditional_paragraphs` in `docx_ops.rs`. Used as a
+	post-pass after conditional resolution: when a `lily-cond:` SDT resolves
+	to an empty string it becomes a zero-width bookmark, and if the rest of
+	the paragraph is empty (no non-whitespace text, no tabs/breaks/drawings)
+	the paragraph itself is dropped so list counters stay tight.
+	"""
+	out_parts: list[str] = []
+	last_end = 0
+	for m in _PARAGRAPH_RE.finditer(xml):
+		para = m.group(0)
+		if not _COND_BOOKMARK_RE.search(para):
+			continue
+		if _VISIBLE_BLOCK_RE.search(para):
+			continue
+		if any(t.group(1).strip() for t in _T_TEXT_RE.finditer(para)):
+			continue
+		out_parts.append(xml[last_end : m.start()])
+		last_end = m.end()
+	if last_end == 0:
+		return xml
+	out_parts.append(xml[last_end:])
+	return "".join(out_parts)
+
+
 # ── ID management ───────────────────────────────────────────────────────────
 
 _BOOKMARK_ID_RE = re.compile(r'<w:bookmarkStart\s+w:id="(\d+)"')
