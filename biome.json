@@ -1,12 +1,12 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.0.0/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.4.12/schema.json",
 	"files": {
 		"includes": [
 			"apps/**",
 			"!**/dist",
 			"!**/node_modules",
 			"!**/gen",
-			"!target",
+			"!**/target",
 			"!**/seed_questionnaire.json"
 		]
 	},

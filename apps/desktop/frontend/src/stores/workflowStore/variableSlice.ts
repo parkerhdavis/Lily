@@ -101,53 +101,49 @@ export const createVariableSlice: WorkflowSlice = (set, get) => ({
 		const { workingDir } = get();
 		if (!workingDir) return;
 
-		try {
-			await invoke("add_client_variable", {
-				workingDir,
-				variableName: name,
-			});
-			const { lilyFile } = get();
-			if (lilyFile) {
-				set({
-					lilyFile: {
-						...lilyFile,
-						variables: { ...lilyFile.variables, [name]: "" },
-					},
-				});
-			}
-			useUndoStore.getState().push({
-				description: `Add variable ${name}`,
-				timestamp: Date.now(),
-				redo: async () => {
-					await invoke("add_client_variable", {
-						workingDir,
-						variableName: name,
-					});
-					const { lilyFile: lf } = get();
-					if (lf) {
-						set({
-							lilyFile: {
-								...lf,
-								variables: { ...lf.variables, [name]: "" },
-							},
-						});
-					}
-				},
-				undo: async () => {
-					await invoke("remove_client_variable", {
-						workingDir,
-						variableName: name,
-					});
-					const { lilyFile: lf } = get();
-					if (lf) {
-						const { [name]: _, ...rest } = lf.variables;
-						set({ lilyFile: { ...lf, variables: rest } });
-					}
+		await invoke("add_client_variable", {
+			workingDir,
+			variableName: name,
+		});
+		const { lilyFile } = get();
+		if (lilyFile) {
+			set({
+				lilyFile: {
+					...lilyFile,
+					variables: { ...lilyFile.variables, [name]: "" },
 				},
 			});
-		} catch (err) {
-			throw err;
 		}
+		useUndoStore.getState().push({
+			description: `Add variable ${name}`,
+			timestamp: Date.now(),
+			redo: async () => {
+				await invoke("add_client_variable", {
+					workingDir,
+					variableName: name,
+				});
+				const { lilyFile: lf } = get();
+				if (lf) {
+					set({
+						lilyFile: {
+							...lf,
+							variables: { ...lf.variables, [name]: "" },
+						},
+					});
+				}
+			},
+			undo: async () => {
+				await invoke("remove_client_variable", {
+					workingDir,
+					variableName: name,
+				});
+				const { lilyFile: lf } = get();
+				if (lf) {
+					const { [name]: _, ...rest } = lf.variables;
+					set({ lilyFile: { ...lf, variables: rest } });
+				}
+			},
+		});
 	},
 
 	removeClientVariable: async (name) => {

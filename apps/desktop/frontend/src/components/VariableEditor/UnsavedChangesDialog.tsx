@@ -15,7 +15,6 @@ export default function UnsavedChangesDialog({
 	onSave,
 }: UnsavedChangesDialogProps) {
 	return (
-		/* biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close */
 		<dialog
 			ref={dialogRef}
 			className="modal"

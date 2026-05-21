@@ -1,8 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import {
-	CONTACT_PROPERTIES,
-	PROPERTY_LABELS,
-} from "@/components/VariableEditor/variableHelpers";
 import { useNavigationStore } from "@/stores/navigationStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";

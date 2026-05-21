@@ -15,8 +15,7 @@ export default function StatusBar({
 }: {
 	onShowShortcuts?: () => void;
 }) {
-	const { settings, toggleTheme, zoomIn, zoomOut, zoomReset } =
-		useSettingsStore();
+	const { settings, toggleTheme, zoomReset } = useSettingsStore();
 	const step = useWorkflowStore((s) => s.step);
 	const workingDir = useWorkflowStore((s) => s.workingDir);
 	const goToSettings = useWorkflowStore((s) => s.goToSettings);

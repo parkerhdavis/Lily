@@ -26,7 +26,6 @@ export default function AppSwitcher({ className }: { className?: string }) {
 	const goToClients = useWorkflowStore((s) => s.goToClients);
 	const goToPipeline = useWorkflowStore((s) => s.goToPipeline);
 	const goToSettings = useWorkflowStore((s) => s.goToSettings);
-	const setStep = useWorkflowStore((s) => s.setStep);
 	const setWorkingDir = useWorkflowStore((s) => s.setWorkingDir);
 	const [open, setOpen] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);

@@ -93,7 +93,6 @@ export default function ToastContainer() {
 				<div
 					key={t.id}
 					className={`alert ${alertClass[t.type]} shadow-lg cursor-pointer max-w-sm`}
-					// biome-ignore lint/a11y/useKeyWithClickEvents: toast dismiss on click
 					onClick={() => removeToast(t.id)}
 				>
 					{icons[t.type]}

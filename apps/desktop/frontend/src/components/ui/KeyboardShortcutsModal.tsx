@@ -47,7 +47,6 @@ export default function KeyboardShortcutsModal({
 			ref={dialogRef}
 			className="modal"
 			onClose={onClose}
-			// biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close
 			onClick={handleBackdropClick}
 		>
 			<div className="modal-box max-w-md">

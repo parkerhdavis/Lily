@@ -221,7 +221,6 @@ export default function ContactManager({ onClose }: { onClose: () => void }) {
 
 			{/* Edit/Add contact dialog */}
 			{editingContact && (
-				// biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close
 				<dialog
 					ref={dialogRef}
 					className="modal"
@@ -380,7 +379,6 @@ export default function ContactManager({ onClose }: { onClose: () => void }) {
 
 			{/* Delete confirmation dialog */}
 			{confirmDeleteId && (
-				// biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close
 				<dialog
 					ref={deleteDialogRef}
 					className="modal"

@@ -294,7 +294,6 @@ export default function CopyFromSpouseDialog({
 	};
 
 	return (
-		// biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close is a convenience
 		<dialog
 			ref={dialogRef}
 			className="modal"

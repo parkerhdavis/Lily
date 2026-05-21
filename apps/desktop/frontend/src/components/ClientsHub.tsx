@@ -154,7 +154,6 @@ export default function ClientsHub() {
 		newVersionDocument,
 		addMultipleDocuments,
 		openTemplateFile,
-		reloadLilyFile,
 	} = useWorkflowStore();
 	const { loadActiveQuestionnaire } = useQuestionnaireStore();
 	const lilyIcon = useLilyIcon();
@@ -247,7 +246,6 @@ export default function ClientsHub() {
 					onNewVersionDocument={newVersionDocument}
 					onAddMultipleDocuments={addMultipleDocuments}
 					onOpenTemplateFile={openTemplateFile}
-					onReloadLilyFile={reloadLilyFile}
 					onLoadTemplates={loadTemplates}
 					loadActiveQuestionnaire={loadActiveQuestionnaire}
 					onReloadTrees={loadTrees}
@@ -276,7 +274,6 @@ function ClientsTreeTab({
 	onNewVersionDocument,
 	onAddMultipleDocuments,
 	onOpenTemplateFile,
-	onReloadLilyFile,
 	onLoadTemplates,
 	loadActiveQuestionnaire,
 	onReloadTrees,
@@ -300,7 +297,6 @@ function ClientsTreeTab({
 		templatesDir: string,
 	) => Promise<void>;
 	onOpenTemplateFile: (templateRelPath: string) => Promise<void>;
-	onReloadLilyFile: () => Promise<void>;
 	onLoadTemplates: (templatesDir: string) => Promise<void>;
 	loadActiveQuestionnaire: () => Promise<
 		import("@/types/questionnaire").QuestionnaireDefFile | null
@@ -450,7 +446,6 @@ function ClientsTreeTab({
 					onNewVersionDocument={onNewVersionDocument}
 					onAddMultipleDocuments={onAddMultipleDocuments}
 					onOpenTemplateFile={onOpenTemplateFile}
-					onReloadLilyFile={onReloadLilyFile}
 					onLoadTemplates={onLoadTemplates}
 					loadActiveQuestionnaire={loadActiveQuestionnaire}
 				/>
@@ -477,7 +472,6 @@ function ClientContentPane({
 	onNewVersionDocument,
 	onAddMultipleDocuments,
 	onOpenTemplateFile,
-	onReloadLilyFile,
 	onLoadTemplates,
 	loadActiveQuestionnaire,
 }: {
@@ -495,7 +489,6 @@ function ClientContentPane({
 		templatesDir: string,
 	) => Promise<void>;
 	onOpenTemplateFile: (templateRelPath: string) => Promise<void>;
-	onReloadLilyFile: () => Promise<void>;
 	onLoadTemplates: (templatesDir: string) => Promise<void>;
 	loadActiveQuestionnaire: () => Promise<
 		import("@/types/questionnaire").QuestionnaireDefFile | null
@@ -779,7 +772,6 @@ function ClientContentPane({
 										<path d="M8 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM8 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM9.5 12.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0Z" />
 									</svg>
 								</button>
-								{/* biome-ignore lint/a11y/noNoninteractiveTabindex: daisyUI dropdown pattern */}
 								<ul
 									tabIndex={0}
 									className="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-1 z-50"
@@ -1108,7 +1100,6 @@ function DocumentRow({
 			)}
 
 			{confirmingDelete && (
-				// biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close is a convenience
 				<dialog
 					ref={deleteDialogRef}
 					className="modal"
