@@ -507,7 +507,7 @@ pub fn replace_variables_v2(
             .map_err(|e| format!("Failed to finish zip: {}", e))?;
     }
 
-    fs::write(&docx_path, output.into_inner())
+    lily_file::atomic_write_bytes(Path::new(&docx_path), &output.into_inner())
         .map_err(|e| format!("Failed to write docx: {}", e))?;
 
     // Update variable values in the .lily file
@@ -1326,7 +1326,7 @@ pub fn move_template_sdt(
             .finish()
             .map_err(|e| format!("Zip finish error: {}", e))?;
     }
-    fs::write(&template_path, &out_buf)
+    lily_file::atomic_write_bytes(Path::new(&template_path), &out_buf)
         .map_err(|e| format!("Failed to write docx: {}", e))?;
 
     extract_variables(template_path)
@@ -1418,7 +1418,7 @@ pub fn insert_sdt_at_position(
             .finish()
             .map_err(|e| format!("Zip finish error: {}", e))?;
     }
-    fs::write(&template_path, &out_buf)
+    lily_file::atomic_write_bytes(Path::new(&template_path), &out_buf)
         .map_err(|e| format!("Failed to write docx: {}", e))?;
 
     extract_variables(template_path)
@@ -1603,7 +1603,7 @@ pub fn insert_template_variable(
             .finish()
             .map_err(|e| format!("Failed to finalize zip: {}", e))?;
     }
-    fs::write(&template_path, output.into_inner())
+    lily_file::atomic_write_bytes(Path::new(&template_path), &output.into_inner())
         .map_err(|e| format!("Failed to write docx: {}", e))?;
 
     // Return updated variable list
@@ -1706,7 +1706,7 @@ pub fn remove_template_variable(
             .finish()
             .map_err(|e| format!("Failed to finalize zip: {}", e))?;
     }
-    fs::write(&template_path, output.into_inner())
+    lily_file::atomic_write_bytes(Path::new(&template_path), &output.into_inner())
         .map_err(|e| format!("Failed to write docx: {}", e))?;
 
     extract_variables(template_path)
@@ -1824,7 +1824,7 @@ pub fn rename_template_variable(
             .finish()
             .map_err(|e| format!("Failed to finalize zip: {}", e))?;
     }
-    fs::write(&template_path, output.into_inner())
+    lily_file::atomic_write_bytes(Path::new(&template_path), &output.into_inner())
         .map_err(|e| format!("Failed to write docx: {}", e))?;
 
     extract_variables(template_path)
@@ -2183,7 +2183,7 @@ pub fn migrate_template_to_sdt(
             .map_err(|e| format!("Failed to finish zip: {}", e))?;
     }
 
-    fs::write(&template_path, output.into_inner())
+    lily_file::atomic_write_bytes(Path::new(&template_path), &output.into_inner())
         .map_err(|e| format!("Failed to write template: {}", e))?;
 
     // Save the schema alongside the template
