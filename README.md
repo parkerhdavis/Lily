@@ -39,6 +39,7 @@ Lily streamlines the process of gathering client information and using it to pop
 - Track documents through statuses: Not Started → Drafting → Reviewing → Complete → Executed
 - Create **dated versions** of documents to preserve history
 - The completed `.docx` is a standard Word file, ready for editing in any word processor
+- Lily templating is saved under the surface; you can bring the .docx back into Lily anytime
 
 ![Screenshot from v0.3.0 dev build 2026-03-25](./.github/assets/lily_screenshot_hpoa.png)
 ![](./.github/assets/lily_screenshot_saved.png)
