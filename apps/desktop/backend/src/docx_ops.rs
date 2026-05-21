@@ -568,7 +568,7 @@ fn update_sdt_v2(
     let mut last_end = 0;
 
     for caps in combined_re.captures_iter(xml) {
-        let m = caps.get(0).unwrap();
+        let m = caps.get(0).expect("regex capture group 0 is always present");
         result.push_str(&xml[last_end..m.start()]);
         last_end = m.end();
 
@@ -625,7 +625,10 @@ fn update_sdt_v2(
                     let new_inner = t_re
                         .replace(inner, |t_caps: &regex::Captures| {
                             let full = t_caps[0].to_string();
-                            let tag_end = full.find('>').unwrap() + 1;
+                            let tag_end = full
+                                .find('>')
+                                .expect("t_re match always contains the opening tag's '>'")
+                                + 1;
                             format!("{}{}</w:t>", &full[..tag_end], new_value)
                         })
                         .to_string();
@@ -828,7 +831,9 @@ fn build_paragraph_text_maps(xml: &str) -> Vec<ParagraphTextMap> {
 
         // Find all <w:t> elements within this paragraph
         for t_match in t_re.captures_iter(para_xml) {
-            let content = t_match.get(1).unwrap();
+            let content = t_match
+                .get(1)
+                .expect("t_re's group 1 is always populated when the match succeeds");
 
             let xml_content_start = para_start + content.start();
             let xml_content_end = para_start + content.end();
@@ -2092,7 +2097,12 @@ pub fn migrate_template_to_sdt(
                 let cond_entry = if conditions.len() == 1 {
                     VariableSchemaEntry {
                         var_type: "conditional".to_string(),
-                        condition: Some(conditions.into_iter().next().unwrap()),
+                        condition: Some(
+                            conditions
+                                .into_iter()
+                                .next()
+                                .expect("checked conditions.len() == 1 above"),
+                        ),
                         ..Default::default()
                     }
                 } else {
@@ -2276,7 +2286,7 @@ fn replace_placeholders_with_sdt_v2(
                 for (var_name, (display_name, value, is_cond)) in replacements {
                     let pattern = format!("{{{}}}", var_name);
                     if let Some(pos) = text.find(&pattern) {
-                        if best.is_none() || pos < best.unwrap().0 {
+                        if best.is_none_or(|b| pos < b.0) {
                             best = Some((pos, var_name, display_name, value, *is_cond));
                         }
                     }
@@ -2374,8 +2384,11 @@ fn normalize_split_variables(xml: &str) -> String {
         let abs_end = search_from + t_match.end();
         let full_tag = &result[abs_start..abs_end];
 
-        // Extract the text content between <w:t...> and </w:t>
-        let text_content = &t_open_re.captures(remaining).unwrap()[1];
+        // Extract the text content between <w:t...> and </w:t>.
+        // `t_match` succeeded on the same regex + slice, so captures must also.
+        let text_content = &t_open_re
+            .captures(remaining)
+            .expect("t_open_re.find succeeded on this slice, so captures must too")[1];
 
         // Check if this text has unbalanced braces — more `{` than `}` means
         // part of a variable extends into subsequent runs. Use depth tracking
@@ -2417,7 +2430,10 @@ fn normalize_split_variables(xml: &str) -> String {
                 break;
             }
 
-            let next_text = &t_open_re.captures(scan_remaining).unwrap()[1];
+            // `next_t` succeeded on the same regex + slice, so captures must also.
+            let next_text = &t_open_re
+                .captures(scan_remaining)
+                .expect("t_open_re.find succeeded on this slice, so captures must too")[1];
             merged_text.push_str(next_text);
             last_consumed_end = next_abs_end;
 
@@ -2469,7 +2485,10 @@ fn normalize_split_variables(xml: &str) -> String {
         // consumed </w:t> end.
 
         // Extract the opening tag of the first <w:t> element (e.g., `<w:t xml:space="preserve">`)
-        let opening_tag_end = full_tag.find('>').unwrap() + 1;
+        let opening_tag_end = full_tag
+            .find('>')
+            .expect("t_open_re match always contains the opening tag's '>'")
+            + 1;
         let opening_tag = &full_tag[..opening_tag_end];
 
         // Build new element with merged text and xml:space="preserve"
@@ -2508,8 +2527,14 @@ fn normalize_split_variables(xml: &str) -> String {
         intermediate = t_open_re
             .replace_all(&intermediate, |caps: &regex::Captures| {
                 // Keep the tag but empty the text
-                let full = caps.get(0).unwrap().as_str();
-                let tag_end = full.find('>').unwrap() + 1;
+                let full = caps
+                    .get(0)
+                    .expect("regex capture group 0 is always present")
+                    .as_str();
+                let tag_end = full
+                    .find('>')
+                    .expect("t_open_re match always contains the opening tag's '>'")
+                    + 1;
                 format!("{}</w:t>", &full[..tag_end])
             })
             .to_string();
