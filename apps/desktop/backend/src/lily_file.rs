@@ -15,6 +15,12 @@ const CURRENT_VERSION: u32 = 5;
 /// directory, then rename over the target. Prevents corruption if the
 /// process crashes mid-write.
 pub fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
+    atomic_write_bytes(path, content.as_bytes())
+}
+
+/// Binary variant of [`atomic_write`]. Used for `.docx` saves and any other
+/// non-UTF-8 payload that must not be left half-written on crash.
+pub fn atomic_write_bytes(path: &Path, content: &[u8]) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "Cannot determine parent directory".to_string())?;
@@ -602,11 +608,14 @@ pub fn new_version_document(working_dir: String, filename: String) -> Result<Str
         return Err(format!("Document '{}' not found", filename));
     }
 
-    let lily = read_lily_file(&working_dir)?;
-    let meta = lily
-        .documents
-        .get(&filename)
-        .ok_or_else(|| format!("Document '{}' not found in .lily file", filename))?;
+    let mut lily = read_lily_file(&working_dir)?;
+    let (template_rel_path, variable_names) = {
+        let meta = lily
+            .documents
+            .get(&filename)
+            .ok_or_else(|| format!("Document '{}' not found in .lily file", filename))?;
+        (meta.template_rel_path.clone(), meta.variable_names.clone())
+    };
 
     // Build the new filename with today's date
     let basename = Path::new(&filename)
@@ -628,12 +637,9 @@ pub fn new_version_document(working_dir: String, filename: String) -> Result<Str
     fs::copy(&src_path, &dest_path).map_err(|e| format!("Failed to copy document: {}", e))?;
 
     // Record the new document in the .lily file, sharing the same template origin
-    // and variable_names from the source document
-    let template_rel_path = meta.template_rel_path.clone();
-    let variable_names = meta.variable_names.clone();
-    drop(lily);
-
-    let mut lily = read_lily_file(&working_dir)?;
+    // and variable_names from the source document. Mutate and write the value we
+    // already read above — re-reading here would clobber any concurrent writes
+    // between the two reads (Tauri commands run on a thread pool).
     let now = Utc::now();
     lily.documents.insert(
         new_filename.clone(),

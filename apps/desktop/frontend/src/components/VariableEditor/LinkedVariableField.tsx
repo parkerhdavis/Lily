@@ -39,7 +39,6 @@ function LinkSlashIcon({ className }: { className?: string }) {
 export default function LinkedVariableField({
 	name,
 	value,
-	clientValue,
 	isLinked,
 	isSelected,
 	isConditional,
@@ -55,7 +54,6 @@ export default function LinkedVariableField({
 }: {
 	name: string;
 	value: string;
-	clientValue: string;
 	isLinked: boolean;
 	isSelected: boolean;
 	isConditional: boolean;

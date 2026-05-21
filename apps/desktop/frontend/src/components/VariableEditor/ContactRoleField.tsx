@@ -77,11 +77,6 @@ export default function ContactRoleField({
 		variableValues[p.displayName]?.trim(),
 	);
 
-	// When overridden, figure out what the override looks like
-	// (could be a different contact or custom values)
-	const overrideHasContact =
-		isOverridden && variableValues[group.properties[0]?.displayName];
-
 	return (
 		<div
 			className={`w-full rounded-lg border bg-base-100 shadow-[0_4px_16px_rgba(0,0,0,0.25)] ${isSelected ? "ring-2 ring-warning border-warning" : "border-base-300"}`}

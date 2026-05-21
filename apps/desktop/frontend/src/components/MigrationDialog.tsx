@@ -135,7 +135,6 @@ export default function MigrationDialog({
 	}, [report, selections, removeFlags, onApply]);
 
 	return (
-		// biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close
 		<dialog
 			className="modal modal-open"
 			onClick={(e) => {

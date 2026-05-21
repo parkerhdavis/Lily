@@ -178,7 +178,6 @@ function getCharOffsetInParagraph(
 
 export default function TemplateEditor() {
 	const {
-		templateEditorPath,
 		templateEditorHtml,
 		templateEditorVars,
 		templateEditorRelPath,
@@ -1025,7 +1024,6 @@ export default function TemplateEditor() {
 					style={{ width: sidebarWidth }}
 				>
 					{/* Resize handle */}
-					{/* biome-ignore lint/a11y/useKeyWithClickEvents: drag handle */}
 					<div
 						className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/20 transition-colors z-10"
 						onMouseDown={handleDragStart}
@@ -1279,11 +1277,9 @@ export default function TemplateEditor() {
 					{/* Tab content */}
 					<div className="flex-1 overflow-y-auto p-6 bg-base-200">
 						{activeTab === "template" ? (
-							/* biome-ignore lint/a11y/useKeyWithClickEvents: context menu */
 							<div
 								ref={previewRef}
 								className="bg-base-100 rounded-lg shadow-lg border border-base-300 p-8 prose prose-sm template-editor-preview"
-								// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
 								dangerouslySetInnerHTML={{
 									__html: numberedTemplateHtml,
 								}}
@@ -1292,7 +1288,6 @@ export default function TemplateEditor() {
 						) : (
 							<div
 								className="bg-base-100 rounded-lg shadow-lg border border-base-300 p-8 prose prose-sm"
-								// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
 								dangerouslySetInnerHTML={{
 									__html: livePreviewHtml,
 								}}
@@ -1370,7 +1365,6 @@ export default function TemplateEditor() {
 
 			{/* Context menu */}
 			{contextMenu && (
-				// biome-ignore lint/a11y/useKeyWithClickEvents: context menu overlay
 				<div
 					className="fixed inset-0 z-50"
 					onClick={() => setContextMenu(null)}
@@ -1415,7 +1409,6 @@ export default function TemplateEditor() {
 										if (e.key === "Enter") handleContextInsert();
 										if (e.key === "Escape") setContextMenu(null);
 									}}
-									// biome-ignore lint/a11y/noAutofocus: context menu auto-focus
 									autoFocus
 								/>
 								<button
@@ -1433,7 +1426,6 @@ export default function TemplateEditor() {
 			)}
 
 			{/* Disambiguation dialog */}
-			{/* biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close */}
 			<dialog
 				ref={disambigRef}
 				className="modal"
@@ -1479,7 +1471,6 @@ export default function TemplateEditor() {
 
 			{/* Remove variable dialog */}
 			{removingVar && (
-				// biome-ignore lint/a11y/useKeyWithClickEvents: inline dialog
 				<dialog
 					className="modal modal-open"
 					onClick={(e) => {
@@ -1502,7 +1493,6 @@ export default function TemplateEditor() {
 							onKeyDown={(e) => {
 								if (e.key === "Enter") handleRemove();
 							}}
-							// biome-ignore lint/a11y/noAutofocus: dialog auto-focus
 							autoFocus
 						/>
 						<div className="modal-action">
@@ -1527,7 +1517,6 @@ export default function TemplateEditor() {
 
 			{/* Conditional configuration dialog */}
 			{showConditionalDialog && (
-				// biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close
 				<dialog
 					ref={condDialogRef}
 					className="modal"
@@ -1654,7 +1643,6 @@ export default function TemplateEditor() {
 			)}
 
 			{/* Save confirmation dialog */}
-			{/* biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close */}
 			<dialog
 				ref={confirmDialogRef}
 				className="modal"
@@ -1692,7 +1680,6 @@ export default function TemplateEditor() {
 			</dialog>
 
 			{/* Discard confirmation dialog */}
-			{/* biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close */}
 			<dialog
 				ref={discardDialogRef}
 				className="modal"
@@ -1729,7 +1716,6 @@ export default function TemplateEditor() {
 			</dialog>
 
 			{/* Unsaved changes dialog (for back navigation) */}
-			{/* biome-ignore lint/a11y/useKeyWithClickEvents: dialog backdrop close */}
 			<dialog
 				ref={unsavedDialogRef}
 				className="modal"
@@ -2138,11 +2124,7 @@ function ConditionalDetails({
 		<div className="space-y-2">
 			<div className="text-xs text-base-content/40">Conditional branches</div>
 			{defs.map((def, i) => (
-				<div
-					// biome-ignore lint/suspicious/noArrayIndexKey: stable order
-					key={i}
-					className="text-xs bg-base-200 rounded p-2 space-y-1"
-				>
+				<div key={i} className="text-xs bg-base-200 rounded p-2 space-y-1">
 					<div>
 						<span className="text-base-content/40">Controls: </span>
 						<span className="font-medium">{def.controlling_variable}</span>
@@ -2722,7 +2704,6 @@ function VariableEditModal({
 	};
 
 	return (
-		// biome-ignore lint/a11y/useKeyWithClickEvents: modal backdrop
 		<dialog
 			className="modal modal-open"
 			onClick={(e) => {
@@ -2751,7 +2732,6 @@ function VariableEditModal({
 						placeholder="Search variables..."
 						value={search}
 						onChange={(e) => setSearch(e.target.value)}
-						// biome-ignore lint/a11y/noAutofocus: modal search focus
 						autoFocus
 					/>
 				</div>

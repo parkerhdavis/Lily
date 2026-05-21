@@ -35,7 +35,6 @@ export default function VariableEditor() {
 		saveDocument,
 		saveClientVariable,
 		setContactBinding,
-		clearContactBinding,
 		setRoleOverride,
 		returnToHub,
 		openQuestionnaire,
@@ -171,12 +170,6 @@ export default function VariableEditor() {
 		return groups;
 	}, [variables, contactRoleVarMap]);
 
-	// Set of display_names that belong to a contact-role group
-	const contactRoleVarNames = useMemo(
-		() => new Set(Object.keys(contactRoleVarMap)),
-		[contactRoleVarMap],
-	);
-
 	// Sidebar resize drag handlers
 	const handleDragStart = useCallback(
 		(e: React.MouseEvent) => {
@@ -310,19 +303,6 @@ export default function VariableEditor() {
 			});
 		},
 		[occurrenceIndex],
-	);
-
-	// Count occurrences of a variable in the preview
-	const getOccurrenceCount = useCallback(
-		(displayName: string): number => {
-			if (!previewRef.current) return 0;
-			const canonical = displayName.toLowerCase();
-			return previewRef.current.querySelectorAll(
-				`[data-variable="${CSS.escape(canonical)}"]`,
-			).length;
-		},
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[documentHtml, variableValues, selectedVariable],
 	);
 
 	const startEditingTitle = () => {
@@ -597,7 +577,6 @@ export default function VariableEditor() {
 					style={{ width: sidebarWidth }}
 				>
 					{/* Resize handle */}
-					{/* biome-ignore lint/a11y/useKeyWithClickEvents: drag handle */}
 					<div
 						className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors z-10"
 						onMouseDown={handleDragStart}
@@ -766,7 +745,6 @@ export default function VariableEditor() {
 												key={name}
 												name={name}
 												value={variableValues[name] ?? clientVal}
-												clientValue={clientVal}
 												isLinked={isLinked}
 												isSelected={selectedVariable === name}
 												isConditional={varInfo.is_conditional}
@@ -991,7 +969,6 @@ export default function VariableEditor() {
 				</div>
 
 				{/* Document preview */}
-				{/* biome-ignore lint/a11y/useKeyWithClickEvents: preview click selects variables */}
 				<div
 					className="flex-1 overflow-y-auto p-8 bg-base-200"
 					onClick={handlePreviewClick}
@@ -999,7 +976,6 @@ export default function VariableEditor() {
 					<div
 						ref={previewRef}
 						className="bg-base-100 rounded-lg shadow-2xl border border-base-300 p-8 max-w-4xl mx-auto prose prose-sm"
-						// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML preview from backend
 						dangerouslySetInnerHTML={{
 							__html: livePreviewHtml,
 						}}
