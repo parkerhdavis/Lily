@@ -764,8 +764,9 @@ pub fn save_contact_bindings(
 /// Also auto-sets `Has {role}` conditional variables to `"true"` when a
 /// contact is bound to a role, or `"false"` when the binding has no contact.
 #[tauri::command]
-pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
+pub fn resolve_contact_variables(working_dir: String) -> Result<Vec<String>, String> {
     let mut lily = read_lily_file(&working_dir)?;
+    let mut warnings: Vec<String> = Vec::new();
 
     // ── Pass 1: Role-based conditionals ("Has {role}") ──────────────────
     for (role, binding) in &lily.contact_bindings {
@@ -787,7 +788,15 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
                     }
                     lily.variables.insert(has_key, "true".to_string());
                 } else {
+                    // Binding points at a contact that no longer exists
+                    // (e.g., the contact was deleted). Mark the role absent
+                    // and surface a warning so the user knows their
+                    // auto-filled variables are blank for a reason.
                     lily.variables.insert(has_key, "false".to_string());
+                    warnings.push(format!(
+                        "Role \"{}\" is bound to a contact that no longer exists. Re-assign or remove the binding to fix.",
+                        role
+                    ));
                 }
             }
             None => {
@@ -1021,7 +1030,8 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<(), String> {
             .or_insert_with(|| solo_title.to_string());
     }
 
-    write_lily_file(&working_dir, &lily)
+    write_lily_file(&working_dir, &lily)?;
+    Ok(warnings)
 }
 
 /// Set or remove a per-document role override.

@@ -13,6 +13,7 @@ import {
 	buildDocumentFilename,
 	mergeStoredVariables,
 	pushNav,
+	resolveContactVariables,
 	toastError,
 	toastSuccess,
 } from "./helpers";
@@ -89,7 +90,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 
 			// Resolve contact variables so that any new relationship-based
 			// conditionals (e.g. "Has Spouse") pick up values immediately.
-			await invoke("resolve_contact_variables", { workingDir });
+			await resolveContactVariables(workingDir);
 
 			const updatedLilyFile = await invoke<LilyFile>("load_lily_file_cmd", {
 				workingDir,
@@ -216,7 +217,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 
 			// Resolve contact variables so new relationship-based
 			// conditionals pick up values immediately.
-			await invoke("resolve_contact_variables", { workingDir });
+			await resolveContactVariables(workingDir);
 
 			// Reload once at the end
 			const updatedLilyFile = await invoke<LilyFile>("load_lily_file_cmd", {
@@ -289,7 +290,7 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 					.map((v) => v.display_name),
 				conditionalDefinitions: {},
 			});
-			await invoke("resolve_contact_variables", { workingDir });
+			await resolveContactVariables(workingDir);
 
 			// Reload .lily to pick up resolved values
 			const updatedLilyFile = await invoke<LilyFile>("load_lily_file_cmd", {

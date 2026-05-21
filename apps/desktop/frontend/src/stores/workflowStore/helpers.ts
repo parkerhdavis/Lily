@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { invoke } from "@tauri-apps/api/core";
 import { useNavigationStore } from "@/stores/navigationStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
@@ -22,6 +23,20 @@ export function toastError(message: string, err?: unknown) {
 /** Show a toast success notification. */
 export function toastSuccess(message: string) {
 	useToastStore.getState().addToast("success", message);
+}
+
+/**
+ * Resolve contact bindings on the backend and surface any non-fatal
+ * warnings (e.g., a role bound to a deleted contact) as warning toasts.
+ */
+export async function resolveContactVariables(workingDir: string) {
+	const warnings = await invoke<string[]>("resolve_contact_variables", {
+		workingDir,
+	});
+	const toast = useToastStore.getState().addToast;
+	for (const w of warnings) {
+		toast("warning", w, 8000);
+	}
 }
 
 /** Build a human-readable label for a given step + context. */

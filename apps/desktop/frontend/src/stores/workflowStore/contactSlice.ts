@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useUndoStore } from "@/stores/undoStore";
 import type { Contact } from "@/types";
 import { extractFilename } from "@/utils/path";
+import { resolveContactVariables } from "./helpers";
 import type { WorkflowSlice } from "./types";
 
 export const createContactSlice: WorkflowSlice = (set, get) => ({
@@ -103,7 +104,7 @@ export const createContactSlice: WorkflowSlice = (set, get) => ({
 			workingDir,
 			contactBindings: bindings,
 		});
-		await invoke("resolve_contact_variables", { workingDir });
+		await resolveContactVariables(workingDir);
 		await get().reloadLilyFile();
 
 		const { lilyFile: updatedLily, variableValues } = get();
@@ -149,7 +150,7 @@ export const createContactSlice: WorkflowSlice = (set, get) => ({
 		const { workingDir } = get();
 		if (!workingDir) return;
 
-		await invoke("resolve_contact_variables", { workingDir });
+		await resolveContactVariables(workingDir);
 		await get().reloadLilyFile();
 	},
 });
