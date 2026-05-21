@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use zip::read::ZipArchive;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
@@ -12,6 +13,87 @@ use zip::ZipWriter;
 use tracing::{error, info};
 
 use crate::lily_file;
+
+// ─── Cached regexes ─────────────────────────────────────────────────────────
+//
+// These patterns are reused across many hot functions. Compiling a regex is
+// non-trivial (Aho–Corasick / NFA construction), so we build each one once
+// at first use and share it. Only patterns with no runtime interpolation
+// live here; dynamic regexes built with format!() stay inline.
+
+/// `<w:t [attrs]>text</w:t>` — one capture group for the text content.
+static T_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex"));
+
+/// `<w:rPr>...</w:rPr>` with the contents captured.
+static RPR_CAPTURE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#).expect("invalid regex"));
+
+/// `<w:rPr>...</w:rPr>` — match only, no capture.
+static RPR_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?s)<w:rPr>.*?</w:rPr>"#).expect("invalid regex"));
+
+/// Whole `<w:r ...>...</w:r>` run element.
+static RUN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?s)<w:r\b[^>]*>.*?</w:r>"#).expect("invalid regex"));
+
+/// Just the opening `<w:r ...>` tag.
+static RUN_OPEN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?s)<w:r\b[^>]*>"#).expect("invalid regex"));
+
+/// Whole `<w:p ...>...</w:p>` paragraph element.
+static P_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("invalid regex"));
+
+/// Opening `<w:p` tag with the character after the tag name.
+static P_START_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<w:p[\s>/]"#).expect("invalid regex"));
+
+/// Closing `</w:p>` tag.
+static P_END_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"</w:p>"#).expect("invalid regex"));
+
+/// Combined: lily: / lily-cond: SDTs OR bookmark pairs, in document order.
+static SDT_OR_BOOKMARK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?s)(?:<w:sdt>(.*?)</w:sdt>|<w:bookmarkStart\s+w:id="\d+"\s+w:name="(lily(?:-cond)?:[^"]*)"\s*/><w:bookmarkEnd\s+w:id="\d+"\s*/>)"#,
+    )
+    .expect("invalid regex")
+});
+
+/// `<w:tag w:val="lily:..."/>` or `<w:tag w:val="lily-cond:..."/>`.
+static LILY_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"<w:tag\s+w:val="(lily(?:-cond)?:[^"]*)"\s*/>"#).expect("invalid regex")
+});
+
+/// `<w:bookmarkStart w:id="N" w:name="lily-cond:..."/>` (no end tag in pattern).
+static COND_BOOKMARK_START_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"<w:bookmarkStart\s+w:id="\d+"\s+w:name="lily-cond:[^"]*"\s*/>"#)
+        .expect("invalid regex")
+});
+
+/// Visible block-level content other than text runs — used to decide whether
+/// a paragraph is safe to prune.
+static VISIBLE_CONTENT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"<w:(?:tab|br|drawing|pict|object|fldChar|sym|ptab|noBreakHyphen|softHyphen)\b"#)
+        .expect("invalid regex")
+});
+
+/// `<w:bookmarkStart w:id="(\d+)"` — captures the bookmark numeric id.
+static BOOKMARK_ID_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<w:bookmarkStart\s+w:id="(\d+)""#).expect("invalid regex"));
+
+/// `<w:id w:val="(\d+)"` — captures an SDT's numeric id.
+static SDT_ID_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<w:id\s+w:val="(\d+)""#).expect("invalid regex"));
+
+/// `<w:pgMar ... />` with the four margin values captured (top, right, bottom, left).
+static PG_MARGIN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"<w:pgMar[^>]*w:top="(\d+)"[^>]*w:right="(\d+)"[^>]*w:bottom="(\d+)"[^>]*w:left="(\d+)"[^>]*/>"#,
+    )
+    .expect("invalid regex")
+});
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -556,13 +638,10 @@ fn update_sdt_v2(
         Some(resolve_nested_variables(branch, variables))
     };
 
-    // Combined regex: match lily: / lily-cond: SDTs and bookmarks in document order.
-    let combined_re = Regex::new(
-        r#"(?s)(?:<w:sdt>(.*?)</w:sdt>|<w:bookmarkStart\s+w:id="\d+"\s+w:name="(lily(?:-cond)?:[^"]*)"\s*/><w:bookmarkEnd\s+w:id="\d+"\s*/>)"#
-    ).expect("invalid regex");
-    let tag_re = Regex::new(r#"<w:tag\s+w:val="(lily(?:-cond)?:[^"]*)"\s*/>"#).expect("invalid regex");
-    let t_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
-    let rpr_re = Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#).expect("invalid regex");
+    let combined_re: &Regex = &SDT_OR_BOOKMARK_RE;
+    let tag_re: &Regex = &LILY_TAG_RE;
+    let t_re: &Regex = &T_RE;
+    let rpr_re: &Regex = &RPR_CAPTURE_RE;
 
     let mut result = String::new();
     let mut last_end = 0;
@@ -706,18 +785,12 @@ fn update_sdt_v2(
 /// (conditional + literal text, or one true conditional + one false one)
 /// are never pruned.
 fn prune_empty_conditional_paragraphs(xml: &str) -> String {
-    let p_re = Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("invalid regex");
-    let cond_bm_re = Regex::new(
-        r#"<w:bookmarkStart\s+w:id="\d+"\s+w:name="lily-cond:[^"]*"\s*/>"#,
-    )
-    .expect("invalid regex");
-    let t_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
+    let p_re: &Regex = &P_RE;
+    let cond_bm_re: &Regex = &COND_BOOKMARK_START_RE;
+    let t_re: &Regex = &T_RE;
     // Block-level visible content other than text runs. Presence of any of
     // these inside the paragraph means it's not safe to drop.
-    let visible_re = Regex::new(
-        r#"<w:(?:tab|br|drawing|pict|object|fldChar|sym|ptab|noBreakHyphen|softHyphen)\b"#,
-    )
-    .expect("invalid regex");
+    let visible_re: &Regex = &VISIBLE_CONTENT_RE;
 
     let mut result = String::with_capacity(xml.len());
     let mut last_end = 0;
@@ -802,9 +875,9 @@ struct ParagraphTextMap {
 /// This maps flat text positions back to specific byte ranges in the XML,
 /// enabling text search in the flat text with replacement in the XML.
 fn build_paragraph_text_maps(xml: &str) -> Vec<ParagraphTextMap> {
-    let t_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
-    let p_start_re = Regex::new(r#"<w:p[\s>/]"#).expect("invalid regex");
-    let p_end_re = Regex::new(r#"</w:p>"#).expect("invalid regex");
+    let t_re: &Regex = &T_RE;
+    let p_start_re: &Regex = &P_START_RE;
+    let p_end_re: &Regex = &P_END_RE;
 
     let mut maps = Vec::new();
     let mut para_num: usize = 0;
@@ -1157,7 +1230,7 @@ fn insert_xml_at_position(
     if offset == 0 {
         // Insert before the first <w:t> content of this paragraph.
         // Find the <w:r> element that contains the first segment.
-        let run_re = Regex::new(r#"(?s)<w:r\b[^>]*>"#).expect("invalid regex");
+        let run_re: &Regex = &RUN_OPEN_RE;
         // Search backwards from the segment's xml_content_start to find the run start
         let before_seg = &xml[..seg.xml_content_start];
         if let Some(m) = run_re.find_iter(before_seg).last() {
@@ -1195,8 +1268,8 @@ fn insert_xml_at_position(
         let after_text = &decoded[local_offset..];
 
         // Find the enclosing <w:r>...</w:r> that contains this <w:t>
-        let run_re = Regex::new(r#"(?s)<w:r\b[^>]*>.*?</w:r>"#).expect("invalid regex");
-        let rpr_re = Regex::new(r#"(?s)<w:rPr>.*?</w:rPr>"#).expect("invalid regex");
+        let run_re: &Regex = &RUN_RE;
+        let rpr_re: &Regex = &RPR_RE;
 
         let mut run_start = 0;
         let mut run_end = 0;
@@ -1432,8 +1505,8 @@ pub fn insert_sdt_at_position(
 /// Extract `<w:rPr>` from the run at or near a given character offset in a
 /// paragraph. Falls back to empty string if no run properties found.
 fn extract_rpr_at_offset(xml: &str, para: &ParagraphTextMap, char_offset: usize) -> String {
-    let rpr_re = Regex::new(r#"(?s)<w:rPr>.*?</w:rPr>"#).expect("invalid regex");
-    let run_re = Regex::new(r#"(?s)<w:r\b[^>]*>.*?</w:r>"#).expect("invalid regex");
+    let rpr_re: &Regex = &RPR_RE;
+    let run_re: &Regex = &RUN_RE;
 
     // Find the segment containing or nearest to the offset
     let target_seg = if para.segments.is_empty() {
@@ -1653,7 +1726,7 @@ pub fn remove_template_variable(
         regex::escape(&escaped_name)
     );
     let sdt_re = Regex::new(&sdt_pattern).map_err(|e| format!("Invalid regex: {}", e))?;
-    let rpr_re = Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#).expect("invalid regex");
+    let rpr_re: &Regex = &RPR_CAPTURE_RE;
 
     for (name, content) in entries.iter_mut() {
         if name != "word/document.xml"
@@ -2243,9 +2316,9 @@ fn replace_placeholders_with_sdt_v2(
         return xml.to_string();
     }
 
-    let run_re = Regex::new(r#"(?s)<w:r\b[^>]*>.*?</w:r>"#).expect("invalid regex");
-    let t_content_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
-    let rpr_re = Regex::new(r#"(?s)<w:rPr>.*?</w:rPr>"#).expect("invalid regex");
+    let run_re: &Regex = &RUN_RE;
+    let t_content_re: &Regex = &T_RE;
+    let rpr_re: &Regex = &RPR_RE;
 
     let mut result = String::new();
     let mut last_end = 0;
@@ -2368,7 +2441,7 @@ fn normalize_split_variables(xml: &str) -> String {
     // Find each occurrence of `{` inside <w:t> text that doesn't have a matching `}`
     // in the same text node, then merge forward.
 
-    let t_open_re = Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>"#).expect("invalid regex");
+    let t_open_re: &Regex = &T_RE;
 
     let mut result = xml.to_string();
     let mut search_from = 0;
@@ -3619,8 +3692,8 @@ const COND_BOOKMARK_PREFIX: &str = "lily-cond:";
 /// Scans both `<w:bookmarkStart w:id="N".../>` and `<w:id w:val="N"/>` (inside `<w:sdtPr>`).
 /// Returns 0 if no IDs exist.
 fn find_max_id(xml: &str) -> u64 {
-    let bookmark_re = Regex::new(r#"<w:bookmarkStart\s+w:id="(\d+)""#).expect("invalid regex");
-    let sdt_id_re = Regex::new(r#"<w:id\s+w:val="(\d+)""#).expect("invalid regex");
+    let bookmark_re: &Regex = &BOOKMARK_ID_RE;
+    let sdt_id_re: &Regex = &SDT_ID_RE;
     let max_bookmark = bookmark_re
         .captures_iter(xml)
         .filter_map(|c| c[1].parse::<u64>().ok())
@@ -3664,9 +3737,7 @@ fn find_sdt_variables(xml: &str) -> Vec<String> {
 ///    in a highlight span using the `lily:` tag value as the variable name.
 fn xml_to_preview_html(xml: &str, numbering_map: &NumberingMap, style_map: &StyleMap, rels_map: &RelationshipMap) -> String {
     // Extract page margins from <w:sectPr><w:pgMar> for the preview wrapper
-    let margin_re = Regex::new(
-        r#"<w:pgMar[^>]*w:top="(\d+)"[^>]*w:right="(\d+)"[^>]*w:bottom="(\d+)"[^>]*w:left="(\d+)"[^>]*/>"#
-    ).expect("invalid regex");
+    let margin_re: &Regex = &PG_MARGIN_RE;
     let page_margins = margin_re.captures(xml).map(|caps| {
         let top = caps[1].parse::<i32>().unwrap_or(1440);
         let right = caps[2].parse::<i32>().unwrap_or(1440);
