@@ -5657,6 +5657,51 @@ mod tests {
     }
 
     #[test]
+    fn test_v2_additional_hipaa_releases_list_item() {
+        // The Additional HIPAA Releases list item (a structural clone of the
+        // Tertiary HPOA Agent item): a numbered list paragraph holding a bold
+        // lily-cond SDT whose true_template lists the aggregated names —
+        // uppercased via the ALL CAPS nested placeholder — with a trailing ";".
+        // This is the exact paragraph inserted into HIPAA Template.docx.
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading2"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr><w:spacing w:before="0" w:after="0"/><w:ind w:hanging="450" w:left="1170"/><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:pPr><w:sdt><w:sdtPr><w:id w:val="11"/><w:tag w:val="lily-cond:Has Additional HIPAA Releases"/><w:alias w:val="Has Additional HIPAA Releases"/></w:sdtPr><w:sdtContent><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr><w:t xml:space="preserve">Has Additional HIPAA Releases</w:t></w:r></w:sdtContent></w:sdt></w:p></w:body></w:document>"#;
+
+        let mut conds = HashMap::new();
+        conds.insert(
+            "Has Additional HIPAA Releases".to_string(),
+            vec![ConditionalDef {
+                controlling_variable: "Has Additional HIPAA Releases".to_string(),
+                true_template: "{ADDITIONAL HIPAA RELEASES};".to_string(),
+                false_template: String::new(),
+            }],
+        );
+        let t_re = regex::Regex::new(r#"<w:t[^>]*>([^<]*)</w:t>"#).unwrap();
+
+        // Populated: bold, uppercased, "; "-separated, with a trailing ";".
+        let mut vars = HashMap::new();
+        vars.insert("Has Additional HIPAA Releases".to_string(), "true".to_string());
+        vars.insert(
+            "Additional HIPAA Releases".to_string(),
+            "John Smith; Jane Doe".to_string(),
+        );
+        let mut next_id = 100;
+        let filled = update_sdt_v2(xml, &vars, &conds, &mut next_id);
+        let text: String = t_re.captures_iter(&filled).map(|c| c[1].to_string()).collect();
+        assert_eq!(text, "JOHN SMITH; JANE DOE;", "Got: {}", text);
+        assert!(filled.contains("<w:b/>"), "list item should stay bold: {}", filled);
+
+        // Empty: the conditional resolves blank and the whole line is pruned.
+        let mut empty_vars = HashMap::new();
+        empty_vars.insert("Has Additional HIPAA Releases".to_string(), "false".to_string());
+        let mut next_id2 = 100;
+        let resolved_empty = update_sdt_v2(xml, &empty_vars, &conds, &mut next_id2);
+        let pruned = prune_empty_conditional_paragraphs(&resolved_empty);
+        assert!(
+            !pruned.contains("Has Additional HIPAA Releases") && !pruned.contains("<w:numId"),
+            "empty list item should be pruned: {}", pruned
+        );
+    }
+
+    #[test]
     fn test_hpoa_heading_is_bold() {
         let doc_path = "/home/parker/Obsidian/40-69 Projects/42 Carelaw Colorado/Drafting/02-Deliverables/Templates/02 - Power of Attorney and Medical Templates/HPOA Template.docx";
         if !std::path::Path::new(doc_path).exists() { return; }

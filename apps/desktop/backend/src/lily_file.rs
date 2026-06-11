@@ -718,6 +718,23 @@ fn get_contact_property(contact: &Contact, key: &str) -> String {
     }
 }
 
+/// Collect the non-empty `prop_key` values of the contacts identified by `ids`,
+/// in order. Used to aggregate a "contact-list" role (e.g. additional HIPAA
+/// releases) into a single variable. IDs with no matching contact and contacts
+/// whose property is empty are skipped, so the caller can treat an empty result
+/// as "no entries" (and mark the role's `Has {role}` conditional false).
+fn aggregate_contact_list_values(
+    contacts: &[Contact],
+    ids: &[String],
+    prop_key: &str,
+) -> Vec<String> {
+    ids.iter()
+        .filter_map(|id| contacts.iter().find(|c| &c.id == id))
+        .map(|c| get_contact_property(c, prop_key))
+        .filter(|v| !v.is_empty())
+        .collect()
+}
+
 /// Add a new contact to the .lily file. A UUID is generated for the `id` field
 /// (any value provided is overwritten). Returns the contact with its assigned ID.
 #[tauri::command]
@@ -793,15 +810,7 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<Vec<String>, Str
                 .next()
                 .cloned()
                 .unwrap_or_else(|| "full_name".to_string());
-            let mut values: Vec<String> = Vec::new();
-            for id in ids {
-                if let Some(contact) = lily.contacts.iter().find(|c| &c.id == id) {
-                    let value = get_contact_property(contact, &prop_key);
-                    if !value.is_empty() {
-                        values.push(value);
-                    }
-                }
-            }
+            let values = aggregate_contact_list_values(&lily.contacts, ids, &prop_key);
             let joined = values.join("; ");
             if let Some(target_var) = binding.variable_mappings.keys().next() {
                 lily.variables.insert(target_var.clone(), joined);
@@ -2178,6 +2187,34 @@ mod tests {
         });
 
         (lily, john)
+    }
+
+    #[test]
+    fn aggregate_contact_list_values_joins_and_skips() {
+        let contacts = vec![
+            make_contact("a", "Ada", "Smith", "Friend"),
+            make_contact("b", "Bo", "Jones", "Friend"),
+            make_contact("c", "Cy", "Lee", "Friend"),
+        ];
+
+        // Selected in order, with one id (the middle) skipped — order is
+        // preserved and only the chosen contacts are included.
+        let ids = vec!["c".to_string(), "a".to_string()];
+        let values = aggregate_contact_list_values(&contacts, &ids, "full_name");
+        assert_eq!(values, vec!["Cy Lee".to_string(), "Ada Smith".to_string()]);
+        assert_eq!(values.join("; "), "Cy Lee; Ada Smith");
+
+        // Missing IDs and empty property values are skipped.
+        let mut blank = make_contact("d", "Di", "Poe", "Friend");
+        blank.full_name = String::new();
+        let mut contacts2 = contacts.clone();
+        contacts2.push(blank);
+        let ids2 = vec!["missing".to_string(), "d".to_string(), "b".to_string()];
+        let values2 = aggregate_contact_list_values(&contacts2, &ids2, "full_name");
+        assert_eq!(values2, vec!["Bo Jones".to_string()]);
+
+        // No selections → empty (caller treats this as "Has {role}" == false).
+        assert!(aggregate_contact_list_values(&contacts, &[], "full_name").is_empty());
     }
 
     #[test]
