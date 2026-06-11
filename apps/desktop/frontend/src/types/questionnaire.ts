@@ -42,6 +42,20 @@ export type QuestionDef =
 			coAgentVariableMappings?: Record<string, string>;
 	  }
 	| {
+			kind: "contact-list";
+			/** The role name (e.g., "Additional HIPAA Releases"). Used as the key
+			 *  in the contact_bindings map; the binding stores the selected
+			 *  contact IDs. */
+			role: string;
+			label: string;
+			/** The variable populated with the joined list of contact values
+			 *  (each selected contact's `property`, joined with "; "). */
+			listVariable: string;
+			/** Contact property aggregated from each selected contact.
+			 *  Defaults to "full_name". */
+			property?: string;
+	  }
+	| {
 			kind: "derived";
 			/** The variable name this derived question produces. */
 			variable: string;
@@ -92,5 +106,4 @@ export interface QuestionnaireIndexEntry {
 /** The questionnaire index — lists all definitions and which is active. */
 export interface QuestionnaireIndex {
 	questionnaires: QuestionnaireIndexEntry[];
-	active_questionnaire_id: string | null;
 }

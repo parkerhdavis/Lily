@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ContactListPicker from "@/components/ContactListPicker";
 import ContactPicker from "@/components/ContactPicker";
+import QuestionnaireChooser, {
+	type QuestionnaireChoice,
+} from "@/components/QuestionnaireChooser";
 import PageHeader from "@/components/ui/PageHeader";
 import StatusDot from "@/components/ui/StatusDot";
 import {
 	questionnaireDef as fallbackDef,
 	questionnaireTabs as fallbackTabs,
 } from "@/data/questionnaireDef";
-import { useQuestionnaireStore } from "@/stores/questionnaireStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { RELATIONSHIP_OPTIONS } from "@/types";
 import type {
 	QuestionDef,
+	QuestionnaireDefFile,
 	QuestionnaireSectionDef,
 } from "@/types/questionnaire";
 import { extractFolderName } from "@/utils/path";
@@ -75,8 +79,8 @@ export default function Questionnaire() {
 		updateContact,
 		deleteContact,
 		returnToHub,
+		reloadLilyFile,
 	} = useWorkflowStore();
-	const { loadActiveQuestionnaire } = useQuestionnaireStore();
 
 	const variables = lilyFile?.variables ?? {};
 	const contacts = lilyFile?.contacts ?? [];
@@ -86,54 +90,76 @@ export default function Questionnaire() {
 	const [questionnaireDef, setQuestionnaireDef] =
 		useState<QuestionnaireSectionDef[]>(fallbackDef);
 	const [questionnaireTabs, setQuestionnaireTabs] = useState(fallbackTabs);
+	// When the client has no questionnaire chosen yet, prompt the user to pick
+	// one (then remember it on the .lily file). New clients are stamped at
+	// creation, so this is mainly for clients that predate point-of-use choice.
+	const [needsQuestionnaire, setNeedsQuestionnaire] = useState(false);
+	const [pickedQuestionnaire, setPickedQuestionnaire] =
+		useState<QuestionnaireChoice | null>(null);
+	const [choosing, setChoosing] = useState(false);
 
-	// Load questionnaire definition on mount
+	const applyDef = useCallback((def: QuestionnaireDefFile) => {
+		setQuestionnaireDef(def.sections);
+		setQuestionnaireTabs(
+			def.tabs.map((t) => ({
+				id: t.id as (typeof fallbackTabs)[number]["id"],
+				label: t.label,
+			})),
+		);
+	}, []);
+
+	// Load the client's chosen questionnaire on mount, or prompt to pick one.
 	useEffect(() => {
 		(async () => {
+			if (!lilyFile?.questionnaire_id) {
+				setNeedsQuestionnaire(true);
+				return;
+			}
 			try {
-				let def = null;
-				if (lilyFile?.questionnaire_id) {
-					try {
-						def = await invoke<
-							import("@/types/questionnaire").QuestionnaireDefFile
-						>("load_questionnaire", {
-							id: lilyFile.questionnaire_id,
-						});
-					} catch {
-						// Fall through to active
-					}
-				}
-				if (!def) {
-					def = await loadActiveQuestionnaire();
-				}
-				if (def) {
-					setQuestionnaireDef(def.sections);
-					setQuestionnaireTabs(
-						def.tabs.map((t) => ({
-							id: t.id as (typeof fallbackTabs)[number]["id"],
-							label: t.label,
-						})),
+				const def = await invoke<QuestionnaireDefFile>("load_questionnaire", {
+					id: lilyFile.questionnaire_id,
+				});
+				applyDef(def);
+				// Auto-advance the stamped version if the questionnaire moved forward.
+				if (workingDir && lilyFile.questionnaire_version !== def.version) {
+					invoke("set_client_questionnaire", {
+						workingDir,
+						questionnaireId: def.id,
+						questionnaireVersion: def.version,
+					}).catch((err: unknown) =>
+						console.error("Failed to stamp questionnaire version:", err),
 					);
-					// Stamp version into .lily file
-					if (
-						workingDir &&
-						(lilyFile?.questionnaire_id !== def.id ||
-							lilyFile?.questionnaire_version !== def.version)
-					) {
-						invoke("set_client_questionnaire", {
-							workingDir,
-							questionnaireId: def.id,
-							questionnaireVersion: def.version,
-						}).catch((err: unknown) =>
-							console.error("Failed to stamp questionnaire version:", err),
-						);
-					}
 				}
 			} catch (err) {
 				console.error("Failed to load questionnaire definition:", err);
+				// The stamped questionnaire is gone — let the user pick a new one.
+				setNeedsQuestionnaire(true);
 			}
 		})();
 	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Apply the user's questionnaire choice for an un-stamped client.
+	const handleChooseQuestionnaire = useCallback(async () => {
+		if (!pickedQuestionnaire || !workingDir) return;
+		setChoosing(true);
+		try {
+			const def = await invoke<QuestionnaireDefFile>("load_questionnaire", {
+				id: pickedQuestionnaire.id,
+			});
+			await invoke("set_client_questionnaire", {
+				workingDir,
+				questionnaireId: def.id,
+				questionnaireVersion: def.version,
+			});
+			await reloadLilyFile();
+			applyDef(def);
+			setNeedsQuestionnaire(false);
+		} catch (err) {
+			console.error("Failed to set questionnaire:", err);
+		} finally {
+			setChoosing(false);
+		}
+	}, [pickedQuestionnaire, workingDir, reloadLilyFile, applyDef]);
 
 	// Master/detail: track the single active section across all tabs
 	const [activeSectionTitle, setActiveSectionTitle] = useState<string | null>(
@@ -391,6 +417,9 @@ export default function Questionnaire() {
 				} else if (q.kind === "contact-role") {
 					total++;
 					if (bindings[q.role]) filled++;
+				} else if (q.kind === "contact-list") {
+					total++;
+					if ((bindings[q.role]?.contact_ids?.length ?? 0) > 0) filled++;
 				}
 			}
 			map[section.title] = {
@@ -405,6 +434,39 @@ export default function Questionnaire() {
 	const folderName = workingDir ? extractFolderName(workingDir) : "Client";
 
 	const isContacts = activeSection?.kind === "contacts";
+
+	// No questionnaire chosen for this client yet \u2014 prompt the user to pick one.
+	if (needsQuestionnaire) {
+		return (
+			<div className="flex flex-col h-full">
+				<PageHeader
+					title={`${folderName} \u2014 Questionnaire`}
+					onBack={returnToHub}
+				/>
+				<div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+					<h3 className="text-lg font-semibold">Choose a questionnaire</h3>
+					<p className="text-sm text-base-content/60 text-center max-w-sm">
+						Select which questionnaire to use for {folderName}. It's saved to
+						this client and used whenever you open their questionnaire.
+					</p>
+					<div className="w-full max-w-xs rounded-lg border border-base-300 bg-base-200/40 p-3">
+						<QuestionnaireChooser onChange={setPickedQuestionnaire} />
+					</div>
+					<button
+						type="button"
+						className="btn btn-primary btn-sm"
+						onClick={handleChooseQuestionnaire}
+						disabled={!pickedQuestionnaire || choosing}
+					>
+						{choosing ? (
+							<span className="loading loading-spinner loading-xs" />
+						) : null}
+						Use this questionnaire
+					</button>
+				</div>
+			</div>
+		);
+	}
 
 	return (
 		<div className="flex flex-col h-full">
@@ -521,13 +583,18 @@ export default function Questionnaire() {
 													: "col-span-6";
 										return (
 											<div
-												key={q.kind === "contact-role" ? q.role : q.variable}
+												key={
+													q.kind === "contact-role" || q.kind === "contact-list"
+														? q.role
+														: q.variable
+												}
 												className={span}
 											>
 												<QuestionField
 													question={q}
 													value={
-														q.kind === "contact-role"
+														q.kind === "contact-role" ||
+														q.kind === "contact-list"
 															? ""
 															: (variables[q.variable] ?? "")
 													}
@@ -1022,6 +1089,8 @@ function QuestionField({
 			);
 		case "contact-role":
 			return <ContactPicker question={question} />;
+		case "contact-list":
+			return <ContactListPicker question={question} />;
 	}
 }
 

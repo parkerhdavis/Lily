@@ -277,9 +277,6 @@ export default function TemplateEditor() {
 	}, [templatesDir, templateEditorRelPath, templateEditorVars]);
 
 	// Load questionnaire index and selected questionnaire for variable contextualization
-	const activeQuestionnaireId = useSettingsStore(
-		(s) => s.settings.active_questionnaire_id,
-	);
 	const [questionnaireEntries, setQuestionnaireEntries] = useState<
 		QuestionnaireIndexEntry[]
 	>([]);
@@ -289,30 +286,19 @@ export default function TemplateEditor() {
 	const [selectedQuestionnaire, setSelectedQuestionnaire] =
 		useState<QuestionnaireDefFile | null>(null);
 
-	// Load the questionnaire index on mount
+	// Load the questionnaire index on mount, defaulting to the first available
+	// questionnaire as the variable-context source (the dropdown lets the user
+	// switch).
 	useEffect(() => {
 		invoke<QuestionnaireIndex>("load_questionnaire_index")
 			.then((index) => {
 				setQuestionnaireEntries(index.questionnaires);
-				// Default to app-wide active questionnaire, or first available
-				const defaultId =
-					index.active_questionnaire_id ??
-					(index.questionnaires.length > 0 ? index.questionnaires[0].id : null);
-				setSelectedQuestionnaireId(defaultId);
+				setSelectedQuestionnaireId(
+					index.questionnaires.length > 0 ? index.questionnaires[0].id : null,
+				);
 			})
 			.catch(() => {});
 	}, []);
-
-	// Also respect the app-wide setting if it changes
-	useEffect(() => {
-		if (
-			activeQuestionnaireId &&
-			selectedQuestionnaireId === null &&
-			questionnaireEntries.some((e) => e.id === activeQuestionnaireId)
-		) {
-			setSelectedQuestionnaireId(activeQuestionnaireId);
-		}
-	}, [activeQuestionnaireId, questionnaireEntries, selectedQuestionnaireId]);
 
 	// Load the full questionnaire definition when selection changes
 	useEffect(() => {

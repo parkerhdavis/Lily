@@ -8,11 +8,13 @@ import MigrationDialog, {
 	type MigrationReport,
 	type OrphanedVariable,
 } from "@/components/MigrationDialog";
+import QuestionnaireChooser, {
+	type QuestionnaireChoice,
+} from "@/components/QuestionnaireChooser";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { questionnaireDef as fallbackDef } from "@/data/questionnaireDef";
 import { useLilyIcon } from "@/hooks/useLilyIcon";
-import { useQuestionnaireStore } from "@/stores/questionnaireStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
@@ -155,7 +157,6 @@ export default function ClientsHub() {
 		addMultipleDocuments,
 		openTemplateFile,
 	} = useWorkflowStore();
-	const { loadActiveQuestionnaire } = useQuestionnaireStore();
 	const lilyIcon = useLilyIcon();
 
 	const [trees, setTrees] = useState<LibraryTree[]>([]);
@@ -247,7 +248,6 @@ export default function ClientsHub() {
 					onAddMultipleDocuments={addMultipleDocuments}
 					onOpenTemplateFile={openTemplateFile}
 					onLoadTemplates={loadTemplates}
-					loadActiveQuestionnaire={loadActiveQuestionnaire}
 					onReloadTrees={loadTrees}
 				/>
 			</div>
@@ -275,7 +275,6 @@ function ClientsTreeTab({
 	onAddMultipleDocuments,
 	onOpenTemplateFile,
 	onLoadTemplates,
-	loadActiveQuestionnaire,
 	onReloadTrees,
 }: {
 	trees: LibraryTree[];
@@ -298,15 +297,14 @@ function ClientsTreeTab({
 	) => Promise<void>;
 	onOpenTemplateFile: (templateRelPath: string) => Promise<void>;
 	onLoadTemplates: (templatesDir: string) => Promise<void>;
-	loadActiveQuestionnaire: () => Promise<
-		import("@/types/questionnaire").QuestionnaireDefFile | null
-	>;
 	onReloadTrees: () => Promise<void>;
 }) {
 	const [pendingNewClientDir, setPendingNewClientDir] = useState<string | null>(
 		null,
 	);
 	const [creatingClient, setCreatingClient] = useState(false);
+	const [chosenQuestionnaire, setChosenQuestionnaire] =
+		useState<QuestionnaireChoice | null>(null);
 
 	const allTreeNodes = useMemo(() => trees.flatMap((t) => t.nodes), [trees]);
 
@@ -328,7 +326,11 @@ function ClientsTreeTab({
 		if (!pendingNewClientDir) return;
 		setCreatingClient(true);
 		try {
-			await invoke("create_lily_file", { workingDir: pendingNewClientDir });
+			await invoke("create_lily_file", {
+				workingDir: pendingNewClientDir,
+				questionnaireId: chosenQuestionnaire?.id ?? null,
+				questionnaireVersion: chosenQuestionnaire?.version ?? null,
+			});
 			await onReloadTrees();
 			setPendingNewClientDir(null);
 			onSelectClient(pendingNewClientDir);
@@ -340,7 +342,7 @@ function ClientsTreeTab({
 		} finally {
 			setCreatingClient(false);
 		}
-	}, [pendingNewClientDir, onSelectClient, onReloadTrees]);
+	}, [pendingNewClientDir, chosenQuestionnaire, onSelectClient, onReloadTrees]);
 
 	if (!hasLibraryDirs) {
 		return (
@@ -409,9 +411,15 @@ function ClientsTreeTab({
 						{extractFolderName(pendingNewClientDir)}
 					</h3>
 					<p className="text-sm text-base-content/60 text-center max-w-sm">
-						This folder doesn't have a client project file yet. Would you like
-						to create one?
+						This folder doesn't have a client project file yet. Choose a
+						questionnaire and create one to get started.
 					</p>
+					<div className="w-full max-w-xs text-left rounded-lg border border-base-300 bg-base-200/40 p-3">
+						<p className="text-xs font-medium text-base-content/60 mb-1">
+							Questionnaire
+						</p>
+						<QuestionnaireChooser onChange={setChosenQuestionnaire} />
+					</div>
 					<div className="flex gap-2">
 						<button
 							type="button"
@@ -447,7 +455,6 @@ function ClientsTreeTab({
 					onAddMultipleDocuments={onAddMultipleDocuments}
 					onOpenTemplateFile={onOpenTemplateFile}
 					onLoadTemplates={onLoadTemplates}
-					loadActiveQuestionnaire={loadActiveQuestionnaire}
 				/>
 			) : (
 				<div className="flex-1 flex items-center justify-center text-base-content/40 text-sm">
@@ -473,7 +480,6 @@ function ClientContentPane({
 	onAddMultipleDocuments,
 	onOpenTemplateFile,
 	onLoadTemplates,
-	loadActiveQuestionnaire,
 }: {
 	workingDir: string;
 	lilyFile: import("@/types").LilyFile;
@@ -490,9 +496,6 @@ function ClientContentPane({
 	) => Promise<void>;
 	onOpenTemplateFile: (templateRelPath: string) => Promise<void>;
 	onLoadTemplates: (templatesDir: string) => Promise<void>;
-	loadActiveQuestionnaire: () => Promise<
-		import("@/types/questionnaire").QuestionnaireDefFile | null
-	>;
 }) {
 	const [docSearch, setDocSearch] = useState("");
 	const [showCopyFromSpouse, setShowCopyFromSpouse] = useState(false);
@@ -522,30 +525,20 @@ function ClientContentPane({
 	useEffect(() => {
 		(async () => {
 			try {
-				let def: QuestionnaireDefFile | null = null;
-				if (lilyFile.questionnaire_id) {
-					try {
-						def = await invoke<QuestionnaireDefFile>("load_questionnaire", {
-							id: lilyFile.questionnaire_id,
-						});
-					} catch {
-						// Fall through
-					}
-				}
-				if (!def) {
-					def = await loadActiveQuestionnaire();
-				}
-				if (def) {
-					setQDef(def.sections);
-					// Check for migration needs
-					const report = computeMigrationReport(lilyFile, def);
-					setMigrationReport(report);
-				}
+				// Only the client's own stamped questionnaire drives stats/migration.
+				// An un-stamped client keeps the compiled-in fallback def until the
+				// user picks one (prompted when they open the questionnaire).
+				if (!lilyFile.questionnaire_id) return;
+				const def = await invoke<QuestionnaireDefFile>("load_questionnaire", {
+					id: lilyFile.questionnaire_id,
+				});
+				setQDef(def.sections);
+				setMigrationReport(computeMigrationReport(lilyFile, def));
 			} catch {
 				// Use fallback
 			}
 		})();
-	}, [lilyFile.questionnaire_id, loadActiveQuestionnaire, lilyFile]);
+	}, [lilyFile.questionnaire_id, lilyFile]);
 
 	const allDocs = useMemo(() => {
 		if (!lilyFile.documents) return [];

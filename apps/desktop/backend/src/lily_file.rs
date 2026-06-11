@@ -73,6 +73,14 @@ pub struct ContactBinding {
     /// Map from variable display name → contact property key.
     /// e.g., `"POA Agent Full Name" → "full_name"`
     pub variable_mappings: HashMap<String, String>,
+    /// For "contact-list" roles: the ordered list of contact IDs selected for a
+    /// role that aggregates many contacts into one variable (e.g., a HIPAA
+    /// release list). The single `variable_mappings` entry maps the target
+    /// variable → the contact property to aggregate; each selected contact's
+    /// property value is joined with `"; "` into that variable. `None` for
+    /// ordinary single-contact bindings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_ids: Option<Vec<String>>,
 }
 
 /// Status of a required document in the client workflow.
@@ -493,10 +501,20 @@ pub fn has_lily_file(working_dir: String) -> Result<bool, String> {
 }
 
 /// Create a new .lily file in the given directory, writing the default
-/// structure to disk. Returns the created LilyFile.
+/// structure to disk. The questionnaire is chosen at creation time (the user
+/// picks one from the library), so its id/version are stamped immediately.
+/// Returns the created LilyFile.
 #[tauri::command]
-pub fn create_lily_file(working_dir: String) -> Result<LilyFile, String> {
-    let lily = LilyFile::default();
+pub fn create_lily_file(
+    working_dir: String,
+    questionnaire_id: Option<String>,
+    questionnaire_version: Option<u32>,
+) -> Result<LilyFile, String> {
+    let lily = LilyFile {
+        questionnaire_id,
+        questionnaire_version,
+        ..LilyFile::default()
+    };
     write_lily_file(&working_dir, &lily)?;
     Ok(lily)
 }
@@ -710,6 +728,23 @@ fn get_contact_property(contact: &Contact, key: &str) -> String {
     }
 }
 
+/// Collect the non-empty `prop_key` values of the contacts identified by `ids`,
+/// in order. Used to aggregate a "contact-list" role (e.g. additional HIPAA
+/// releases) into a single variable. IDs with no matching contact and contacts
+/// whose property is empty are skipped, so the caller can treat an empty result
+/// as "no entries" (and mark the role's `Has {role}` conditional false).
+fn aggregate_contact_list_values(
+    contacts: &[Contact],
+    ids: &[String],
+    prop_key: &str,
+) -> Vec<String> {
+    ids.iter()
+        .filter_map(|id| contacts.iter().find(|c| &c.id == id))
+        .map(|c| get_contact_property(c, prop_key))
+        .filter(|v| !v.is_empty())
+        .collect()
+}
+
 /// Add a new contact to the .lily file. A UUID is generated for the `id` field
 /// (any value provided is overwritten). Returns the contact with its assigned ID.
 #[tauri::command]
@@ -771,6 +806,32 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<Vec<String>, Str
     // ── Pass 1: Role-based conditionals ("Has {role}") ──────────────────
     for (role, binding) in &lily.contact_bindings {
         let has_key = format!("Has {}", role);
+
+        // Contact-list bindings aggregate several contacts into one variable.
+        // The single `variable_mappings` entry maps the target variable → the
+        // contact property to collect; each selected contact's value is joined
+        // with "; " into that variable. `Has {role}` is "true" when at least
+        // one selected contact yields a non-empty value, else "false" (so an
+        // empty list self-prunes any conditional list element in the template).
+        if let Some(ids) = &binding.contact_ids {
+            let prop_key = binding
+                .variable_mappings
+                .values()
+                .next()
+                .cloned()
+                .unwrap_or_else(|| "full_name".to_string());
+            let values = aggregate_contact_list_values(&lily.contacts, ids, &prop_key);
+            let joined = values.join("; ");
+            if let Some(target_var) = binding.variable_mappings.keys().next() {
+                lily.variables.insert(target_var.clone(), joined);
+            }
+            lily.variables.insert(
+                has_key,
+                if values.is_empty() { "false" } else { "true" }.to_string(),
+            );
+            continue;
+        }
+
         match &binding.contact_id {
             Some(id) if id == "__none__" => {
                 // Explicitly "None" — clear all mapped variables and mark role absent
@@ -2098,6 +2159,7 @@ mod tests {
         let mut spouse_binding = ContactBinding {
             contact_id: Some("john-id".into()),
             variable_mappings: HashMap::new(),
+            contact_ids: None,
         };
         spouse_binding
             .variable_mappings
@@ -2108,6 +2170,7 @@ mod tests {
         let mut other_binding = ContactBinding {
             contact_id: Some("kid-id".into()),
             variable_mappings: HashMap::new(),
+            contact_ids: None,
         };
         other_binding
             .variable_mappings
@@ -2134,6 +2197,34 @@ mod tests {
         });
 
         (lily, john)
+    }
+
+    #[test]
+    fn aggregate_contact_list_values_joins_and_skips() {
+        let contacts = vec![
+            make_contact("a", "Ada", "Smith", "Friend"),
+            make_contact("b", "Bo", "Jones", "Friend"),
+            make_contact("c", "Cy", "Lee", "Friend"),
+        ];
+
+        // Selected in order, with one id (the middle) skipped — order is
+        // preserved and only the chosen contacts are included.
+        let ids = vec!["c".to_string(), "a".to_string()];
+        let values = aggregate_contact_list_values(&contacts, &ids, "full_name");
+        assert_eq!(values, vec!["Cy Lee".to_string(), "Ada Smith".to_string()]);
+        assert_eq!(values.join("; "), "Cy Lee; Ada Smith");
+
+        // Missing IDs and empty property values are skipped.
+        let mut blank = make_contact("d", "Di", "Poe", "Friend");
+        blank.full_name = String::new();
+        let mut contacts2 = contacts.clone();
+        contacts2.push(blank);
+        let ids2 = vec!["missing".to_string(), "d".to_string(), "b".to_string()];
+        let values2 = aggregate_contact_list_values(&contacts2, &ids2, "full_name");
+        assert_eq!(values2, vec!["Bo Jones".to_string()]);
+
+        // No selections → empty (caller treats this as "Has {role}" == false).
+        assert!(aggregate_contact_list_values(&contacts, &[], "full_name").is_empty());
     }
 
     #[test]

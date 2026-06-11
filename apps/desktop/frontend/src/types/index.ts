@@ -59,7 +59,6 @@ export interface AppSettings {
 	last_template_rel_path: string | null;
 	autosave: boolean | null;
 	questionnaires_dir: string | null;
-	active_questionnaire_id: string | null;
 	client_library_dirs: string[];
 	navigation_history: PersistedNavEntry[];
 }
@@ -143,6 +142,11 @@ export interface ContactBinding {
 	contact_id: string | null;
 	/** Map from variable display name to contact property key. */
 	variable_mappings: Record<string, string>;
+	/** For "contact-list" roles: the ordered contact IDs aggregated into one
+	 *  variable. The single `variable_mappings` entry maps the target variable
+	 *  → the contact property to join (with "; "). Absent for single-contact
+	 *  bindings. */
+	contact_ids?: string[];
 }
 
 /** The .lily project file stored in each client/working directory. */
