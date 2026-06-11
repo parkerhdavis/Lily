@@ -7,24 +7,25 @@
     <title>Lily</title>
     <link rel="stylesheet" href="/styles.css" />
     <style>
+      /* #EFECE8 == base-200 in the default (light) theme — the splash
+         background. The window is created hidden and only revealed once React's
+         splash has painted, so this fallback is never normally seen; matching
+         the splash colour keeps any stray first frame from flashing. */
+      html,
       body {
         margin: 0;
+        background: #EFECE8;
         font-family: system-ui, -apple-system, sans-serif;
       }
       .loading-screen {
-        display: flex;
-        align-items: center;
-        justify-content: center;
         height: 100vh;
-        background: #f5f5f5;
-        color: #666;
-        font-size: 1.1rem;
+        background: #EFECE8;
       }
     </style>
   </head>
   <body>
     <div id="root">
-      <div class="loading-screen">Loading Lily...</div>
+      <div class="loading-screen"></div>
     </div>
     <script type="module" src="/main.js"></script>
   </body>

@@ -59,7 +59,9 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
-            // Restore saved window size from settings, if available.
+            // Restore saved window size from settings, if available. The window
+            // is created hidden (`visible: false`), so this resize happens
+            // off-screen and is never seen as an intermediate frame.
             if let Ok(settings) = settings::load_settings() {
                 if let (Some(w), Some(h)) = (settings.window_width, settings.window_height) {
                     if let Some(window) = app.get_webview_window("main") {
@@ -68,6 +70,27 @@ fn main() {
                     }
                 }
             }
+
+            // Safety net for the hidden-until-painted window. The frontend calls
+            // `show_main_window` once the splash has painted; if it never does
+            // (bundle failed to load/parse, render threw before mount, etc.) we'd
+            // otherwise strand an invisible-but-running window. Reveal it
+            // unconditionally after a grace period. `show()` is idempotent, so
+            // racing the frontend's call is harmless.
+            let safety_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                if let Some(window) = safety_handle.get_webview_window("main") {
+                    if !window.is_visible().unwrap_or(true) {
+                        tracing::warn!(
+                            "frontend never called show_main_window; revealing via safety net"
+                        );
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+            });
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -87,6 +110,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            show_main_window,
             copy_template,
             extract_variables,
 
@@ -152,6 +176,20 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Reveal the main window. It is created hidden (`visible: false` in
+/// tauri.conf.json) so the OS never shows the unpainted webview, the static
+/// `index.html` fallback, or the live `set_size` resize in `.setup()`. The
+/// frontend calls this once the splash has actually painted, so the window's
+/// first on-screen frame is the splash itself. A setup-side safety timer
+/// (see `main`) reveals the window anyway if the frontend never calls.
+#[tauri::command]
+fn show_main_window(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 /// List all .docx and .dotx template files in a given directory, recursively.

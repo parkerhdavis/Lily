@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import AppSettings from "@/components/AppSettings";
 import ClientsHub from "@/components/ClientsHub";
@@ -25,12 +26,30 @@ export default function App() {
 	const step = useWorkflowStore((s) => s.step);
 	const [splashDone, setSplashDone] = useState(false);
 	const [fadeOut, setFadeOut] = useState(false);
+	const [revealed, setRevealed] = useState(false);
 	const [showShortcuts, setShowShortcuts] = useState(false);
 	const lilyIcon = useLilyIcon();
 
 	useEffect(() => {
 		load();
 	}, [load]);
+
+	// Reveal the main window once React has committed the splash. The window is
+	// created hidden (tauri.conf.json `visible: false`) so the OS never shows the
+	// unpainted webview, the static index.html fallback, or the live `set_size`
+	// resize in Rust `.setup()` — its first on-screen frame is the splash.
+	//
+	// Scheduled with setTimeout, NOT requestAnimationFrame: webkit2gtk does not
+	// service rAF while the window is hidden (nothing is being composited), so an
+	// rAF-gated reveal would never fire. A Rust-side safety timer reveals the
+	// window anyway if this never runs at all.
+	useEffect(() => {
+		const t = setTimeout(() => {
+			setRevealed(true);
+			void invoke("show_main_window").catch(() => {});
+		}, 0);
+		return () => clearTimeout(t);
+	}, []);
 
 	// Track the current step in settings so LilyHub can offer "pick up where you left off"
 	// Only save non-hub steps — landing on hub at startup should not clear the previous value.
@@ -107,16 +126,19 @@ export default function App() {
 		return () => window.removeEventListener("keydown", handleUndo);
 	}, []);
 
-	// Splash: wait for settings to load + minimum display time, then fade out
+	// Splash: hold until settings have loaded AND the window is actually on-screen,
+	// then run the minimum display time before fading out. Gating on `revealed`
+	// (not just `loaded`) keeps the splash's full dwell measured from when it is
+	// first visible, regardless of how long the webview warmed up while hidden.
 	useEffect(() => {
-		if (!loaded) return;
+		if (!loaded || !revealed) return;
 		const fadeTimer = setTimeout(() => setFadeOut(true), 1200);
 		const doneTimer = setTimeout(() => setSplashDone(true), 1500);
 		return () => {
 			clearTimeout(fadeTimer);
 			clearTimeout(doneTimer);
 		};
-	}, [loaded]);
+	}, [loaded, revealed]);
 
 	if (!splashDone) {
 		return (

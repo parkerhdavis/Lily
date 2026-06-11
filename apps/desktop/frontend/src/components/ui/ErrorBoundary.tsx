@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { invoke } from "@tauri-apps/api/core";
 import { Component, type ReactNode } from "react";
 
 interface Props {
@@ -15,6 +16,14 @@ export default class ErrorBoundary extends Component<Props, State> {
 
 	static getDerivedStateFromError(error: Error): State {
 		return { hasError: true, error };
+	}
+
+	componentDidCatch() {
+		// The main window is created hidden and normally revealed once the splash
+		// paints. If the app throws during initial render the splash never mounts,
+		// so reveal the window here to surface this error rather than stranding an
+		// invisible window until the Rust safety timer fires.
+		void invoke("show_main_window").catch(() => {});
 	}
 
 	render() {
