@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ContactListPicker from "@/components/ContactListPicker";
 import ContactPicker from "@/components/ContactPicker";
 import PageHeader from "@/components/ui/PageHeader";
 import StatusDot from "@/components/ui/StatusDot";
@@ -391,6 +392,9 @@ export default function Questionnaire() {
 				} else if (q.kind === "contact-role") {
 					total++;
 					if (bindings[q.role]) filled++;
+				} else if (q.kind === "contact-list") {
+					total++;
+					if ((bindings[q.role]?.contact_ids?.length ?? 0) > 0) filled++;
 				}
 			}
 			map[section.title] = {
@@ -521,13 +525,18 @@ export default function Questionnaire() {
 													: "col-span-6";
 										return (
 											<div
-												key={q.kind === "contact-role" ? q.role : q.variable}
+												key={
+													q.kind === "contact-role" || q.kind === "contact-list"
+														? q.role
+														: q.variable
+												}
 												className={span}
 											>
 												<QuestionField
 													question={q}
 													value={
-														q.kind === "contact-role"
+														q.kind === "contact-role" ||
+														q.kind === "contact-list"
 															? ""
 															: (variables[q.variable] ?? "")
 													}
@@ -1022,6 +1031,8 @@ function QuestionField({
 			);
 		case "contact-role":
 			return <ContactPicker question={question} />;
+		case "contact-list":
+			return <ContactListPicker question={question} />;
 	}
 }
 

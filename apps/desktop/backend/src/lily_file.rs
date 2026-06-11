@@ -73,6 +73,14 @@ pub struct ContactBinding {
     /// Map from variable display name → contact property key.
     /// e.g., `"POA Agent Full Name" → "full_name"`
     pub variable_mappings: HashMap<String, String>,
+    /// For "contact-list" roles: the ordered list of contact IDs selected for a
+    /// role that aggregates many contacts into one variable (e.g., a HIPAA
+    /// release list). The single `variable_mappings` entry maps the target
+    /// variable → the contact property to aggregate; each selected contact's
+    /// property value is joined with `"; "` into that variable. `None` for
+    /// ordinary single-contact bindings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_ids: Option<Vec<String>>,
 }
 
 /// Status of a required document in the client workflow.
@@ -771,6 +779,40 @@ pub fn resolve_contact_variables(working_dir: String) -> Result<Vec<String>, Str
     // ── Pass 1: Role-based conditionals ("Has {role}") ──────────────────
     for (role, binding) in &lily.contact_bindings {
         let has_key = format!("Has {}", role);
+
+        // Contact-list bindings aggregate several contacts into one variable.
+        // The single `variable_mappings` entry maps the target variable → the
+        // contact property to collect; each selected contact's value is joined
+        // with "; " into that variable. `Has {role}` is "true" when at least
+        // one selected contact yields a non-empty value, else "false" (so an
+        // empty list self-prunes any conditional list element in the template).
+        if let Some(ids) = &binding.contact_ids {
+            let prop_key = binding
+                .variable_mappings
+                .values()
+                .next()
+                .cloned()
+                .unwrap_or_else(|| "full_name".to_string());
+            let mut values: Vec<String> = Vec::new();
+            for id in ids {
+                if let Some(contact) = lily.contacts.iter().find(|c| &c.id == id) {
+                    let value = get_contact_property(contact, &prop_key);
+                    if !value.is_empty() {
+                        values.push(value);
+                    }
+                }
+            }
+            let joined = values.join("; ");
+            if let Some(target_var) = binding.variable_mappings.keys().next() {
+                lily.variables.insert(target_var.clone(), joined);
+            }
+            lily.variables.insert(
+                has_key,
+                if values.is_empty() { "false" } else { "true" }.to_string(),
+            );
+            continue;
+        }
+
         match &binding.contact_id {
             Some(id) if id == "__none__" => {
                 // Explicitly "None" — clear all mapped variables and mark role absent
@@ -2098,6 +2140,7 @@ mod tests {
         let mut spouse_binding = ContactBinding {
             contact_id: Some("john-id".into()),
             variable_mappings: HashMap::new(),
+            contact_ids: None,
         };
         spouse_binding
             .variable_mappings
@@ -2108,6 +2151,7 @@ mod tests {
         let mut other_binding = ContactBinding {
             contact_id: Some("kid-id".into()),
             variable_mappings: HashMap::new(),
+            contact_ids: None,
         };
         other_binding
             .variable_mappings

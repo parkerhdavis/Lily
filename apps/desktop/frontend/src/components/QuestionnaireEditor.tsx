@@ -382,12 +382,20 @@ function SectionCard({
 							variable: "",
 							label: "",
 						}
-					: {
-							kind: "contact-role",
-							role: "",
-							label: "",
-							variableMappings: {},
-						};
+					: kind === "contact-list"
+						? {
+								kind: "contact-list",
+								role: "",
+								label: "",
+								listVariable: "",
+								property: "full_name",
+							}
+						: {
+								kind: "contact-role",
+								role: "",
+								label: "",
+								variableMappings: {},
+							};
 		onUpdate((s) => ({ ...s, questions: [...s.questions, newQ] }));
 	};
 
@@ -522,6 +530,13 @@ function SectionCard({
 								>
 									+ Contact Role
 								</button>
+								<button
+									type="button"
+									className="btn btn-ghost btn-xs"
+									onClick={() => addQuestion("contact-list")}
+								>
+									+ Contact List
+								</button>
 							</div>
 						</>
 					)}
@@ -574,6 +589,9 @@ function QuestionRow({
 				)}
 				{question.kind === "contact-role" && (
 					<ContactRoleQuestionFields question={q} onUpdate={onUpdate} />
+				)}
+				{question.kind === "contact-list" && (
+					<ContactListQuestionFields question={q} onUpdate={onUpdate} />
 				)}
 			</div>
 
@@ -723,6 +741,58 @@ function ConditionalQuestionFields({
 				}
 				placeholder="False label"
 			/>
+		</div>
+	);
+}
+
+function ContactListQuestionFields({
+	question,
+	onUpdate,
+}: {
+	question: Record<string, unknown>;
+	onUpdate: (updater: (q: QuestionDef) => QuestionDef) => void;
+}) {
+	return (
+		<div className="space-y-2">
+			<div className="flex flex-wrap gap-2">
+				<input
+					type="text"
+					className="input input-bordered input-xs flex-1 min-w-40"
+					value={(question.role as string) ?? ""}
+					onChange={(e) => onUpdate((q) => ({ ...q, role: e.target.value }))}
+					placeholder="Role name"
+				/>
+				<input
+					type="text"
+					className="input input-bordered input-xs flex-1 min-w-40"
+					value={(question.label as string) ?? ""}
+					onChange={(e) => onUpdate((q) => ({ ...q, label: e.target.value }))}
+					placeholder="Label"
+				/>
+			</div>
+			<div className="flex flex-wrap gap-2">
+				<input
+					type="text"
+					className="input input-bordered input-xs flex-1 min-w-40"
+					value={(question.listVariable as string) ?? ""}
+					onChange={(e) =>
+						onUpdate((q) => ({ ...q, listVariable: e.target.value }))
+					}
+					placeholder="List variable (aggregated)"
+				/>
+				<input
+					type="text"
+					className="input input-bordered input-xs w-40"
+					value={(question.property as string) ?? ""}
+					onChange={(e) =>
+						onUpdate((q) => ({
+							...q,
+							property: e.target.value || undefined,
+						}))
+					}
+					placeholder="Property (e.g. full_name)"
+				/>
+			</div>
 		</div>
 	);
 }
