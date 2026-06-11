@@ -1,20 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import type { QuestionDef } from "@/types/questionnaire";
 
 type ContactListQuestion = Extract<QuestionDef, { kind: "contact-list" }>;
 
-/** Read a contact property by key. */
-function getProperty(contact: Record<string, string>, key: string): string {
-	return contact[key] ?? "";
+interface Row {
+	/** Stable React key, independent of the (possibly empty) contact id. */
+	uid: string;
+	/** The selected contact id, or "" for a not-yet-chosen row. */
+	contactId: string;
 }
 
 /**
- * Multi-select picker for a "contact-list" question: the user checks one or
- * more of the client's contacts, and their `property` values (default
- * full name) are aggregated — joined with "; " — into `listVariable`.
- * Selection is stored as `contact_ids` on the role's contact binding.
+ * Ordered list of contacts for a "contact-list" question. Mirrors the Client
+ * Contacts "+ Add" pattern, except each entry is a dropdown that selects an
+ * existing contact rather than a full contact form. The selected contacts'
+ * `property` values are aggregated — joined with "; " by the backend — into
+ * `listVariable`. Selection is stored as the ordered `contact_ids` on the
+ * role's contact binding; empty (not-yet-chosen) rows are kept only in local
+ * state and are not persisted.
  */
 export default function ContactListPicker({
 	question,
@@ -27,14 +32,39 @@ export default function ContactListPicker({
 	const bindings = lilyFile?.contact_bindings ?? {};
 	const property = question.property ?? "full_name";
 
-	const selectedIds = useMemo(
+	const persistedIds = useMemo(
 		() => bindings[question.role]?.contact_ids ?? [],
 		[bindings, question.role],
 	);
 
+	const uidCounter = useRef(0);
+	const makeRow = useCallback(
+		(contactId: string): Row => ({
+			uid: `r${uidCounter.current++}`,
+			contactId,
+		}),
+		[],
+	);
+
+	const [rows, setRows] = useState<Row[]>(() => persistedIds.map(makeRow));
+
+	// Re-sync from the persisted list when it diverges from the committed rows
+	// (external change, or a late lilyFile load). Transient empty rows the user
+	// just added don't change the persisted sequence, so they're preserved.
+	useEffect(() => {
+		setRows((prev) => {
+			const committed = prev.map((r) => r.contactId).filter(Boolean);
+			const same =
+				committed.length === persistedIds.length &&
+				committed.every((id, i) => id === persistedIds[i]);
+			return same ? prev : persistedIds.map(makeRow);
+		});
+	}, [persistedIds, makeRow]);
+
 	const commit = useCallback(
-		async (ids: string[]) => {
-			await setContactBinding(question.role, {
+		(nextRows: Row[]) => {
+			const ids = nextRows.map((r) => r.contactId).filter(Boolean);
+			void setContactBinding(question.role, {
 				contact_id: null,
 				contact_ids: ids,
 				variable_mappings: { [question.listVariable]: property },
@@ -43,34 +73,19 @@ export default function ContactListPicker({
 		[setContactBinding, question.role, question.listVariable, property],
 	);
 
-	const toggle = useCallback(
-		async (id: string, checked: boolean) => {
-			// Preserve selection order: drop any existing entry, then append on
-			// add so the listed order matches the order contacts were checked.
-			const next = checked
-				? [...selectedIds.filter((x) => x !== id), id]
-				: selectedIds.filter((x) => x !== id);
-			await commit(next);
-		},
-		[selectedIds, commit],
-	);
+	const addRow = () => setRows((prev) => [...prev, makeRow("")]);
 
-	// Preview of the joined value, in selection order.
-	const preview = useMemo(
-		() =>
-			selectedIds
-				.map(
-					(id) =>
-						contacts.find((c) => c.id === id) as unknown as
-							| Record<string, string>
-							| undefined,
-				)
-				.filter((c): c is Record<string, string> => Boolean(c))
-				.map((c) => getProperty(c, property))
-				.filter(Boolean)
-				.join("; "),
-		[selectedIds, contacts, property],
-	);
+	const selectRow = (uid: string, contactId: string) => {
+		const next = rows.map((r) => (r.uid === uid ? { ...r, contactId } : r));
+		setRows(next);
+		commit(next);
+	};
+
+	const removeRow = (uid: string) => {
+		const next = rows.filter((r) => r.uid !== uid);
+		setRows(next);
+		commit(next);
+	};
 
 	return (
 		<div className="form-control w-full">
@@ -83,40 +98,58 @@ export default function ContactListPicker({
 					No contacts yet — add people in the Client Contacts tab first.
 				</div>
 			) : (
-				<div className="pl-3 border-l-2 border-primary/30 space-y-0.5">
-					{contacts.map((c) => {
-						const checked = selectedIds.includes(c.id);
-						const rel =
-							c.relationship === "Other" && c.other_relationship
-								? c.other_relationship
-								: c.relationship;
+				<div className="flex flex-col gap-2">
+					{rows.map((row) => {
+						// Don't offer contacts already chosen in other rows (no dupes),
+						// but always keep this row's own current selection.
+						const usedElsewhere = new Set(
+							rows
+								.filter((r) => r.uid !== row.uid && r.contactId)
+								.map((r) => r.contactId),
+						);
+						const options = contacts.filter(
+							(c) => c.id === row.contactId || !usedElsewhere.has(c.id),
+						);
 						return (
-							<label
-								key={c.id}
-								className="label cursor-pointer justify-start gap-2 py-0.5"
-							>
-								<input
-									type="checkbox"
-									className="checkbox checkbox-sm checkbox-primary"
-									checked={checked}
-									onChange={(e) => toggle(c.id, e.target.checked)}
-								/>
-								<span className="label-text text-sm">
-									{c.full_name}
-									{rel ? (
-										<span className="text-base-content/50"> ({rel})</span>
-									) : null}
-								</span>
-							</label>
+							<div key={row.uid} className="flex items-center gap-2">
+								<select
+									className="select select-bordered select-sm flex-1"
+									value={row.contactId}
+									onChange={(e) => selectRow(row.uid, e.target.value)}
+								>
+									<option value="">Select a contact…</option>
+									{options.map((c) => {
+										const rel =
+											c.relationship === "Other" && c.other_relationship
+												? c.other_relationship
+												: c.relationship;
+										return (
+											<option key={c.id} value={c.id}>
+												{c.full_name}
+												{rel ? ` (${rel})` : ""}
+											</option>
+										);
+									})}
+								</select>
+								<button
+									type="button"
+									className="btn btn-ghost btn-sm btn-square text-error"
+									onClick={() => removeRow(row.uid)}
+									title="Remove"
+								>
+									&times;
+								</button>
+							</div>
 						);
 					})}
-				</div>
-			)}
 
-			{preview && (
-				<div className="mt-2 pl-3 border-l-2 border-primary/30 text-xs text-base-content/60">
-					<span className="text-base-content/50">Will list: </span>
-					{preview}
+					<button
+						type="button"
+						className="btn btn-outline btn-sm w-full"
+						onClick={addRow}
+					>
+						+ Add
+					</button>
 				</div>
 			)}
 		</div>
