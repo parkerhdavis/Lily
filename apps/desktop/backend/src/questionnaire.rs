@@ -65,8 +65,6 @@ pub struct QuestionnaireIndexEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuestionnaireIndex {
 	pub questionnaires: Vec<QuestionnaireIndexEntry>,
-	#[serde(default)]
-	pub active_questionnaire_id: Option<String>,
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -226,8 +224,6 @@ fn legacy_questionnaires_dir() -> Result<PathBuf, String> {
 #[derive(Debug, Deserialize)]
 struct LegacyIndex {
 	questionnaires: Vec<LegacyIndexEntry>,
-	#[serde(default)]
-	active_questionnaire_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -250,7 +246,6 @@ pub fn load_questionnaire_index() -> Result<QuestionnaireIndex, String> {
 		None => {
 			return Ok(QuestionnaireIndex {
 				questionnaires: vec![],
-				active_questionnaire_id: None,
 			});
 		}
 	};
@@ -264,11 +259,8 @@ pub fn load_questionnaire_index() -> Result<QuestionnaireIndex, String> {
 		})
 		.collect();
 
-	let settings = crate::settings::load_settings()?;
-
 	Ok(QuestionnaireIndex {
 		questionnaires: entries,
-		active_questionnaire_id: settings.active_questionnaire_id,
 	})
 }
 
@@ -388,30 +380,6 @@ pub fn delete_questionnaire(id: String) -> Result<(), String> {
 
 	fs::remove_file(&path).map_err(|e| format!("Failed to delete questionnaire: {}", e))?;
 
-	// If this was the active questionnaire, clear or reassign
-	let mut settings = crate::settings::load_settings()?;
-	if settings.active_questionnaire_id.as_deref() == Some(&id) {
-		// Try to set the first remaining questionnaire as active
-		let remaining = scan_questionnaires(&dir)?;
-		settings.active_questionnaire_id = remaining.first().map(|(_, def)| def.id.clone());
-		crate::settings::save_settings(settings)?;
-	}
-
-	Ok(())
-}
-
-/// Set which questionnaire is the "active" one used for new clients.
-#[tauri::command]
-pub fn set_active_questionnaire(id: String) -> Result<(), String> {
-	let dir = require_questionnaires_dir()?;
-
-	// Verify the UUID exists
-	find_questionnaire_path(&dir, &id)?;
-
-	let mut settings = crate::settings::load_settings()?;
-	settings.active_questionnaire_id = Some(id);
-	crate::settings::save_settings(settings)?;
-
 	Ok(())
 }
 
@@ -427,7 +395,7 @@ pub fn migrate_questionnaires() -> Result<u32, String> {
 		return Ok(0);
 	}
 
-	// Read the old index for active_questionnaire_id
+	// Read the old index to recover each questionnaire's display name.
 	let index_path = legacy_dir.join("index.json");
 	let legacy_index: Option<LegacyIndex> = if index_path.exists() {
 		let content = fs::read_to_string(&index_path).ok();
@@ -521,17 +489,6 @@ pub fn migrate_questionnaires() -> Result<u32, String> {
 		atomic_write(&target_path, &content)?;
 
 		count += 1;
-	}
-
-	// Migrate active_questionnaire_id to settings
-	if let Some(ref legacy_idx) = legacy_index {
-		if let Some(ref active_id) = legacy_idx.active_questionnaire_id {
-			let mut settings = crate::settings::load_settings()?;
-			if settings.active_questionnaire_id.is_none() {
-				settings.active_questionnaire_id = Some(active_id.clone());
-				crate::settings::save_settings(settings)?;
-			}
-		}
 	}
 
 	Ok(count)

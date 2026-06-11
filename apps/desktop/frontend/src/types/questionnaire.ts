@@ -106,5 +106,4 @@ export interface QuestionnaireIndexEntry {
 /** The questionnaire index — lists all definitions and which is active. */
 export interface QuestionnaireIndex {
 	questionnaires: QuestionnaireIndexEntry[];
-	active_questionnaire_id: string | null;
 }

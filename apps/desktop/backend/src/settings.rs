@@ -53,9 +53,6 @@ pub struct AppSettings {
     /// Path to the directory containing questionnaire definition .lily files.
     #[serde(default)]
     pub questionnaires_dir: Option<String>,
-    /// UUID of the currently active questionnaire definition.
-    #[serde(default)]
-    pub active_questionnaire_id: Option<String>,
     /// Directories containing client folders (like templates_dir but for clients).
     #[serde(default)]
     pub client_library_dirs: Vec<String>,

@@ -59,7 +59,6 @@ export interface AppSettings {
 	last_template_rel_path: string | null;
 	autosave: boolean | null;
 	questionnaires_dir: string | null;
-	active_questionnaire_id: string | null;
 	client_library_dirs: string[];
 	navigation_history: PersistedNavEntry[];
 }

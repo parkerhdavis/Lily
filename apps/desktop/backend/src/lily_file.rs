@@ -501,10 +501,20 @@ pub fn has_lily_file(working_dir: String) -> Result<bool, String> {
 }
 
 /// Create a new .lily file in the given directory, writing the default
-/// structure to disk. Returns the created LilyFile.
+/// structure to disk. The questionnaire is chosen at creation time (the user
+/// picks one from the library), so its id/version are stamped immediately.
+/// Returns the created LilyFile.
 #[tauri::command]
-pub fn create_lily_file(working_dir: String) -> Result<LilyFile, String> {
-    let lily = LilyFile::default();
+pub fn create_lily_file(
+    working_dir: String,
+    questionnaire_id: Option<String>,
+    questionnaire_version: Option<u32>,
+) -> Result<LilyFile, String> {
+    let lily = LilyFile {
+        questionnaire_id,
+        questionnaire_version,
+        ..LilyFile::default()
+    };
     write_lily_file(&working_dir, &lily)?;
     Ok(lily)
 }

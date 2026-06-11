@@ -32,7 +32,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 		last_template_rel_path: null,
 		autosave: null,
 		questionnaires_dir: null,
-		active_questionnaire_id: null,
 		client_library_dirs: [],
 		navigation_history: [],
 	},

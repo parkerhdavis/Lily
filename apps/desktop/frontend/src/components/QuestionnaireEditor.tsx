@@ -15,9 +15,7 @@ import type {
 
 export default function QuestionnaireEditor() {
 	const goToPipeline = useWorkflowStore((s) => s.goToPipeline);
-	const { currentDef, saveQuestionnaire, loading } = useQuestionnaireStore();
-	const index = useQuestionnaireStore((s) => s.index);
-	const setActive = useQuestionnaireStore((s) => s.setActiveQuestionnaire);
+	const { currentDef, saveQuestionnaire } = useQuestionnaireStore();
 	const autosave = useSettingsStore((s) => s.settings.autosave) !== false;
 
 	const [def, setDef] = useState<QuestionnaireDefFile | null>(null);
@@ -107,7 +105,6 @@ export default function QuestionnaireEditor() {
 		);
 	}
 
-	const isActive = index?.active_questionnaire_id === def.id;
 	const tabSections = def.sections.filter((s) => s.tab === activeTab);
 
 	const handleNameSubmit = () => {
@@ -246,21 +243,6 @@ export default function QuestionnaireEditor() {
 							Save
 						</button>
 					</>
-				)}
-				{!isActive && (
-					<button
-						type="button"
-						className="btn btn-primary btn-sm"
-						onClick={() => setActive(def.id)}
-						disabled={loading}
-					>
-						Set as Active
-					</button>
-				)}
-				{isActive && (
-					<span className="badge badge-primary badge-sm">
-						Active Questionnaire
-					</span>
 				)}
 			</PageHeader>
 

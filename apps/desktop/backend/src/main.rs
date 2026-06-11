@@ -28,7 +28,6 @@ use lily_file::{
 use questionnaire::{
     create_questionnaire, delete_questionnaire, duplicate_questionnaire, load_questionnaire,
     load_questionnaire_index, migrate_questionnaires, save_questionnaire,
-    set_active_questionnaire,
 };
 use settings::{load_settings, save_settings};
 use tauri::Manager;
@@ -151,7 +150,6 @@ fn main() {
             create_questionnaire,
             duplicate_questionnaire,
             delete_questionnaire,
-            set_active_questionnaire,
             migrate_questionnaires,
             add_required_document,
             update_required_document_status,

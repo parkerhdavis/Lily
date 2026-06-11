@@ -336,9 +336,6 @@ function TemplatesTab({
 										/>
 									</svg>
 									<span className="truncate flex-1">{q.name}</span>
-									{q.id === questionnaireIndex.active_questionnaire_id && (
-										<span className="badge badge-xs badge-primary">Active</span>
-									)}
 								</button>
 							))}
 							<button
