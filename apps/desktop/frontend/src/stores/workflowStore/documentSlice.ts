@@ -19,6 +19,43 @@ import {
 } from "./helpers";
 import type { WorkflowSlice } from "./types";
 
+/**
+ * Build a complete value map for a document's variables.
+ *
+ * Every extracted variable gets an entry: its value from the client pool when
+ * present, otherwise a default (`""` for simple variables, `"false"` for
+ * conditionals), then any schema-provided default for still-empty entries.
+ *
+ * Passing a complete map (rather than just the populated client pool) is what
+ * guarantees the .docx is fully resolved on the first write: variables absent
+ * from the pool are explicitly blanked / false-branched instead of being left
+ * as raw template placeholder text on disk. (See the "Documents must be
+ * populated on add" invariant — `update_sdt_v2` leaves an SDT untouched when
+ * its variable is missing from the map.)
+ */
+function buildVariableValues(
+	variables: VariableInfo[],
+	pool: Record<string, string>,
+	templateSchema: VariableSchema | null,
+): Record<string, string> {
+	const variableValues: Record<string, string> = {};
+	for (const v of variables) {
+		const defaultVal = v.is_conditional ? "false" : "";
+		variableValues[v.display_name] = pool[v.display_name] ?? defaultVal;
+	}
+	if (templateSchema) {
+		for (const v of variables) {
+			if (!variableValues[v.display_name]) {
+				const entry = templateSchema.variables[v.display_name];
+				if (entry?.default) {
+					variableValues[v.display_name] = entry.default;
+				}
+			}
+		}
+	}
+	return variableValues;
+}
+
 /** Load the conditional schema for a template from its .lily sidecar. */
 async function loadConditionalSchema(
 	templatesDir: string,
@@ -57,114 +94,6 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 		}
 	},
 
-	selectTemplate: async (templateRelPath, templatesDir) => {
-		const { workingDir, lilyFile } = get();
-		if (!workingDir) return;
-
-		set({ loading: true, error: null });
-		try {
-			const fullTemplatePath = `${templatesDir}/${templateRelPath}`;
-
-			const filename = buildDocumentFilename(templateRelPath, lilyFile);
-
-			const docPath = await invoke<string>("copy_template", {
-				templatePath: fullTemplatePath,
-				destDir: workingDir,
-				filename,
-				templateRelPath,
-			});
-
-			const variables = await invoke<VariableInfo[]>("extract_variables", {
-				docxPath: docPath,
-			});
-
-			await invoke("set_document_variables", {
-				workingDir,
-				filename,
-				variableNames: variables.map((v) => v.display_name),
-				conditionalNames: variables
-					.filter((v) => v.is_conditional)
-					.map((v) => v.display_name),
-				conditionalDefinitions: {},
-			});
-
-			// Resolve contact variables so that any new relationship-based
-			// conditionals (e.g. "Has Spouse") pick up values immediately.
-			await resolveContactVariables(workingDir);
-
-			const updatedLilyFile = await invoke<LilyFile>("load_lily_file_cmd", {
-				workingDir,
-			});
-
-			// Build variableValues from the updated .lily file so
-			// contact-resolved values are included
-			const mergedVars = updatedLilyFile?.variables ?? {};
-			const variableValues: Record<string, string> = {};
-			for (const v of variables) {
-				const defaultVal = v.is_conditional ? "false" : "";
-				variableValues[v.display_name] =
-					mergedVars[v.display_name] ?? defaultVal;
-			}
-
-			// Load template schema (if it exists) for type-specific inputs
-			let templateSchema: VariableSchema | null = null;
-			try {
-				templateSchema = await invoke<VariableSchema>("load_template_schema", {
-					templatesDir,
-					templateRelPath,
-				});
-			} catch {
-				// Schema is optional — continue without it
-			}
-
-			// Apply schema defaults to unfilled variables
-			if (templateSchema) {
-				for (const v of variables) {
-					if (!variableValues[v.display_name]) {
-						const entry = templateSchema.variables[v.display_name];
-						if (entry?.default) {
-							variableValues[v.display_name] = entry.default;
-						}
-					}
-				}
-			}
-
-			// Write variable values into the .docx immediately so the
-			// document is populated from the start (not just on manual save)
-			const conditionalSchema = await loadConditionalSchema(
-				templatesDir,
-				templateRelPath,
-			);
-			await invoke("replace_variables_v2", {
-				docxPath: docPath,
-				variables: variableValues,
-				conditionalSchema,
-			});
-
-			// Refresh preview to reflect populated values
-			const documentHtml = await invoke<string>("get_document_html", {
-				docxPath: docPath,
-			});
-
-			pushNav(get());
-			set({
-				documentPath: docPath,
-				templateRelPath,
-				variables,
-				variableValues,
-				documentHtml,
-				lilyFile: updatedLilyFile,
-				templateSchema,
-				dirty: false,
-				step: "edit-variables",
-				loading: false,
-			});
-		} catch (err) {
-			set({ error: String(err), loading: false });
-			toastError("Failed to prepare document", err);
-		}
-	},
-
 	addMultipleDocuments: async (templateRelPaths, templatesDir) => {
 		const { workingDir, lilyFile } = get();
 		if (!workingDir) return;
@@ -175,7 +104,11 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			const usedFilenames = new Set<string>(
 				Object.keys(lilyFile?.documents ?? {}),
 			);
-			const addedDocPaths: string[] = [];
+			const addedDocs: {
+				docPath: string;
+				templateRelPath: string;
+				variables: VariableInfo[];
+			}[] = [];
 
 			for (const templateRelPath of templateRelPaths) {
 				const fullTemplatePath = `${templatesDir}/${templateRelPath}`;
@@ -198,7 +131,6 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 					filename,
 					templateRelPath,
 				});
-				addedDocPaths.push(docPath);
 
 				const variables = await invoke<VariableInfo[]>("extract_variables", {
 					docxPath: docPath,
@@ -213,6 +145,8 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 						.map((v) => v.display_name),
 					conditionalDefinitions: {},
 				});
+
+				addedDocs.push({ docPath, templateRelPath, variables });
 			}
 
 			// Resolve contact variables so new relationship-based
@@ -223,18 +157,41 @@ export const createDocumentSlice: WorkflowSlice = (set, get) => ({
 			const updatedLilyFile = await invoke<LilyFile>("load_lily_file_cmd", {
 				workingDir,
 			});
+			const pool = updatedLilyFile?.variables ?? {};
 
-			// Populate each added document with variable values from
-			// the questionnaire so they're saved into the .docx immediately
-			const allVars = updatedLilyFile?.variables ?? {};
-			for (let i = 0; i < addedDocPaths.length; i++) {
+			// Populate each added document with a COMPLETE per-document value
+			// map so every variable resolves on disk immediately. Variables
+			// absent from the client pool (template-only placeholders, untouched
+			// questionnaire fields, conditionals with no controlling value) are
+			// blanked / false-branched rather than left as raw template
+			// placeholder text — which previously only got corrected when the
+			// document was later opened in the editor. (Mirrors openDocument;
+			// see the "Documents must be populated on add" invariant.)
+			for (const { docPath, templateRelPath, variables } of addedDocs) {
+				let templateSchema: VariableSchema | null = null;
+				try {
+					templateSchema = await invoke<VariableSchema>(
+						"load_template_schema",
+						{
+							templatesDir,
+							templateRelPath,
+						},
+					);
+				} catch {
+					// Schema is optional
+				}
+				const variableValues = buildVariableValues(
+					variables,
+					pool,
+					templateSchema,
+				);
 				const conditionalSchema = await loadConditionalSchema(
 					templatesDir,
-					templateRelPaths[i],
+					templateRelPath,
 				);
 				await invoke("replace_variables_v2", {
-					docxPath: addedDocPaths[i],
-					variables: allVars,
+					docxPath: docPath,
+					variables: variableValues,
 					conditionalSchema,
 				});
 			}
