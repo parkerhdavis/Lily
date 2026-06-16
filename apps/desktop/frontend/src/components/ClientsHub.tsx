@@ -161,6 +161,11 @@ export default function ClientsHub() {
 
 	const [trees, setTrees] = useState<LibraryTree[]>([]);
 	const [treeLoading, setTreeLoading] = useState(false);
+	// Folder selected for new-client setup (no .lily yet). Lifted here so both
+	// the tree and the "Open Folder" header button feed the same create flow.
+	const [pendingNewClientDir, setPendingNewClientDir] = useState<string | null>(
+		null,
+	);
 
 	const libraryDirs = settings.client_library_dirs;
 
@@ -198,6 +203,7 @@ export default function ClientsHub() {
 	}, [loadTrees]);
 
 	const selectClient = async (dir: string) => {
+		setPendingNewClientDir(null);
 		await addRecentDirectory(dir);
 		save({ last_working_dir: dir });
 		if (settings.templates_dir) {
@@ -209,11 +215,27 @@ export default function ClientsHub() {
 	const pickClientFolder = async () => {
 		const selected = await open({
 			directory: true,
-			title: "Open Client Folder",
+			title: "Open Folder",
 			defaultPath: settings.last_working_dir ?? undefined,
 		});
-		if (selected) {
-			await selectClient(selected);
+		if (!selected) return;
+		// A folder picked from the OS dialog can live outside the library, so it
+		// won't be in the loaded tree — ask the backend whether it's already a
+		// client. If so, open it; otherwise route into the new-client setup flow.
+		try {
+			const hasLily = await invoke<boolean>("has_lily_file", {
+				workingDir: selected,
+			});
+			if (hasLily) {
+				await selectClient(selected);
+			} else {
+				setPendingNewClientDir(selected);
+			}
+		} catch (err) {
+			console.error("Failed to check for .lily file:", err);
+			useToastStore
+				.getState()
+				.addToast("error", `Couldn't open folder: ${err}`);
 		}
 	};
 
@@ -225,7 +247,7 @@ export default function ClientsHub() {
 					className="btn btn-primary btn-sm"
 					onClick={pickClientFolder}
 				>
-					Open Client Folder
+					Open Folder…
 				</button>
 			</PageHeader>
 
@@ -236,6 +258,8 @@ export default function ClientsHub() {
 					hasLibraryDirs={libraryDirs.length > 0}
 					workingDir={workingDir}
 					lilyFile={lilyFile}
+					pendingNewClientDir={pendingNewClientDir}
+					onSetPendingNewClientDir={setPendingNewClientDir}
 					onSelectClient={selectClient}
 					onGoToSettings={goToSettings}
 					lilyIcon={lilyIcon}
@@ -263,6 +287,8 @@ function ClientsTreeTab({
 	hasLibraryDirs,
 	workingDir,
 	lilyFile,
+	pendingNewClientDir,
+	onSetPendingNewClientDir,
 	onSelectClient,
 	onGoToSettings,
 	lilyIcon,
@@ -282,6 +308,8 @@ function ClientsTreeTab({
 	hasLibraryDirs: boolean;
 	workingDir: string | null;
 	lilyFile: import("@/types").LilyFile | null;
+	pendingNewClientDir: string | null;
+	onSetPendingNewClientDir: (dir: string | null) => void;
 	onSelectClient: (dir: string) => void;
 	onGoToSettings: () => void;
 	lilyIcon: string;
@@ -299,9 +327,6 @@ function ClientsTreeTab({
 	onLoadTemplates: (templatesDir: string) => Promise<void>;
 	onReloadTrees: () => Promise<void>;
 }) {
-	const [pendingNewClientDir, setPendingNewClientDir] = useState<string | null>(
-		null,
-	);
 	const [creatingClient, setCreatingClient] = useState(false);
 	const [chosenQuestionnaire, setChosenQuestionnaire] =
 		useState<QuestionnaireChoice | null>(null);
@@ -313,13 +338,12 @@ function ClientsTreeTab({
 		(dir: string) => {
 			const isClient = isClientInTree(allTreeNodes, dir);
 			if (isClient) {
-				setPendingNewClientDir(null);
 				onSelectClient(dir);
 			} else {
-				setPendingNewClientDir(dir);
+				onSetPendingNewClientDir(dir);
 			}
 		},
-		[allTreeNodes, onSelectClient],
+		[allTreeNodes, onSelectClient, onSetPendingNewClientDir],
 	);
 
 	const handleCreateClient = useCallback(async () => {
@@ -332,7 +356,7 @@ function ClientsTreeTab({
 				questionnaireVersion: chosenQuestionnaire?.version ?? null,
 			});
 			await onReloadTrees();
-			setPendingNewClientDir(null);
+			onSetPendingNewClientDir(null);
 			onSelectClient(pendingNewClientDir);
 		} catch (err) {
 			console.error("Failed to create .lily file:", err);
@@ -342,7 +366,13 @@ function ClientsTreeTab({
 		} finally {
 			setCreatingClient(false);
 		}
-	}, [pendingNewClientDir, chosenQuestionnaire, onSelectClient, onReloadTrees]);
+	}, [
+		pendingNewClientDir,
+		chosenQuestionnaire,
+		onSelectClient,
+		onReloadTrees,
+		onSetPendingNewClientDir,
+	]);
 
 	if (!hasLibraryDirs) {
 		return (
@@ -424,7 +454,7 @@ function ClientsTreeTab({
 						<button
 							type="button"
 							className="btn btn-ghost btn-sm"
-							onClick={() => setPendingNewClientDir(null)}
+							onClick={() => onSetPendingNewClientDir(null)}
 						>
 							Cancel
 						</button>
@@ -1211,59 +1241,71 @@ function ClientTreeItem({
 		);
 	}
 
-	if (hasChildren) {
-		return (
-			<ClientTreeFolder
-				node={node}
-				selectedDir={selectedDir}
-				onSelectDir={onSelectDir}
-			/>
-		);
-	}
-
-	// Empty folder (no .lily file, no children) — still selectable
+	// Any non-client folder is selectable to set up a new client here (the
+	// "Create Client" panel only requires that no .lily exists yet). Folders
+	// with subfolders are additionally expandable via the chevron.
 	return (
-		<button
-			type="button"
-			className={`btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal gap-2 ${
-				selectedDir === node.path
-					? "bg-primary/10 text-primary font-medium"
-					: "text-base-content/50"
-			}`}
-			onClick={() => onSelectDir(node.path)}
-		>
-			<span className="w-3" />
-			<FolderIcon open={false} />
-			<span className="truncate">{node.name}</span>
-		</button>
+		<ClientTreeFolder
+			node={node}
+			hasChildren={hasChildren}
+			selectedDir={selectedDir}
+			onSelectDir={onSelectDir}
+		/>
 	);
 }
 
 function ClientTreeFolder({
 	node,
+	hasChildren,
 	selectedDir,
 	onSelectDir,
 }: {
 	node: ClientTreeNode;
+	hasChildren: boolean;
 	selectedDir: string | null;
 	onSelectDir: (dir: string) => void;
 }) {
 	const [expanded, setExpanded] = useState(false);
+	const isSelected = selectedDir === node.path;
 
 	return (
 		<div>
+			{/* Row selects the folder (\u2192 "Create Client" panel); the chevron
+			    toggles expansion, mirroring how client rows behave. */}
 			<button
 				type="button"
-				className="btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-medium gap-2"
-				onClick={() => setExpanded(!expanded)}
+				className={`btn btn-ghost btn-sm justify-start text-left w-full h-auto py-2 px-3 font-normal gap-2 ${
+					isSelected
+						? "bg-primary/10 text-primary font-medium"
+						: "text-base-content/50"
+				}`}
+				onClick={() => onSelectDir(node.path)}
 			>
-				<span className="text-xs opacity-40">
-					{expanded ? "\u25BE" : "\u25B8"}
-				</span>
-				<FolderIcon open={expanded} />
+				{hasChildren ? (
+					<span
+						className="text-xs opacity-40"
+						onClick={(e) => {
+							e.stopPropagation();
+							setExpanded(!expanded);
+						}}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.stopPropagation();
+								setExpanded(!expanded);
+							}
+						}}
+						role="button"
+						tabIndex={-1}
+					>
+						{expanded ? "\u25BE" : "\u25B8"}
+					</span>
+				) : (
+					<span className="w-3" />
+				)}
+				<FolderIcon open={hasChildren && expanded} />
 				<span className="truncate">{node.name}</span>
 			</button>
-			{expanded && (
+			{hasChildren && expanded && (
 				<div className="ml-4 border-l border-base-300 pl-1">
 					{node.children.map((child) => (
 						<ClientTreeItem
