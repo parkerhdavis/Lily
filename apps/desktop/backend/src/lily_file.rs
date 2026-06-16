@@ -1665,7 +1665,10 @@ fn is_derived_helper_var(name: &str) -> bool {
 }
 
 /// True if a `LilyFile` has no user-meaningful content — i.e., looks like a
-/// freshly-created or default project file.
+/// freshly-created or default project file. A freshly-created client now always
+/// has a `questionnaire_id`/`questionnaire_version` stamped at creation (the
+/// Create Client pane pre-selects one), so those fields don't count as content;
+/// only actual client data does.
 fn is_empty_project(lily: &LilyFile) -> bool {
     lily.variables.is_empty()
         && lily.documents.is_empty()
@@ -1673,7 +1676,6 @@ fn is_empty_project(lily: &LilyFile) -> bool {
         && lily.contact_bindings.is_empty()
         && lily.questionnaire_notes.is_empty()
         && lily.required_documents.is_empty()
-        && lily.questionnaire_id.is_none()
 }
 
 /// Build the swapped `LilyFile` for the target, given the source and the
@@ -2473,5 +2475,13 @@ mod tests {
         let mut not_empty = LilyFile::default();
         not_empty.variables.insert("X".into(), "y".into());
         assert!(!is_empty_project(&not_empty));
+
+        // A freshly-created client is stamped with a questionnaire id/version at
+        // creation but has no actual content — it must still count as empty so
+        // copy-from-spouse can target it.
+        let mut fresh = LilyFile::default();
+        fresh.questionnaire_id = Some("3c74a6ef-1edc-4fc1-8a3e-4971a9072089".into());
+        fresh.questionnaire_version = Some(4);
+        assert!(is_empty_project(&fresh));
     }
 }
