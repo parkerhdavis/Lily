@@ -628,8 +628,11 @@ fn update_sdt_v2(
         let idx = occurrence_counts.entry(label.to_string()).or_insert(0);
         let cond = defs.get(*idx).or_else(|| defs.first())?;
         *idx += 1;
-        let value = variables.get(&cond.controlling_variable)?;
-        let is_true = value == "true";
+        // An absent controlling variable defaults to the false branch, so the
+        // SDT is still resolved (not left in raw template form on disk).
+        let is_true = variables
+            .get(&cond.controlling_variable)
+            .is_some_and(|value| value == "true");
         let branch = if is_true {
             &cond.true_template
         } else {
@@ -670,10 +673,14 @@ fn update_sdt_v2(
                 continue;
             };
 
+            // A simple variable absent from the map resolves to empty (blanked
+            // to a zero-width bookmark) rather than leaving the SDT in raw
+            // template form. Only a conditional with no schema entry — whose
+            // branches are genuinely unknown — is left untouched.
             let Some(resolved) = (if is_conditional {
                 resolve_conditional(label)
             } else {
-                variables.get(label).cloned()
+                Some(variables.get(label).cloned().unwrap_or_default())
             }) else {
                 result.push_str(m.as_str());
                 continue;
@@ -727,10 +734,14 @@ fn update_sdt_v2(
                 continue;
             };
 
+            // A simple variable absent from the map resolves to empty (blanked
+            // to a zero-width bookmark) rather than leaving the SDT in raw
+            // template form. Only a conditional with no schema entry — whose
+            // branches are genuinely unknown — is left untouched.
             let Some(resolved) = (if is_conditional {
                 resolve_conditional(label)
             } else {
-                variables.get(label).cloned()
+                Some(variables.get(label).cloned().unwrap_or_default())
             }) else {
                 result.push_str(m.as_str());
                 continue;
@@ -5551,6 +5562,63 @@ mod tests {
         let result = update_sdt_v2(xml, &vars, &conds, &mut next_id);
         assert!(result.contains("Jane Doe"), "Should contain replaced value");
         assert!(!result.contains("{Client Name}"), "Should not contain placeholder");
+    }
+
+    #[test]
+    fn test_v2_absent_variables_resolve_not_left_raw() {
+        // Regression: a newly-created document used to be filled with only the
+        // populated client pool, so any variable/conditional absent from that
+        // pool was left in raw template form (showing the bare display name as
+        // visible text) until the document was later opened in the editor.
+        // update_sdt_v2 must resolve absent entries on its own: a simple
+        // variable blanks to a zero-width bookmark, and a schema-backed
+        // conditional takes its false branch.
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t xml:space="preserve">Name: </w:t></w:r><w:sdt><w:sdtPr><w:id w:val="1"/><w:tag w:val="lily:Unfilled Field"/><w:alias w:val="Unfilled Field"/></w:sdtPr><w:sdtContent><w:r><w:t xml:space="preserve">Unfilled Field</w:t></w:r></w:sdtContent></w:sdt><w:sdt><w:sdtPr><w:id w:val="2"/><w:tag w:val="lily-cond:Has Optional Clause"/><w:alias w:val="Has Optional Clause"/></w:sdtPr><w:sdtContent><w:r><w:t xml:space="preserve">Has Optional Clause</w:t></w:r></w:sdtContent></w:sdt></w:p></w:body></w:document>"#;
+
+        // The map mirrors a real client pool that simply does not contain the
+        // two fields present in the template.
+        let mut vars = HashMap::new();
+        vars.insert("Some Other Field".to_string(), "value".to_string());
+
+        let mut conds = HashMap::new();
+        conds.insert(
+            "Has Optional Clause".to_string(),
+            vec![ConditionalDef {
+                controlling_variable: "Has Optional Clause".to_string(),
+                true_template: "This optional clause applies.".to_string(),
+                false_template: String::new(),
+            }],
+        );
+
+        let mut next_id = 100;
+        let result = update_sdt_v2(xml, &vars, &conds, &mut next_id);
+
+        let t_re = regex::Regex::new(r#"<w:t[^>]*>([^<]*)</w:t>"#).unwrap();
+        let visible: String = t_re
+            .captures_iter(&result)
+            .map(|c| c[1].to_string())
+            .collect();
+
+        assert!(
+            !visible.contains("Unfilled Field"),
+            "absent simple variable should not show placeholder text. Visible: {:?}",
+            visible
+        );
+        assert!(
+            result.contains("lily:Unfilled Field") && result.contains("bookmarkStart"),
+            "absent simple variable should convert its SDT to a bookmark: {}",
+            result
+        );
+        assert!(
+            !visible.contains("Has Optional Clause"),
+            "absent conditional should resolve to its false branch, not show its label. Visible: {:?}",
+            visible
+        );
+        assert!(
+            !visible.contains("This optional clause applies."),
+            "absent conditional must not emit its true branch. Visible: {:?}",
+            visible
+        );
     }
 
     #[test]
