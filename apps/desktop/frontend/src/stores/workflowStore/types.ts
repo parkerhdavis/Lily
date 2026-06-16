@@ -41,10 +41,6 @@ export interface WorkflowState {
 
 	// Document actions
 	loadTemplates: (templatesDir: string) => Promise<void>;
-	selectTemplate: (
-		templateRelPath: string,
-		templatesDir: string,
-	) => Promise<void>;
 	openDocument: (filename: string, templateRelPath: string) => Promise<void>;
 	addMultipleDocuments: (
 		templateRelPaths: string[],
