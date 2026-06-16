@@ -726,8 +726,10 @@ function ClientContentPane({
 	const folderName = extractFolderName(workingDir);
 	const contactCount = lilyFile.contacts?.length ?? 0;
 	const docCount = allDocs.length;
+	// A brand-new client now always has a questionnaire_id stamped at creation
+	// (the Create Client pane pre-selects one), so questionnaire_id is no longer
+	// a "fresh workspace" signal — emptiness of the actual client data is.
 	const isFreshWorkspace =
-		!lilyFile.questionnaire_id &&
 		docCount === 0 &&
 		contactCount === 0 &&
 		Object.keys(lilyFile.variables ?? {}).length === 0 &&
