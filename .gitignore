@@ -81,10 +81,6 @@ Thumbs.db
 # Template documents (proprietary)
 resources/templates/
 
-# Agent instructions (maintained in Obsidian, not source code)
-AGENTS.md
-CLAUDE.md
-
 # Local config
 *.local
 scripts/__pycache__/
